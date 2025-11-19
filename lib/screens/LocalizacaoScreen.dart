@@ -196,7 +196,7 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
             dataMovimentacao: jsonItem['DataMovimentacao'] != null
                 ? DateTime.parse(jsonItem['DataMovimentacao'])
                 : null,
-            caixa: jsonItem['Caixa'] ?? '',
+            caixa: jsonItem['Caixa'] ?? '', // Garantido ser String ou ''
           );
         }).toList();
       } else {
@@ -620,7 +620,7 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
                       obscureText: true,
                       decoration: const InputDecoration(
                         labelText: 'Sua Senha Admin',
-                        border: OutlineInputBorder(),
+                        border: const OutlineInputBorder(),
                         prefixIcon: Icon(Icons.lock),
                       ),
                     ),
@@ -1541,10 +1541,11 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
                           spacing: 8,
                           runSpacing: 8,
                           children: [
-                            // 🔥 NOVO CHIP: Caixa (Adicionado no início)
+                            // 🔥 CORREÇÃO APLICADA AQUI:
                             _buildDetailChip(
                               icon: Icons.inventory_2_outlined,
-                              label: 'Caixa: ${r.caixa ?? 'N/A'}',
+                              label:
+                                  'Caixa: ${r.caixa != null && r.caixa!.isNotEmpty ? r.caixa : '0'}',
                               color: Colors.teal.shade700,
                             ),
                             _buildDetailChip(

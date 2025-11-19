@@ -87,7 +87,7 @@ class _RegistroPrincipalScreenState extends State<RegistroPrincipalScreen>
             ),
             // Aba 1: Tinturaria
             Tab(
-              text: 'Tinturaria',
+              text: 'Raschelina',
               icon: Icon(
                 Icons.color_lens_outlined,
               ), // Ícone Outlined mais moderno
@@ -101,7 +101,7 @@ class _RegistroPrincipalScreenState extends State<RegistroPrincipalScreen>
         children: [
           // Conteúdo da aba Tinturaria (vindo de RegistroRaschelina.dart)
           embalagem.RegistroScreen(conferente: widget.conferente),
-          
+
           RegistroScreenTinturaria(conferente: widget.conferente),
 
           // Conteúdo da aba Embalagem (vindo de RegistroEmbalagem.dart)

@@ -82,8 +82,9 @@ class _RegistroScreenTinturariaState extends State<RegistroScreenTinturaria> {
   final _turnoController = TextEditingController();
 
   DateTime? _data;
-  // Variável _selectedIndex removida, pois esta tela deve ser apenas o formulário.
-  bool _formBloqueado = false;
+  // Variável _formBloqueado removida.
+  // Novo estado para controlar se há dados de QR Code preenchidos (habilita Salvar).
+  bool _camposPreenchidos = false;
 
   @override
   void initState() {
@@ -119,7 +120,7 @@ class _RegistroScreenTinturariaState extends State<RegistroScreenTinturaria> {
         context,
         MaterialPageRoute(
           builder: (_) => const QrScannerPage(),
-          fullscreenDialog: true, // Adicione esta linha
+          fullscreenDialog: true,
         ),
       );
 
@@ -132,7 +133,8 @@ class _RegistroScreenTinturariaState extends State<RegistroScreenTinturaria> {
           _nMaquinaController.text = qr.nMaquina;
           _dataCorteController.text = qr.dataCorte;
           _loteElasticoController.text = qr.loteElastico;
-          _formBloqueado = true;
+          // Altera o estado para habilitar o botão Salvar
+          _camposPreenchidos = true;
         });
       }
     } catch (e) {
@@ -150,7 +152,10 @@ class _RegistroScreenTinturariaState extends State<RegistroScreenTinturaria> {
   }
 
   void _salvarRegistro() async {
-    if (_formKey.currentState!.validate() && _data != null) {
+    // Verifica se os campos estão preenchidos (via QR Code) e se o formulário é válido
+    if (_formKey.currentState!.validate() &&
+        _data != null &&
+        _camposPreenchidos) {
       final registro = RegistroTinturaria(
         nomeMaterial: _nomeMaterialController.text,
         larguraCrua: _larguraCruaController.text,
@@ -162,7 +167,7 @@ class _RegistroScreenTinturariaState extends State<RegistroScreenTinturaria> {
         turno: _turnoController.text,
       );
 
-      enviarRegistroParaAPI(registro);
+      await enviarRegistroParaAPI(registro);
 
       // Limpa os campos preenchidos pelo QR Code
       _nomeMaterialController.clear();
@@ -172,9 +177,10 @@ class _RegistroScreenTinturariaState extends State<RegistroScreenTinturaria> {
       _dataCorteController.clear();
       _loteElasticoController.clear();
 
-      // Desbloqueia o formulário para a próxima leitura/registro
-      _formBloqueado = false;
-      setState(() {});
+      // Desabilita o botão Salvar novamente para aguardar a próxima leitura
+      setState(() {
+        _camposPreenchidos = false;
+      });
     }
   }
 
@@ -190,11 +196,38 @@ class _RegistroScreenTinturariaState extends State<RegistroScreenTinturaria> {
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         print("✅ Sucesso na API: ${response.statusCode} - ${response.body}");
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Registro salvo com sucesso!'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
       } else {
         print("❌ Erro na API: ${response.statusCode} - ${response.body}");
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Erro ao salvar registro: ${response.statusCode}'),
+              backgroundColor: _kPrimaryColor,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
       }
     } catch (e) {
       print("❌ Exceção ao enviar registro: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Erro de conexão ao salvar registro.'),
+            backgroundColor: _kPrimaryColor,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
     }
   }
 
@@ -251,19 +284,24 @@ class _RegistroScreenTinturariaState extends State<RegistroScreenTinturaria> {
     IconData icon, {
     TextInputType keyboardType = TextInputType.text,
     int? maxLength,
-    bool enabled = true,
+    // Definido como false (bloqueado) por padrão, conforme solicitado.
+    bool enabled = false,
     List<TextInputFormatter>? inputFormatters,
   }) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 0.0, vertical: 8.0),
       child: TextFormField(
         controller: controller,
-        enabled: enabled,
+        enabled: enabled, // Sempre false para bloqueio
         maxLength: maxLength,
         inputFormatters: inputFormatters,
-        style: const TextStyle(color: Colors.black87),
+        style: TextStyle(
+          // Cor do texto ajustada para campos desabilitados
+          color: enabled ? Colors.black87 : Colors.grey.shade700,
+        ),
         keyboardType: keyboardType,
         decoration: _getInputDecoration(label, icon, enabled: enabled),
+        // Validação verifica se o campo foi preenchido (pelo QR Code)
         validator: (value) => value == null || value.isEmpty
             ? 'O campo $label é obrigatório.'
             : null,
@@ -364,40 +402,40 @@ class _RegistroScreenTinturariaState extends State<RegistroScreenTinturaria> {
               key: _formKey,
               child: Column(
                 children: [
-                  // Campos do formulário
+                  // Campos do formulário (sempre bloqueados/desabilitados)
                   _buildTextField(
                     _nomeMaterialController,
                     'Nome do Material',
                     Icons.texture,
-                    enabled: !_formBloqueado,
+                    enabled: false, // BLOQUEADO
                   ),
                   _buildTextField(
                     _larguraCruaController,
                     'Largura Crua',
                     Icons.straighten,
                     keyboardType: TextInputType.number,
-                    enabled: !_formBloqueado,
+                    enabled: false, // BLOQUEADO
                   ),
                   _buildTextField(
                     _elasticidadeCruaController,
                     'Elasticidade Crua',
                     Icons.compare_arrows,
                     keyboardType: TextInputType.number,
-                    enabled: !_formBloqueado,
+                    enabled: false, // BLOQUEADO
                   ),
                   _buildTextField(
                     _nMaquinaController,
                     'Número da Máquina',
                     Icons.precision_manufacturing,
                     keyboardType: TextInputType.number,
-                    enabled: !_formBloqueado,
+                    enabled: false, // BLOQUEADO
                   ),
                   _buildTextField(
                     _dataCorteController,
                     'Data de Corte',
                     Icons.calendar_today,
                     keyboardType: TextInputType.datetime,
-                    enabled: !_formBloqueado,
+                    enabled: false, // BLOQUEADO
                     inputFormatters: [
                       FilteringTextInputFormatter.digitsOnly,
                       DateTextFormatter(),
@@ -407,7 +445,7 @@ class _RegistroScreenTinturariaState extends State<RegistroScreenTinturaria> {
                     _loteElasticoController,
                     'Lote Elástico',
                     Icons.category,
-                    enabled: !_formBloqueado,
+                    enabled: false, // BLOQUEADO
                   ),
 
                   const SizedBox(height: 24),
@@ -416,7 +454,8 @@ class _RegistroScreenTinturariaState extends State<RegistroScreenTinturaria> {
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
-                      onPressed: _salvarRegistro,
+                      // Habilita o botão apenas se os campos foram preenchidos
+                      onPressed: _camposPreenchidos ? _salvarRegistro : null,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: _kPrimaryColor,
                         foregroundColor: Colors.white,
@@ -453,8 +492,6 @@ class _RegistroScreenTinturariaState extends State<RegistroScreenTinturaria> {
     );
   }
 
-  // O método _getBody foi removido e a lógica transferida diretamente para o build
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -475,8 +512,6 @@ class QrScannerPage extends StatefulWidget {
   @override
   State<QrScannerPage> createState() => _QrScannerPageState();
 }
-
-// Substitua a classe _QrScannerPageState
 
 class _QrScannerPageState extends State<QrScannerPage> {
   final MobileScannerController _cameraController = MobileScannerController(

@@ -22,6 +22,283 @@ const Color _kBackgroundColor = Color(0xFFF0F2F5); // Fundo Leve, moderno
 const Color _kInputFillColor = Colors.white; // Cor de preenchimento do input
 
 // =========================================================================
+// WIDGETS DO SCANNER (MOVIDOS PARA O TOPO PARA RESOLVER O ERRO DE TIPO)
+// =========================================================================
+
+// WIDGET: PINTURA DOS CANTOS (Mais limpo e usando a cor de destaque)
+class _QrScannerCornersPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color =
+          _kAccentColor // Cor de destaque
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = 5.0;
+
+    final cornerLength = size.width / 5;
+
+    // Top-Left
+    canvas.drawLine(const Offset(0, 0), Offset(cornerLength, 0), paint);
+    canvas.drawLine(const Offset(0, 0), Offset(0, cornerLength), paint);
+
+    // Top-Right
+    canvas.drawLine(
+      Offset(size.width - cornerLength, 0),
+      Offset(size.width, 0),
+      paint,
+    );
+    canvas.drawLine(
+      Offset(size.width, 0),
+      Offset(size.width, cornerLength),
+      paint,
+    );
+
+    // Bottom-Left
+    canvas.drawLine(
+      Offset(0, size.height),
+      Offset(cornerLength, size.height),
+      paint,
+    );
+    canvas.drawLine(
+      Offset(0, size.height),
+      Offset(0, size.height - cornerLength),
+      paint,
+    );
+
+    // Bottom-Right
+    canvas.drawLine(
+      Offset(size.width - cornerLength, size.height),
+      Offset(size.width, size.height),
+      paint,
+    );
+    canvas.drawLine(
+      Offset(size.width, size.height - cornerLength),
+      Offset(size.width, size.height),
+      paint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) {
+    return false;
+  }
+}
+
+class _TorchButton extends StatefulWidget {
+  final MobileScannerController controller;
+  const _TorchButton({required this.controller});
+
+  @override
+  State<_TorchButton> createState() => _TorchButtonState();
+}
+
+class _TorchButtonState extends State<_TorchButton> {
+  bool isTorchOn = false;
+
+  void _toggleTorch() {
+    setState(() {
+      isTorchOn = !isTorchOn;
+    });
+    // O comando real para ligar/desligar a lanterna
+    widget.controller.toggleTorch();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.black54, // Fundo semitransparente
+        borderRadius: BorderRadius.circular(30),
+        border: Border.all(color: Colors.white, width: 2),
+      ),
+      child: IconButton(
+        icon: Icon(
+          isTorchOn ? Icons.flash_on : Icons.flash_off,
+          color: isTorchOn
+              ? _kAccentColor
+              : Colors.white, // Cor de foco no estado "ligado"
+          size: 28,
+        ),
+        onPressed: _toggleTorch,
+        tooltip: isTorchOn ? 'Desligar Lanterna' : 'Ligar Lanterna',
+      ),
+    );
+  }
+}
+
+class QrScannerPage extends StatefulWidget {
+  const QrScannerPage({super.key});
+
+  @override
+  State<QrScannerPage> createState() => _QrScannerPageState();
+}
+
+class _QrScannerPageState extends State<QrScannerPage> {
+  // 1. Controller da câmera para controle de funções (e.g., lanterna)
+  final MobileScannerController _cameraController = MobileScannerController(
+    // 💡 OTIMIZAÇÃO: Limita o scanner a procurar apenas por códigos QR
+    formats: const [BarcodeFormat.qrCode],
+    detectionSpeed: DetectionSpeed.normal,
+    facing: CameraFacing.back,
+    torchEnabled: false,
+  );
+
+  // 💡 AJUSTE DE NAVEGAÇÃO: Flag para evitar detecções e saídas múltiplas
+  bool _isDetected = false;
+
+  // Função para parsear a string do QR Code e retornar o objeto QrCodeData
+  QrCodeData? _parseQrCode(String? qrCode) {
+    if (qrCode == null || qrCode.isEmpty) {
+      return null;
+    }
+
+    try {
+      // 1. Tenta decodificar a string do QR Code como um objeto JSON.
+      final Map<String, dynamic> jsonMap = jsonDecode(qrCode);
+
+      // 2. Usa o construtor de fábrica QrCodeData.fromJson para converter o JSON.
+      final qrData = QrCodeData.fromJson(jsonMap);
+
+      // 3. Validação de Negócio: Se a Ordem de Produção for 0, o código é inválido.
+      if (qrData.ordem == 0) {
+        return null;
+      }
+
+      // Se tudo estiver OK, o objeto QrCodeData é retornado
+      return qrData;
+    } catch (e) {
+      // Se ocorrer um erro (não é um JSON válido, etc.), retorna null.
+      return null;
+    }
+  }
+
+  @override
+  void dispose() {
+    // ⚠️ Importante: Descartar o controller da câmera
+    _cameraController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Tamanho fixo para a área de escaneamento
+    const double scannerSize = 250.0;
+
+    return Scaffold(
+      appBar: AppBar(
+        centerTitle: true,
+        title: const Text('Escanear QR Code'),
+        backgroundColor: _kPrimaryColor,
+        foregroundColor: Colors.white,
+      ),
+      body: Stack(
+        children: [
+          // 1. Scanner de Câmera (Fundo)
+          MobileScanner(
+            controller: _cameraController,
+            onDetect: (capture) {
+              final List<Barcode> barcodes = capture.barcodes;
+
+              // 🚨 NOVO: Se já detectou e está saindo, ignora novas detecções
+              if (_isDetected) {
+                return;
+              }
+
+              if (barcodes.isNotEmpty) {
+                final String? qrString = barcodes.first.rawValue;
+                if (qrString != null) {
+                  final qrData = _parseQrCode(qrString);
+                  if (qrData != null) {
+                    // Se válido, define a flag e navega de volta
+                    setState(() {
+                      _isDetected = true;
+                    });
+                    Navigator.pop(context, qrData);
+                  } else {
+                    // Feedback de QR Code inválido
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('QR Code inválido ou incompleto!'),
+                        backgroundColor: _kPrimaryColor,
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
+                  }
+                }
+              }
+            },
+          ),
+
+          // 2. Overlay de Fundo Escuro com Recorte (Hole Punch Effect)
+          ColorFiltered(
+            colorFilter: ColorFilter.mode(
+              Colors.black.withOpacity(0.6),
+              BlendMode.srcOut,
+            ),
+            child: Stack(
+              children: [
+                Container(
+                  decoration: const BoxDecoration(
+                    color: Colors.black,
+                    backgroundBlendMode: BlendMode.dstOut,
+                  ),
+                ),
+                Align(
+                  alignment: Alignment.center,
+                  child: Container(
+                    width: scannerSize,
+                    height: scannerSize,
+                    decoration: BoxDecoration(
+                      color: Colors.red, // Cor de placeholder
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // 3. Pintura dos Cantos (Visual Aprimorado)
+          Center(
+            child: CustomPaint(
+              size: const Size(scannerSize, scannerSize),
+              painter: _QrScannerCornersPainter(),
+            ),
+          ),
+
+          // 4. Instrução de texto
+          const Align(
+            alignment: Alignment.bottomCenter,
+            child: Padding(
+              padding: EdgeInsets.only(bottom: 40.0),
+              child: Text(
+                'Posicione o QR Code dentro do quadro',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  backgroundColor: Color(0xAA000000),
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ),
+
+          // 5. Botão de Lanterna (Controle)
+          Align(
+            alignment: Alignment.topCenter,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 20.0),
+              child: _TorchButton(controller: _cameraController),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// =========================================================================
 // TELA DE REGISTRO
 // =========================================================================
 
@@ -50,7 +327,6 @@ class _RegistroScreenState extends State<RegistroScreen> {
   String? _localizacaoSelecionada;
 
   DateTime? _data;
-  // 🎯 REMOVIDO: A variável _formBloqueado não é mais necessária, pois os campos de texto serão bloqueados por padrão.
   bool _isSaving = false;
 
   @override
@@ -58,7 +334,6 @@ class _RegistroScreenState extends State<RegistroScreen> {
     super.initState();
     _data = DateTime.now();
     _removerRegistrosAntigos();
-    // 💡 NOVO: Adicionar listener para reagir a mudanças e controlar o botão
     _ordemController.addListener(_updateFormState);
   }
 
@@ -78,9 +353,7 @@ class _RegistroScreenState extends State<RegistroScreen> {
     super.dispose();
   }
 
-  // 💡 NOVO: Função para atualizar o estado do formulário/botão
   void _updateFormState() {
-    // Chama setState para reconstruir o widget e reavaliar a condição do botão/dropdown
     setState(() {});
   }
 
@@ -103,24 +376,87 @@ class _RegistroScreenState extends State<RegistroScreen> {
     return 'C';
   }
 
+  String _safeString(String? value) {
+    return (value == null || value.isEmpty) ? '' : value;
+  }
+
+  // 💡 AJUSTE PRINCIPAL: Função para escanear QR Code com tratamento de valores vazios/zero
   Future<void> _scanQR() async {
+    // 1. Chama a tela de scanner
     final qr = await Navigator.push<QrCodeData>(
       context,
       MaterialPageRoute(builder: (_) => const QrScannerPage()),
     );
 
     if (qr != null) {
+      // ----------------------------------------------------
+      // 2. EXTRAÇÃO E CÁLCULO
+      // ----------------------------------------------------
+
+      // Tenta extrair metros. Usamos a propriedade 'metros' e 'numeroTambores' da classe QrCodeData
+      // Se houver erro de parsing (vírgula), trocamos para ponto para o cálculo.
+      double metrosUnitario =
+          double.tryParse(qr.metros.toString().replaceAll(',', '.')) ?? 0.0;
+      int quantidadeTambores = int.tryParse(qr.numeroTambores.toString()) ?? 0;
+
+      // Realiza o CÁLCULO
+      double metrosTotal = metrosUnitario * quantidadeTambores;
+
+      // Print de Verificação do CÁLCULO
+      print('--- VERIFICAÇÃO DO CÁLCULO ---');
+      print(
+        'Metros (Unitário): $metrosUnitario',
+      ); // Esperado: 1232.0 (ou 1.232 se parseado corretamente)
+      print('Tambores: $quantidadeTambores'); // Esperado: 5
+      print(
+        'Metros (Total Calculado): $metrosTotal',
+      ); // Esperado: 6160.0 (ou 6.160 se parseado corretamente)
+      print('------------------------------');
+
+      // Formata o resultado do cálculo (6.160) para string com vírgula (6,160)
+      final String metrosFormatado = metrosTotal == 0.0
+          ? '0'
+          : metrosTotal.toStringAsFixed(3).replaceAll('.', ',');
+
+      // ----------------------------------------------------
+      // 3. EXTRAÇÃO DE OUTROS CAMPOS
+      // ----------------------------------------------------
+
+      final String ordem = qr.ordem == 0 ? '0' : qr.ordem.toString();
+      final String peso = qr.peso == 0.0 ? '0' : qr.peso.toStringAsFixed(3);
+      final String quantidade = quantidadeTambores
+          .toString(); // Valor simples dos tambores
+
+      final String artigo = _safeString(qr.artigo);
+      final String cor = _safeString(qr.cor);
+      final String volumeProg = _safeString(qr.volumeProg);
+      final String caixa = _safeString(qr.caixa);
+      final String dataTingimento = _safeString(qr.dataTingimento);
+
+      // NumCorte - Corrigido para usar _safeString e a propriedade correta
+      final String numCorte = _safeString(qr.numCorte);
+
+      // Print de Verificação do NumCorte
+      print(
+        'NumCorte (extraído): $numCorte',
+      ); // Esperado: 4 (se o mapeamento estiver correto)
+      print('------------------------------');
+
+      // ----------------------------------------------------
+      // 4. ATUALIZAÇÃO DA TELA (setState)
+      // ----------------------------------------------------
       setState(() {
-        _ordemController.text = qr.ordem.toString();
-        _artigoController.text = qr.artigo;
-        _corController.text = qr.cor;
-        _quantidadeController.text = qr.numeroTambores.toString();
-        _pesoController.text = qr.peso.toStringAsFixed(3);
-        _volumeProgController.text = qr.volumeProg;
-        _caixaController.text = qr.caixa; // Mapeamento do valor da Caixa
-        _metrosController.text = qr.metros.toStringAsFixed(3);
-        _dataTingimentoController.text = qr.dataTingimento;
-        _numCorteController.text = qr.numCorte;
+        _ordemController.text = ordem;
+        _artigoController.text = artigo;
+        _corController.text = cor;
+        _quantidadeController.text = quantidade; // 5
+        _pesoController.text = peso;
+        _volumeProgController.text = volumeProg;
+        _caixaController.text = caixa;
+        _metrosController.text =
+            metrosFormatado; // Resultado do cálculo (6,160)
+        _dataTingimentoController.text = dataTingimento;
+        _numCorteController.text = numCorte; // Preenchido com '4'
       });
     }
   }
@@ -153,8 +489,15 @@ class _RegistroScreenState extends State<RegistroScreen> {
     );
   }
 
+  // 💡 FUNÇÃO AUXILIAR: Para parsear campos que podem ser '0.00' para Int
+  int _parseIntFromController(TextEditingController controller) {
+    final String text = controller.text.replaceAll(',', '.');
+    // Tenta converter para double e depois para int. Se falhar, retorna 0.
+    final double? doubleValue = double.tryParse(text);
+    return doubleValue?.toInt() ?? 0;
+  }
+
   void _salvarRegistro() async {
-    // 🎯 Condição para habilitar o Salvar, baseada no preenchimento da OP
     final bool isFormReady = _ordemController.text.isNotEmpty;
 
     if (!isFormReady) {
@@ -166,7 +509,6 @@ class _RegistroScreenState extends State<RegistroScreen> {
         _isSaving = true;
       });
 
-      // Captura o momento exato do cadastro e formata para enviar SOMENTE A DATA
       final dataCadastro = DateTime.now().toLocal().toIso8601String().substring(
         0,
         10,
@@ -183,10 +525,19 @@ class _RegistroScreenState extends State<RegistroScreen> {
         );
         final volumeDouble = double.tryParse(volumeStrTratada) ?? 0.0;
 
+        // 💡 AJUSTE 3: Garante que 'caixa' seja '0.00' se estiver vazio no Controller no momento de salvar.
+        final String caixaValue = _caixaController.text.isEmpty
+            ? '0.00'
+            : _caixaController.text;
+
+        // 💡 AJUSTE 4: Usa a nova função de parsing para lidar com '0.00'
+        final int ordemProducao = _parseIntFromController(_ordemController);
+        final int quantidade = _parseIntFromController(_quantidadeController);
+
         final registro = Registro(
           data: _data!,
-          ordemProducao: int.parse(_ordemController.text),
-          quantidade: int.parse(_quantidadeController.text),
+          ordemProducao: ordemProducao, // Valor corrigido
+          quantidade: quantidade, // Valor corrigido
           artigo: _artigoController.text,
           cor: _corController.text,
           peso: pesoStr.isEmpty
@@ -201,7 +552,7 @@ class _RegistroScreenState extends State<RegistroScreen> {
           numCorte: _numCorteController.text,
           volumeProg: volumeDouble, // Valor Double Corrigido
           localizacao: _localizacaoSelecionada!,
-          caixa: _caixaController.text, // Parâmetro 'caixa' usado
+          caixa: caixaValue, // Usando o valor garantido
         );
 
         await box.add(registro);
@@ -291,17 +642,16 @@ class _RegistroScreenState extends State<RegistroScreen> {
     }
   }
 
-  // WIDGET: DROPWDOWN DE LOCALIZAÇÃO (Estilo M3 Aprimorado)
+  // WIDGETS (Restante da classe RegistroScreen permanece inalterado)
+
   Widget _buildLocalizacaoDropdown() {
     final List<String> localizacoes = const ['Mesas', 'Imatecs'];
-    // 🎯 Condição para habilitar/desabilitar o dropdown
     final bool isEnabled = _ordemController.text.isNotEmpty;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 0.0, vertical: 8.0),
       child: DropdownButtonFormField<String>(
         value: _localizacaoSelecionada,
-        // 💡 DECORAÇÃO: Muda a cor se estiver desabilitado (OP vazia)
         decoration: _getInputDecoration(
           'Localização',
           Icons.location_on,
@@ -314,7 +664,6 @@ class _RegistroScreenState extends State<RegistroScreen> {
             child: Text(value, style: const TextStyle(color: Colors.black87)),
           );
         }).toList(),
-        // 🎯 O Dropdown é desabilitado se a OP estiver vazia
         onChanged: isEnabled
             ? (String? newValue) {
                 setState(() {
@@ -323,7 +672,7 @@ class _RegistroScreenState extends State<RegistroScreen> {
               }
             : null,
         validator: (value) {
-          if (!isEnabled) return null; // Não valida se estiver desabilitado
+          if (!isEnabled) return null;
           return value == null || value.isEmpty
               ? 'Selecione a Localização'
               : null;
@@ -332,11 +681,10 @@ class _RegistroScreenState extends State<RegistroScreen> {
     );
   }
 
-  // Função centralizada para estilizar a decoração dos inputs
   InputDecoration _getInputDecoration(
     String label,
     IconData icon, {
-    bool enabled = true, // Controla o visual
+    bool enabled = true,
   }) {
     return InputDecoration(
       labelText: label,
@@ -346,9 +694,8 @@ class _RegistroScreenState extends State<RegistroScreen> {
         color: enabled ? _kPrimaryColor : Colors.grey.shade400,
       ),
       filled: true,
-      // Fundo cinza quando desabilitado (bloqueado)
       fillColor: enabled ? _kInputFillColor : Colors.grey.shade200,
-      enabled: enabled, // Controla se a label flutua etc.
+      enabled: enabled,
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10.0),
         borderSide: BorderSide(
@@ -363,7 +710,6 @@ class _RegistroScreenState extends State<RegistroScreen> {
         borderRadius: BorderRadius.circular(10.0),
         borderSide: const BorderSide(color: _kPrimaryColor, width: 2.0),
       ),
-      // Borda para estado disabled (campo bloqueado)
       disabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10.0),
         borderSide: BorderSide(color: Colors.grey.shade400),
@@ -379,7 +725,6 @@ class _RegistroScreenState extends State<RegistroScreen> {
     );
   }
 
-  // WIDGET: CAMPO DE TEXTO
   Widget _buildTextField(
     TextEditingController controller,
     String label,
@@ -410,7 +755,6 @@ class _RegistroScreenState extends State<RegistroScreen> {
     );
   }
 
-  // WIDGET: BOTÃO DE QR CODE
   Widget _buildQrButton() {
     return Padding(
       padding: const EdgeInsets.only(top: 10.0, bottom: 20.0),
@@ -419,7 +763,7 @@ class _RegistroScreenState extends State<RegistroScreen> {
         icon: const Icon(Icons.qr_code_scanner),
         label: const Text('Ler QR Code', style: TextStyle(fontSize: 18)),
         style: ElevatedButton.styleFrom(
-          backgroundColor: _kPrimaryColor, // Cor de destaque para o botão QR
+          backgroundColor: _kPrimaryColor,
           foregroundColor: Colors.white,
           minimumSize: const Size(double.infinity, 50),
           shape: RoundedRectangleBorder(
@@ -432,7 +776,6 @@ class _RegistroScreenState extends State<RegistroScreen> {
     );
   }
 
-  // WIDGET: TÍTULO DA SEÇÃO
   Widget _buildSectionTitle(String title, IconData icon) {
     return Padding(
       padding: const EdgeInsets.only(top: 10.0, bottom: 10.0),
@@ -453,7 +796,6 @@ class _RegistroScreenState extends State<RegistroScreen> {
     );
   }
 
-  // WIDGET: SEÇÃO DE IDENTIFICAÇÃO (OP, Artigo, Cor, Caixa)
   Widget _buildIdentificationSection() {
     return Card(
       elevation: 2,
@@ -477,7 +819,6 @@ class _RegistroScreenState extends State<RegistroScreen> {
               Icons.fiber_manual_record,
             ),
             _buildTextField(_corController, 'Cor', Icons.color_lens),
-            // CAMPO DA CAIXA
             _buildTextField(_caixaController, 'Caixa', Icons.inventory),
           ],
         ),
@@ -485,7 +826,6 @@ class _RegistroScreenState extends State<RegistroScreen> {
     );
   }
 
-  // WIDGET: SEÇÃO DE MEDIDAS E QUANTIDADES
   Widget _buildMeasurementsSection() {
     return Card(
       elevation: 2,
@@ -502,7 +842,7 @@ class _RegistroScreenState extends State<RegistroScreen> {
                 Expanded(
                   child: _buildTextField(
                     _quantidadeController,
-                    'Quantidade (Un)',
+                    'Tambores',
                     Icons.format_list_numbered,
                     isNumeric: true,
                     isRequired: true,
@@ -512,7 +852,7 @@ class _RegistroScreenState extends State<RegistroScreen> {
                 Expanded(
                   child: _buildTextField(
                     _volumeProgController,
-                    'Volume Prog.',
+                    'Volume',
                     Icons.view_module,
                     isNumeric: true,
                     isRequired: true,
@@ -525,7 +865,7 @@ class _RegistroScreenState extends State<RegistroScreen> {
                 Expanded(
                   child: _buildTextField(
                     _pesoController,
-                    'Peso (Kg)',
+                    'Peso',
                     Icons.line_weight,
                     isNumeric: true,
                   ),
@@ -547,7 +887,6 @@ class _RegistroScreenState extends State<RegistroScreen> {
     );
   }
 
-  // WIDGET: SEÇÃO DE DETALHES DE PRODUÇÃO
   Widget _buildDetailsSection() {
     return Card(
       elevation: 2,
@@ -564,7 +903,7 @@ class _RegistroScreenState extends State<RegistroScreen> {
                 Expanded(
                   child: _buildTextField(
                     _numCorteController,
-                    'Nº do Corte',
+                    'Corte',
                     Icons.cut,
                   ),
                 ),
@@ -572,7 +911,7 @@ class _RegistroScreenState extends State<RegistroScreen> {
                 Expanded(
                   child: _buildTextField(
                     _dataTingimentoController,
-                    'Data Tingimento',
+                    'Tingimento',
                     Icons.calendar_today,
                   ),
                 ),
@@ -584,19 +923,15 @@ class _RegistroScreenState extends State<RegistroScreen> {
     );
   }
 
-  // WIDGET: SEÇÃO DE LOCALIZAÇÃO E AÇÃO
   Widget _buildLocationAndActionSection() {
     final bool isFormReady = _ordemController.text.isNotEmpty;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Dropdown de Localização
         _buildLocalizacaoDropdown(),
         const SizedBox(height: 20),
-        // Botão de Salvar
         ElevatedButton.icon(
-          // 🎯 O botão é desativado se estiver salvando OU se o form não estiver pronto (Ordem vazia).
           onPressed: _isSaving || !isFormReady ? null : _salvarRegistro,
           icon: _isSaving
               ? Container(
@@ -622,7 +957,6 @@ class _RegistroScreenState extends State<RegistroScreen> {
             ),
             padding: const EdgeInsets.symmetric(vertical: 15),
             elevation: 5,
-            // 💡 Estilo visual para desativado
             disabledBackgroundColor: Colors.grey.shade400,
             disabledForegroundColor: Colors.grey.shade700,
           ),
@@ -631,7 +965,6 @@ class _RegistroScreenState extends State<RegistroScreen> {
     );
   }
 
-  // WIDGET: INFORMAÇÕES DE RODAPÉ (Conferente e Turno)
   Widget _buildFooterInfo() {
     return Padding(
       padding: const EdgeInsets.only(top: 10.0, bottom: 20.0),
@@ -702,285 +1035,16 @@ class _RegistroScreenState extends State<RegistroScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              // Seção de QR Code
               _buildQrButton(),
-
-              // Seções Organizadas
               _buildIdentificationSection(),
               _buildMeasurementsSection(),
               _buildDetailsSection(),
               _buildLocationAndActionSection(),
-
-              // Informações de Rodapé
               _buildFooterInfo(),
             ],
           ),
         ),
       ),
     );
-  }
-}
-
-// =========================================================================
-// WIDGET: SCANNER DE QR CODE (MELHORADO, ORGANIZADO E COM LANTERNA)
-// =========================================================================
-
-class QrScannerPage extends StatefulWidget {
-  const QrScannerPage({super.key});
-
-  @override
-  State<QrScannerPage> createState() => _QrScannerPageState();
-}
-
-class _QrScannerPageState extends State<QrScannerPage> {
-  // 1. Controller da câmera para controle de funções (e.g., lanterna)
-  final MobileScannerController _cameraController = MobileScannerController(
-    // 💡 OTIMIZAÇÃO: Limita o scanner a procurar apenas por códigos QR
-    formats: const [BarcodeFormat.qrCode],
-    detectionSpeed: DetectionSpeed.normal,
-    facing: CameraFacing.back,
-    torchEnabled: false,
-  );
-
-  // Função para parsear a string do QR Code e retornar o objeto QrCodeData
-  QrCodeData? _parseQrCode(String? qrCode) {
-    if (qrCode == null || qrCode.isEmpty) {
-      return null;
-    }
-
-    try {
-      // 1. Tenta decodificar a string do QR Code como um objeto JSON.
-      final Map<String, dynamic> jsonMap = jsonDecode(qrCode);
-
-      // 2. Usa o construtor de fábrica QrCodeData.fromJson para converter o JSON.
-      final qrData = QrCodeData.fromJson(jsonMap);
-
-      // 3. Validação de Negócio: Se a Ordem de Produção for 0, o código é inválido.
-      if (qrData.ordem == 0) {
-        return null;
-      }
-
-      // Se tudo estiver OK, o objeto QrCodeData é retornado
-      return qrData;
-    } catch (e) {
-      // Se ocorrer um erro (não é um JSON válido, etc.), retorna null.
-      return null;
-    }
-  }
-
-  @override
-  void dispose() {
-    // ⚠️ Importante: Descartar o controller da câmera
-    _cameraController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    // Tamanho fixo para a área de escaneamento
-    const double scannerSize = 250.0;
-
-    return Scaffold(
-      appBar: AppBar(
-        centerTitle: true,
-        title: const Text('Escanear QR Code'),
-        backgroundColor: _kPrimaryColor,
-        foregroundColor: Colors.white,
-      ),
-      body: Stack(
-        children: [
-          // 1. Scanner de Câmera (Fundo)
-          MobileScanner(
-            controller: _cameraController,
-            onDetect: (capture) {
-              final List<Barcode> barcodes = capture.barcodes;
-              if (barcodes.isNotEmpty) {
-                final String? qrString = barcodes.first.rawValue;
-                if (qrString != null) {
-                  final qrData = _parseQrCode(qrString);
-                  if (qrData != null) {
-                    Navigator.pop(context, qrData);
-                  } else {
-                    // Feedback de QR Code inválido
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('QR Code inválido ou incompleto!'),
-                        backgroundColor: _kPrimaryColor,
-                        duration: Duration(seconds: 2),
-                      ),
-                    );
-                  }
-                }
-              }
-            },
-          ),
-
-          // 2. Overlay de Fundo Escuro com Recorte (Hole Punch Effect)
-          ColorFiltered(
-            colorFilter: ColorFilter.mode(
-              Colors.black.withOpacity(0.6),
-              BlendMode.srcOut,
-            ),
-            child: Stack(
-              children: [
-                Container(
-                  decoration: const BoxDecoration(
-                    color: Colors.black,
-                    backgroundBlendMode: BlendMode.dstOut,
-                  ),
-                ),
-                Align(
-                  alignment: Alignment.center,
-                  child: Container(
-                    width: scannerSize,
-                    height: scannerSize,
-                    decoration: BoxDecoration(
-                      color: Colors.red, // Cor de placeholder
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // 3. Pintura dos Cantos (Visual Aprimorado)
-          Center(
-            child: CustomPaint(
-              size: const Size(scannerSize, scannerSize),
-              painter: _QrScannerCornersPainter(),
-            ),
-          ),
-
-          // 4. Instrução de texto
-          const Align(
-            alignment: Alignment.bottomCenter,
-            child: Padding(
-              padding: EdgeInsets.only(bottom: 40.0),
-              child: Text(
-                'Posicione o QR Code dentro do quadro',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                  backgroundColor: Color(0xAA000000),
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-          ),
-
-          // 5. Botão de Lanterna (Controle)
-          Align(
-            alignment: Alignment.topCenter,
-            child: Padding(
-              padding: const EdgeInsets.only(top: 20.0),
-              child: _TorchButton(controller: _cameraController),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _TorchButton extends StatefulWidget {
-  final MobileScannerController controller;
-  const _TorchButton({required this.controller});
-
-  @override
-  State<_TorchButton> createState() => _TorchButtonState();
-}
-
-class _TorchButtonState extends State<_TorchButton> {
-  bool isTorchOn = false;
-
-  void _toggleTorch() {
-    setState(() {
-      isTorchOn = !isTorchOn;
-    });
-    // O comando real para ligar/desligar a lanterna
-    widget.controller.toggleTorch();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.black54, // Fundo semitransparente
-        borderRadius: BorderRadius.circular(30),
-        border: Border.all(color: Colors.white, width: 2),
-      ),
-      child: IconButton(
-        icon: Icon(
-          isTorchOn ? Icons.flash_on : Icons.flash_off,
-          color: isTorchOn
-              ? _kAccentColor
-              : Colors.white, // Cor de foco no estado "ligado"
-          size: 28,
-        ),
-        onPressed: _toggleTorch,
-        tooltip: isTorchOn ? 'Desligar Lanterna' : 'Ligar Lanterna',
-      ),
-    );
-  }
-}
-
-// WIDGET: PINTURA DOS CANTOS (Mais limpo e usando a cor de destaque)
-class _QrScannerCornersPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color =
-          _kAccentColor // Cor de destaque
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round
-      ..strokeWidth = 5.0;
-
-    final cornerLength = size.width / 5;
-
-    // Top-Left
-    canvas.drawLine(const Offset(0, 0), Offset(cornerLength, 0), paint);
-    canvas.drawLine(const Offset(0, 0), Offset(0, cornerLength), paint);
-
-    // Top-Right
-    canvas.drawLine(
-      Offset(size.width - cornerLength, 0),
-      Offset(size.width, 0),
-      paint,
-    );
-    canvas.drawLine(
-      Offset(size.width, 0),
-      Offset(size.width, cornerLength),
-      paint,
-    );
-
-    // Bottom-Left
-    canvas.drawLine(
-      Offset(0, size.height),
-      Offset(cornerLength, size.height),
-      paint,
-    );
-    canvas.drawLine(
-      Offset(0, size.height),
-      Offset(0, size.height - cornerLength),
-      paint,
-    );
-
-    // Bottom-Right
-    canvas.drawLine(
-      Offset(size.width - cornerLength, size.height),
-      Offset(size.width, size.height),
-      paint,
-    );
-    canvas.drawLine(
-      Offset(size.width, size.height - cornerLength),
-      Offset(size.width, size.height),
-      paint,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) {
-    return false;
   }
 }
