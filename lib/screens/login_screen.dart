@@ -21,35 +21,76 @@ class _LoginScreenState extends State<LoginScreen> {
   static const Color focusColor = Color(
     0xFFd32f2f,
   ); // Vermelho mais claro (foco)
+  static const String _authEndpoint =
+      'https://visions.topmanager.com.br/auth/api/usuarios/entrar?identificadorDaAplicacao=LogTech_WMS&chaveDaAplicacaoExterna=uvkmv%2BQHum%2FXhF8grWeW4nKmzKFRk4UwJk74x7FnZbGC6ECvl4nbxUf3h7L%2BCGk25qSA8QOJoovrJtUJlXlsWQ%3D%3D&enderecoDeRetorno=http://qualquer';
+  static const String _authEmail = 'suporte.wms';
+  static const String _authSenha = '123456';
+  static const int _authUsuarioId = 21578;
 
   void _login() async {
     if (_formKey.currentState!.validate()) {
       setState(() => _loading = true);
 
       final username = _userController.text.trim();
-      final password = _passwordController.text.trim();
+      String? apiKey;
 
       try {
-        final response = await http.post(
-          Uri.parse('http://168.190.90.2:5000/consulta/login'),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({'usuario': username, 'senha': password}),
+        apiKey = await _obterChaveApi();
+
+        final response = await http.get(
+          Uri.parse('http://168.190.90.2:5000/consulta/usuarios'),
         );
 
-        final data = jsonDecode(response.body);
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body);
 
-        if (response.statusCode == 200 && data['success'] == true) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (_) => HomeMenuScreen(conferente: username),
-            ),
-          );
+          bool usuarioEncontrado = false;
+          String? mensagemErro;
+
+          if (data is Map<String, dynamic>) {
+            if (data['usuarios'] is List) {
+              final usuarios = (data['usuarios'] as List)
+                  .map((user) => user.toString().trim().toLowerCase());
+              usuarioEncontrado = usuarios.contains(username.toLowerCase());
+            }
+
+            mensagemErro =
+                data['message']?.toString() ?? 'Usuário não encontrado.';
+          } else if (data is List) {
+            usuarioEncontrado = data
+                .map((user) => user.toString().trim().toLowerCase())
+                .contains(username.toLowerCase());
+            if (!usuarioEncontrado) {
+              mensagemErro = 'Usuário não encontrado.';
+            }
+          } else {
+            mensagemErro = 'Formato de resposta inválido do servidor.';
+          }
+
+          if (usuarioEncontrado) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (_) => HomeMenuScreen(
+                  conferente: username,
+                  apiKey: apiKey,
+                ),
+              ),
+            );
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(mensagemErro ?? 'Usuário não encontrado.'),
+                backgroundColor: primaryColor,
+              ),
+            );
+          }
         } else {
-          // Exibição de erro otimizada para ser mais simples
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(data['message'] ?? 'Usuário ou senha inválidos'),
+              content: Text(
+                'Erro ao consultar usuários. Código: ${response.statusCode}',
+              ),
               backgroundColor: primaryColor,
             ),
           );
@@ -65,6 +106,50 @@ class _LoginScreenState extends State<LoginScreen> {
         setState(() => _loading = false);
       }
     }
+  }
+
+  Future<String> _obterChaveApi() async {
+    final response = await http.post(
+      Uri.parse(_authEndpoint),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(
+        {
+          'email': _authEmail,
+          'senha': _authSenha,
+          'usuarioID': _authUsuarioId,
+        },
+      ),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Falha ao autenticar. Código: ${response.statusCode}',
+      );
+    }
+
+    final body = jsonDecode(response.body);
+    final redirect = body['redirecionarPara']?.toString();
+    if (redirect == null || redirect.isEmpty) {
+      throw Exception('Resposta de autenticação inválida.');
+    }
+
+    try {
+      final redirectUri = Uri.parse(redirect);
+      final token = redirectUri.queryParameters.values.firstWhere(
+        (value) => value.startsWith('ey'),
+        orElse: () => '',
+      );
+      if (token.isNotEmpty) return token;
+    } catch (_) {
+      // fallback to regex below
+    }
+
+    final RegExp exp = RegExp("(ey[^\"'\\s]+)");
+    final RegExpMatch? match = exp.firstMatch(redirect);
+    if (match != null) {
+      return match.group(1)!;
+    }
+
+    throw Exception('Não foi possível extrair a chave da API.');
   }
 
   @override

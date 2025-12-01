@@ -9,10 +9,13 @@ import 'package:tracx/views/RegistroTinturaria.dart';
 import 'package:tracx/screens/LocalizacaoScreen.dart';
 import 'package:tracx/screens/HistoricoMovimentacaoScreen.dart';
 import 'package:tracx/screens/RegistroPrincipalScreen.dart';
+import 'package:tracx/screens/MapaProducaoScreen.dart';
+import 'package:tracx/screens/ConsultaMapaProducaoScreen.dart';
 
 class HomeMenuScreen extends StatefulWidget {
   final String conferente;
-  const HomeMenuScreen({super.key, required this.conferente});
+  final String? apiKey;
+  const HomeMenuScreen({super.key, required this.conferente, this.apiKey});
 
   @override
   State<HomeMenuScreen> createState() => _HomeMenuScreenState();
@@ -32,6 +35,9 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
   @override
   void initState() {
     super.initState();
+    if (widget.apiKey != null) {
+      debugPrint('[HomeMenu] API key obtida para uso seguro.');
+    }
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1200),
@@ -131,6 +137,24 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
           );
         },
       ),
+      _MenuItem(
+        title: 'Mapa de Produção',
+        icon: Icons.map_outlined,
+        color: Colors.indigo.shade600,
+        onTap: () => _navigateWithTransition(
+          context,
+          MapaProducaoScreen(),
+        ),
+      ),
+      _MenuItem(
+        title: 'Consultar Mapas',
+        icon: Icons.analytics_outlined,
+        color: Colors.deepPurple.shade600,
+        onTap: () => _navigateWithTransition(
+          context,
+          const ConsultaMapaProducaoScreen(),
+        ),
+      ),
     ];
 
     if (_isAdmin) {
@@ -188,6 +212,17 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
         ),
       );
     }
+
+    final size = MediaQuery.of(context).size;
+    final bool isPhone = size.width < 600;
+    final bool isLargeScreen = size.width >= 1000;
+    final int crossAxisCount = isLargeScreen
+        ? 4
+        : isPhone
+            ? 2
+            : 3;
+    final double gridSpacing = isPhone ? 18 : 24;
+    final double childAspectRatio = isPhone ? 0.9 : 1.05;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -284,13 +319,16 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
             ),
             Expanded(
               child: GridView.builder(
-                padding: const EdgeInsets.all(16), // Diminui o padding geral
+                padding: EdgeInsets.symmetric(
+                  horizontal: isPhone ? 16 : 32,
+                  vertical: isPhone ? 12 : 24,
+                ),
                 itemCount: menuItems.length,
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 3, // 💡 MUDANÇA 2: Define 3 colunas fixas
-                  crossAxisSpacing: 12, // Diminui o espaçamento
-                  mainAxisSpacing: 12, // Diminui o espaçamento
-                  childAspectRatio: 1.1, // Aumenta um pouco a altura do card
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: crossAxisCount,
+                  crossAxisSpacing: gridSpacing,
+                  mainAxisSpacing: gridSpacing,
+                  childAspectRatio: childAspectRatio,
                 ),
                 itemBuilder: (context, index) {
                   final item = menuItems[index];
@@ -404,7 +442,8 @@ class _MenuItemCardState extends State<_MenuItemCard>
             return Transform.scale(
               scale: _scaleAnimation.value,
               child: Container(
-                padding: const EdgeInsets.all(12), // Diminui o padding interno
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(16),
                   gradient: LinearGradient(
@@ -425,13 +464,19 @@ class _MenuItemCardState extends State<_MenuItemCard>
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    // 💡 MUDANÇA 3: Diminui o tamanho do ícone de 60 para 40
-                    Icon(widget.icon, size: 40, color: widget.color),
-                    const SizedBox(height: 8), // Diminui o espaçamento
+                    SizedBox(
+                      height: 60,
+                      width: 60,
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Icon(widget.icon, size: 40, color: widget.color),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
                     Text(
                       widget.title,
                       style: TextStyle(
-                        fontSize: 14, // Diminui o tamanho da fonte
+                        fontSize: 15,
                         fontWeight: FontWeight.bold,
                         color: Colors.grey[900],
                       ),
