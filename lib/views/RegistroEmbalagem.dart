@@ -21,10 +21,6 @@ const Color _kAccentColor = Color(0xFF3A59D1); // Azul (Ícones, Foco, QR Button
 const Color _kBackgroundColor = Color(0xFFF0F2F5); // Fundo Leve, moderno
 const Color _kInputFillColor = Colors.white; // Cor de preenchimento do input
 
-// =========================================================================
-// WIDGETS DO SCANNER (MOVIDOS PARA O TOPO PARA RESOLVER O ERRO DE TIPO)
-// =========================================================================
-
 // WIDGET: PINTURA DOS CANTOS (Mais limpo e usando a cor de destaque)
 class _QrScannerCornersPainter extends CustomPainter {
   @override
@@ -144,7 +140,7 @@ class _QrScannerPageState extends State<QrScannerPage> {
     torchEnabled: false,
   );
 
-  // 💡 AJUSTE DE NAVEGAÇÃO: Flag para evitar detecções e saídas múltiplas
+  // Flag para evitar detecções e saídas múltiplas
   bool _isDetected = false;
 
   // Função para parsear a string do QR Code e retornar o objeto QrCodeData
@@ -417,10 +413,6 @@ class _RegistroScreenState extends State<RegistroScreen> {
       final String metrosFormatado = metrosTotal == 0.0
           ? '0'
           : metrosTotal.toStringAsFixed(3).replaceAll('.', ',');
-
-      // ----------------------------------------------------
-      // 3. EXTRAÇÃO DE OUTROS CAMPOS
-      // ----------------------------------------------------
 
       final String ordem = qr.ordem == 0 ? '0' : qr.ordem.toString();
       final String peso = qr.peso == 0.0 ? '0' : qr.peso.toStringAsFixed(3);

@@ -30,6 +30,9 @@ dependencies:
   win32: ^5.14.0
   pdf: ^3.10.7
 
+  flutter_localizations: # <<<<<< Adicione esta linha
+    sdk: flutter
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

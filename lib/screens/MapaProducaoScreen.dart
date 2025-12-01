@@ -20,8 +20,7 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
   static const String _localizacaoId = '2026';
 
   final _formKey = GlobalKey<FormState>();
-  final String _baseUrl =
-      'visions.topmanager.com.br'; // host used to consult production map
+  final String _baseUrl = 'visions.topmanager.com.br';
   final String _mapaPath =
       '/Servidor_2.8.0_api/logtechwms/itemdemapadeproducao/consultar';
   bool _loading = false;
@@ -72,10 +71,7 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
             children: [
               const Text(
                 'Informações do Documento',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 16),
               Wrap(
@@ -98,10 +94,7 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
               const SizedBox(height: 24),
               const Text(
                 'Identificação da Produção',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 16),
               Wrap(
@@ -182,8 +175,10 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide.none,
           ),
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 14,
+          ),
         ),
         validator: (value) =>
             value == null || value.isEmpty ? 'Campo obrigatório' : null,
@@ -195,10 +190,7 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
     FocusScope.of(context).unfocus();
     final dataBr = _dataController.text.trim();
     if (dataBr.isEmpty) {
-      _showSnackBar(
-        'Informe a Data para consultar.',
-        isError: true,
-      );
+      _showSnackBar('Informe a Data para consultar.', isError: true);
       return;
     }
 
@@ -227,10 +219,7 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
             _showSnackBar('Dados carregados com sucesso.');
             print('[MapaProducao] Dados recebidos: $first');
           } else {
-            _showSnackBar(
-              'Estrutura da lista inesperada.',
-              isError: true,
-            );
+            _showSnackBar('Estrutura da lista inesperada.', isError: true);
             print('[MapaProducao][ERRO] Estrutura inesperada: $decoded');
           }
         } else if (decoded is Map<String, dynamic>) {
@@ -238,10 +227,7 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
           _showSnackBar('Dados carregados com sucesso.');
           print('[MapaProducao] Dados recebidos: $decoded');
         } else {
-          _showSnackBar(
-            'Retorno inesperado do servidor.',
-            isError: true,
-          );
+          _showSnackBar('Retorno inesperado do servidor.', isError: true);
           print('[MapaProducao][ERRO] Retorno inesperado: $decoded');
         }
       } else {
