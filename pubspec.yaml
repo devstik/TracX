@@ -29,6 +29,7 @@ dependencies:
   hive_flutter: ^1.1.0
   win32: ^5.14.0
   pdf: ^3.10.7
+  flutter_zxing: ^2.2.1
 
   flutter_localizations: # <<<<<< Adicione esta linha
     sdk: flutter

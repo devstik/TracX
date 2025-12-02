@@ -377,6 +377,7 @@ class _RegistroScreenState extends State<RegistroScreen> {
   }
 
   // 💡 AJUSTE PRINCIPAL: Função para escanear QR Code com tratamento de valores vazios/zero
+  // 💡 AJUSTE PRINCIPAL: Função para escanear QR Code com tratamento de valores vazios/zero
   Future<void> _scanQR() async {
     // 1. Chama a tela de scanner
     final qr = await Navigator.push<QrCodeData>(
@@ -422,11 +423,16 @@ class _RegistroScreenState extends State<RegistroScreen> {
       final String artigo = _safeString(qr.artigo);
       final String cor = _safeString(qr.cor);
       final String volumeProg = _safeString(qr.volumeProg);
-      final String caixa = _safeString(qr.caixa);
       final String dataTingimento = _safeString(qr.dataTingimento);
 
       // NumCorte - Corrigido para usar _safeString e a propriedade correta
       final String numCorte = _safeString(qr.numCorte);
+
+      // NOVO AJUSTE: Garante que 'caixa' seja '0' se estiver vazio no QR Code.
+      String caixa = _safeString(qr.caixa);
+      if (caixa.isEmpty) {
+        caixa = '0';
+      }
 
       // Print de Verificação do NumCorte
       print(
@@ -444,7 +450,7 @@ class _RegistroScreenState extends State<RegistroScreen> {
         _quantidadeController.text = quantidade; // 5
         _pesoController.text = peso;
         _volumeProgController.text = volumeProg;
-        _caixaController.text = caixa;
+        _caixaController.text = caixa; // Usa o valor ajustado
         _metrosController.text =
             metrosFormatado; // Resultado do cálculo (6,160)
         _dataTingimentoController.text = dataTingimento;
