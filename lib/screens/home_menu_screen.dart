@@ -141,10 +141,7 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
         title: 'Mapa de Produção',
         icon: Icons.map_outlined,
         color: Colors.indigo.shade600,
-        onTap: () => _navigateWithTransition(
-          context,
-          MapaProducaoScreen(),
-        ),
+        onTap: () => _navigateWithTransition(context, MapaProducaoScreen()),
       ),
       _MenuItem(
         title: 'Consultar Mapas',
@@ -219,8 +216,8 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
     final int crossAxisCount = isLargeScreen
         ? 4
         : isPhone
-            ? 2
-            : 3;
+        ? 2
+        : 3;
     final double gridSpacing = isPhone ? 18 : 24;
     final double childAspectRatio = isPhone ? 0.9 : 1.05;
 
@@ -442,8 +439,10 @@ class _MenuItemCardState extends State<_MenuItemCard>
             return Transform.scale(
               scale: _scaleAnimation.value,
               child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 20,
+                ),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(16),
                   gradient: LinearGradient(

@@ -1,10 +1,12 @@
 import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-// ⚠️ IMPORTAÇÃO CORRIGIDA PARA O FORMATO RELATIVO:
+import 'package:sqflite/sqflite.dart'; // Importação necessária para o SQLite
+// Importações Corrigidas para o formato relativo:
+import '../models/estoque_item.dart'; // Certifique-se de que este arquivo existe
+import '../services/estoque_db_helper.dart'; // Certifique-se de que este arquivo existe
 import '../services/auth_service.dart';
 // IMPORTAÇÃO DA NOVA TELA DO LEITOR (usando flutter_zxing)
 import 'qr_scanner_screen.dart';
@@ -24,11 +26,14 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
   static const String _centroCustosId = '13';
   static const String _localizacaoId = '2026';
 
-  // ✅ NOVO: Mapeamento para converter o NOME do turno para o ID numérico (para o Payload)
+  // ✅ Instância do DB Helper
+  final EstoqueDbHelper _dbHelper = EstoqueDbHelper();
+
+  // Mapeamento para converter o NOME do turno para o ID numérico (para o Payload)
   static const Map<String, String> _turnoNomeParaIdMap = {
-    'Manhã': '3', // Exemplo de ID
-    'Tarde': '4', // Exemplo de ID
-    'Noite': '6', // Exemplo de ID
+    'Manhã': '3',
+    'Tarde': '4',
+    'Noite': '6',
   };
 
   // Endpoint de Consulta para Objeto/Detalhe
@@ -59,18 +64,135 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
   void initState() {
     super.initState();
     _dataController.text = DateFormat('dd/MM/yyyy').format(DateTime.now());
-    _determinarTurnoAtual(); // ✅ Chama a função para preencher o Turno
+    _determinarTurnoAtual();
+    // ✅ NOVO: Inicia a consulta e cache do estoque ao iniciar a tela
+    _inicializarEstoqueLocal();
   }
 
-  // ✅ NOVO: Função para determinar o turno e preencher o controlador
+  // --- FUNÇÕES DE CONTROLE DE ESTOQUE (SQLite) ---
+
+  // ✅ Função para consultar a API (TUDO) e popular o SQLite (Cache Inicial)
+  Future<void> _inicializarEstoqueLocal() async {
+    print(
+      '[DB] Inicializando Estoque Local: Consultando API e salvando no DB.',
+    );
+    final token = await AuthService.obterTokenAplicacao();
+
+    if (token == null) {
+      print('[ERRO_TOKEN] Falha na autenticação ao inicializar DB.');
+      // Continua, mas sem dados de estoque
+      return;
+    }
+
+    try {
+      // 1. Consulta a API sem filtros para obter a lista completa
+      final uri = Uri.https(_baseUrl, _consultaEstoquePath, {
+        'empresaID': _empresaId,
+      });
+
+      final response = await http.get(
+        uri,
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        List<dynamic> itensJson = [];
+        if (decoded is List) {
+          itensJson = decoded;
+        } else if (decoded is Map<String, dynamic>) {
+          itensJson = [decoded];
+        }
+
+        // 2. Converte JSON para o modelo EstoqueItem, filtrando nulos
+        final List<EstoqueItem> estoqueItens = itensJson
+            .where(
+              (e) =>
+                  e is Map && e['objetoID'] != null && e['detalheID'] != null,
+            )
+            .map((e) => EstoqueItem.fromMap(e as Map<String, dynamic>))
+            .toList();
+
+        // 3. Salva a lista INTEIRA no SQLite
+        await _dbHelper.insertAllEstoque(estoqueItens);
+        print(
+          '[DB] ${estoqueItens.length} itens de estoque salvos/atualizados no SQLite.',
+        );
+      } else {
+        print(
+          '[ERRO_HTTP_INIT] HTTP ${response.statusCode}: Falha ao carregar estoque inicial. ${response.body}',
+        );
+        _showSnackBar(
+          'Falha ao carregar estoque inicial (código: ${response.statusCode}).',
+          isError: true,
+        );
+      }
+    } catch (e) {
+      print('[ERRO_REDE_INIT] Falha na inicialização de rede do estoque: $e');
+      _showSnackBar(
+        'Falha de rede ao carregar o estoque inicial.',
+        isError: true,
+      );
+    }
+  }
+
+  // ✅ FUNÇÃO REVISADA: Consulta TUDO no SQLite (sem fallback para API)
+  Future<void> _consultarDetalheDoObjeto(String cdObj) async {
+    final int? objetoID = int.tryParse(cdObj);
+
+    if (objetoID == null) {
+      _showSnackBar('Código do Objeto inválido no QR Code.', isError: true);
+      return;
+    }
+
+    // --- 1. BUSCA NO SQLITE (CACHE RÁPIDO) ---
+    print('[CONSULTA] Tentando buscar ObjetoID=$objetoID no SQLite...');
+    EstoqueItem? itemLocal = await _dbHelper.getEstoqueItem(objetoID);
+
+    if (itemLocal != null) {
+      print('[CONSULTA] Item encontrado no SQLite. Preenchendo campos.');
+      _preencherCamposComItem(itemLocal);
+      _showSnackBar('Detalhes do objeto carregados do cache local.');
+      return; // Sucesso: Item encontrado, sai da função.
+    }
+
+    // --- 2. SEM FALLBACK: Se não encontrou, avisa o usuário ---
+    print('[CONSULTA] Item ObjetoID=$objetoID NÃO encontrado no cache local.');
+    _showSnackBar(
+      'Objeto $cdObj não encontrado no estoque local. Verifique se o item existe e se o cache foi atualizado.',
+      isError: true,
+    );
+  }
+
+  // Função auxiliar para preencher os campos a partir do modelo EstoqueItem
+  void _preencherCamposComItem(EstoqueItem item) {
+    setState(() {
+      // Associa os IDs numéricos para o payload final (_salvarMapa)
+      _objetoID = item.objetoID;
+      _detalheID = item.detalheID;
+
+      // Preenche os campos de objeto e detalhe (com a descrição/nome)
+      _produtoController.text = item.objeto; // Objeto (descrição)
+      _loteController.text = item.detalhe; // Detalhe (descrição)
+    });
+
+    print(
+      '[PREENCHIMENTO] Dados preenchidos: ObjetoID=$_objetoID, DetalheID=$_detalheID',
+    );
+  }
+
+  // --- FUNÇÕES DE UI E OUTROS CONTROLES ---
+
+  // Função para determinar o turno e preencher o controlador
   void _determinarTurnoAtual() {
     final now = DateTime.now();
     final hour = now.hour;
 
     String turnoNome;
 
-    // Definição dos turnos com base na hora atual
-    // Ajuste as horas conforme a sua necessidade real (os IDs são de exemplo acima)
     if (hour >= 6 && hour < 14) {
       turnoNome = 'Manhã'; // ID: 3
     } else if (hour >= 14 && hour < 22) {
@@ -102,12 +224,10 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
 
     print('[FLUXO] Iniciando leitor de QR Code...');
 
-    // 1. Navega para a tela do scanner e espera pelo resultado (usando flutter_zxing)
     final result = await Navigator.of(
       context,
     ).push(MaterialPageRoute(builder: (context) => const QrScannerScreen()));
 
-    // 2. Processa o resultado retornado
     if (result != null && result is String && result.isNotEmpty) {
       print('[FLUXO] Resultado do scanner recebido: $result');
       final qrData = _parseQrCodeJson(result);
@@ -116,14 +236,8 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
         final String? cdObj = qrData['CdObj']?.toString();
 
         if (cdObj != null && cdObj.isNotEmpty) {
-          print(
-            '[FLUXO] CdObj extraído: $cdObj. Será usado como ObjetoID para consulta.',
-          );
-
-          // 3. Consulta a API para buscar na lista
-          await _consultarDetalheDoObjeto(cdObj);
+          await _consultarDetalheDoObjeto(cdObj); // Usa a consulta no SQLite
         } else {
-          print('[ERRO_QR] CdObj vazio ou nulo no JSON lido.');
           _showSnackBar(
             'QR Code lido, mas CdObj está vazio ou inválido.',
             isError: true,
@@ -131,7 +245,6 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
         }
       }
     } else {
-      print('[FLUXO] Leitura de QR Code cancelada ou sem resultado.');
       _showSnackBar(
         'Leitura de QR Code cancelada ou sem resultado.',
         isError: true,
@@ -141,16 +254,12 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
     setState(() => _loading = false);
   }
 
-  // FUNÇÃO PARA ANALISAR O JSON DO QR CODE (COM CORREÇÃO PARA O ERRO DA ASPA EXTRA)
+  // FUNÇÃO PARA ANALISAR O JSON DO QR CODE
   Map<String, dynamic>? _parseQrCodeJson(String rawQrCode) {
     String cleanedQrCode = rawQrCode.trim();
-    print('CONTEÚDO LIDO: $cleanedQrCode');
-
-    // 💡 WORKAROUND: Tenta corrigir o JSON inválido como: {"CdObj":95857"}
+    // WORKAROUND: Tenta corrigir o JSON inválido
     if (cleanedQrCode.endsWith('"}') && cleanedQrCode.contains(':')) {
       int lastQuoteIndex = cleanedQrCode.lastIndexOf('"');
-
-      // Verifica se a aspa é a penúltima antes do '}' e se há um número antes dela
       if (lastQuoteIndex == cleanedQrCode.length - 2) {
         String potentialNumber = cleanedQrCode.substring(
           cleanedQrCode.lastIndexOf(':') + 1,
@@ -161,9 +270,6 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
           cleanedQrCode =
               cleanedQrCode.substring(0, lastQuoteIndex) +
               cleanedQrCode.substring(lastQuoteIndex + 1);
-          print(
-            '[ALERTA_JSON_CORRIGIDO] String QR Code corrigida para: $cleanedQrCode',
-          );
         }
       }
     }
@@ -173,110 +279,145 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
       if (decoded is Map<String, dynamic> && decoded.containsKey('CdObj')) {
         return decoded;
       }
-      print(
-        '[ERRO_JSON] QR Code não contém o formato JSON esperado com chave "CdObj".',
-      );
       _showSnackBar(
         'QR Code lido não contém o formato JSON esperado.',
         isError: true,
       );
       return null;
     } catch (e) {
-      print('[ERRO_JSON] QR Code lido não é um JSON válido. Erro: $e');
       _showSnackBar('QR Code lido não é um JSON válido.', isError: true);
       return null;
     }
   }
 
-  // FUNÇÃO PARA CONSULTAR O DETALHE NA API (SEM FILTRO NA URL E BUSCANDO NA LISTA)
-  Future<void> _consultarDetalheDoObjeto(String cdObj) async {
+  // FUNÇÃO DE SALVAR
+  Future<void> _salvarMapa() async {
+    FocusScope.of(context).unfocus();
+
+    // O campo Turno continua lendo o valor do controller (que é preenchido automaticamente)
+    final String turnoNome = _turnoController.text.trim();
+    final String? turnoId = _turnoNomeParaIdMap[turnoNome];
+
+    if (_dataController.text.isEmpty ||
+        _ordemProducaoController.text.isEmpty ||
+        _unidadeMedidaController.text.isEmpty ||
+        _quantidadeController.text.isEmpty ||
+        _produtoController.text.isEmpty ||
+        _loteController.text.isEmpty) {
+      _showSnackBar(
+        'Por favor, preencha todos os campos obrigatórios.',
+        isError: true,
+      );
+      return;
+    }
+
+    if (turnoId == null) {
+      _showSnackBar('O Turno preenchido é inválido para envio.', isError: true);
+      return;
+    }
+
+    // Nota: O fluxo atual permite que os campos 'Objeto' e 'Detalhe' sejam editados
+    // manualmente, mas o código de salvamento AINDA DEPENDE dos IDs numéricos
+    // obtidos pelo QR Code (_objetoID e _detalheID).
+    // Se a intenção é permitir a edição e o envio, mesmo sem um QR Code,
+    // será necessário obter esses IDs de outra forma (por exemplo, buscando
+    // o ID com base no NOME digitado pelo usuário).
+    // Para esta alteração, vamos manter a lógica original: os IDs são OBRIGATÓRIOS.
+    if (_objetoID == null || _detalheID == null) {
+      _showSnackBar(
+        'Os IDs do Objeto e Detalhe não foram definidos. Obrigatoriamente, leia o QR Code.',
+        isError: true,
+      );
+      return;
+    }
+
+    final double? quantidade = double.tryParse(
+      _quantidadeController.text.trim().replaceAll(',', '.'), // Permite vírgula
+    );
+    if (quantidade == null) {
+      _showSnackBar('A quantidade informada é inválida.', isError: true);
+      return;
+    }
+
+    final payload = {
+      'empresaId': _empresaId,
+      'operacaoId': _operacaoId,
+      'tipoDeDocumentoId': _tipoDocumentoId,
+      'finalidadeId': _finalidadeId,
+      'centroDeCustosId': _centroCustosId,
+      'localizacaoId': _localizacaoId,
+      'data': _parseDataBrToIso(_dataController.text.trim()) ?? '',
+      'turnoId': turnoId,
+      'ordemProducaoId': _ordemProducaoController.text.trim(),
+      // Os IDs são usados no payload, não o texto digitado (requerimento de QR Code)
+      'produtoId': _objetoID.toString(),
+      'loteId': _detalheID.toString(),
+      'unidadeDeMedida': _unidadeMedidaController.text.trim(),
+      'quantidade': quantidade.toString(),
+    };
+
+    setState(() => _loading = true);
     final token = await AuthService.obterTokenAplicacao();
 
     if (token == null) {
-      print('[ERRO_TOKEN] Falha na autenticação. Token não obtido.');
-      _showSnackBar('Falha na autenticação. Token não obtido.', isError: true);
+      setState(() => _loading = false);
+      _showSnackBar('Falha na autenticação ao salvar.', isError: true);
       return;
     }
 
     try {
-      // 1. Consulta a API sem o objetoID como filtro na URL (consulta ampla)
-      final uri = Uri.https(_baseUrl, _consultaEstoquePath, {
-        'empresaID': _empresaId,
-        // Remove 'objetoID': cdObj, para realizar a consulta completa
-      });
+      final uri = Uri.https(_baseUrl, _mapaPath);
 
-      print('[CONSULTA] URI de Consulta: $uri');
-
-      final response = await http.get(
+      final response = await http.post(
         uri,
         headers: {
-          'Authorization': 'Bearer $token', // Envia o token de autenticação
+          'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
         },
+        body: jsonEncode(payload),
       );
 
-      if (response.statusCode == 200) {
-        print('[CONSULTA] Resposta HTTP 200 recebida.');
-        final decoded = jsonDecode(response.body);
-
-        List<dynamic> itens = [];
-        if (decoded is List) {
-          itens = decoded;
-        } else if (decoded is Map<String, dynamic>) {
-          // Trata o caso de um único item ser retornado como mapa, transformando em lista
-          itens = [decoded];
-        }
-
-        // 2. Iterar e procurar o item na lista onde 'objetoID' coincide com o CdObj lido
-        final itemData = itens.firstWhere(
-          // O critério de busca é item['objetoID'] == cdObj (lido do QR Code)
-          (item) =>
-              item is Map<String, dynamic> &&
-              item['objetoID']?.toString() == cdObj,
-          orElse: () => null,
-        );
-
-        // 3. Processar o item encontrado
-        if (itemData != null && itemData is Map<String, dynamic>) {
-          setState(() {
-            // Associa os IDs numéricos para o payload final (_salvarMapa)
-            _objetoID = itemData['objetoID'] as int?;
-            _detalheID = itemData['detalheID'] as int?;
-
-            // Preenche SOMENTE os campos de objeto e detalhe (com a descrição/nome)
-            _produtoController.text =
-                itemData['objeto']?.toString() ??
-                ''; // Objeto (descrição) -> _produtoController
-            _loteController.text =
-                itemData['detalhe']?.toString() ??
-                ''; // Detalhe (descrição) -> _loteController
-
-            // ⚠️ NÃO PREENCHE _unidadeMedidaController e _quantidadeController
-          });
-
-          print(
-            '[CONSULTA] Dados preenchidos: ObjetoID=$_objetoID, DetalheID=$_detalheID',
-          );
-          _showSnackBar('Detalhes do objeto carregados com sucesso.');
-        } else {
-          print('[CONSULTA] Item não encontrado na lista com objetoID=$cdObj.');
-          _showSnackBar(
-            'Objeto não encontrado na lista retornada pela API com o código $cdObj.',
-            isError: true,
-          );
-        }
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        _showSnackBar('Mapa de produção salvo com sucesso!');
+        // Limpar campos
+        _ordemProducaoController.clear();
+        _unidadeMedidaController.clear();
+        _quantidadeController.clear();
+        // Não limpamos _produtoController e _loteController para permitir
+        // o fluxo de repetição, como estava no código original.
       } else {
-        print('[ERRO_HTTP] HTTP ${response.statusCode}: ${response.body}');
+        print('[ERRO_SALVAR] HTTP ${response.statusCode}: ${response.body}');
         _showSnackBar(
-          'Erro ${response.statusCode} ao consultar a lista de detalhes.',
+          'Erro ${response.statusCode} ao salvar. ${jsonDecode(response.body)['Message'] ?? ''}',
           isError: true,
         );
       }
     } catch (e) {
-      print('[ERRO_REDE] Falha na consulta de rede: $e');
-      _showSnackBar('Falha de rede na consulta: $e', isError: true);
+      _showSnackBar('Falha de rede ao salvar: $e', isError: true);
+    } finally {
+      setState(() => _loading = false);
     }
   }
+
+  void _showSnackBar(String message, {bool isError = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? Colors.red.shade700 : Colors.green.shade600,
+      ),
+    );
+  }
+
+  String? _parseDataBrToIso(String dataBr) {
+    try {
+      final parsed = DateFormat('dd/MM/yyyy').parseStrict(dataBr);
+      return DateFormat("yyyy-MM-dd'T'00:00:00").format(parsed);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // --- WIDGETS DE UI ---
 
   @override
   Widget build(BuildContext context) {
@@ -290,9 +431,7 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.qr_code_scanner, color: Colors.white),
-            onPressed: _loading
-                ? null
-                : _iniciarLeituraQrCode, // Chama a função que inicia o scanner
+            onPressed: _loading ? null : _iniciarLeituraQrCode,
             tooltip: 'Ler QR Code e Consultar Detalhes',
           ),
         ],
@@ -318,13 +457,12 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
                     controller: _dataController,
                     hint: '24/11/2025',
                     keyboardType: TextInputType.datetime,
+                    readOnly: false, // Mantido editável (padrão)
                   ),
                   _buildField(
                     label: 'Turno',
                     controller: _turnoController,
-                    readOnly:
-                        true, // ✅ Adicionado para ser apenas informativo e preenchido
-                    // Removido: keyboardType: TextInputType.number,
+                    readOnly: true, // ÚNICO CAMPO NÃO EDITÁVEL
                   ),
                 ],
               ),
@@ -342,22 +480,24 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
                     label: 'Ordem de Produção',
                     controller: _ordemProducaoController,
                     keyboardType: TextInputType.number,
-                    // Deixado para preenchimento manual ou outro fluxo
+                    readOnly: false, // Editável
                   ),
                   _buildField(
                     label: 'Objeto',
                     controller: _produtoController,
-                    readOnly: true, // Preenchido pela API
+                    readOnly:
+                        false, // AGORA EDITÁVEL (Removido 'readOnly: true')
                   ),
                   _buildField(
                     label: 'Detalhe',
                     controller: _loteController,
-                    readOnly: true, // Preenchido pela API
+                    readOnly:
+                        false, // AGORA EDITÁVEL (Removido 'readOnly: true')
                   ),
                   _buildField(
                     label: 'Unidade de Medida',
                     controller: _unidadeMedidaController,
-                    // Deixado para preenchimento manual ou outro fluxo
+                    readOnly: false, // Editável
                   ),
                   _buildField(
                     label: 'Quantidade',
@@ -365,7 +505,7 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
                     keyboardType: const TextInputType.numberWithOptions(
                       decimal: true,
                     ),
-                    // Deixado para preenchimento manual ou outro fluxo
+                    readOnly: false, // Editável
                   ),
                 ],
               ),
@@ -407,14 +547,17 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
     required TextEditingController controller,
     TextInputType? keyboardType,
     String? hint,
-    bool readOnly = false,
+    bool readOnly = false, // Padrão 'false' para permitir edição
   }) {
+    // ... (restante do código do _buildField é o mesmo, mas a lógica de chamada
+    // na função build foi alterada) ...
     return ConstrainedBox(
       constraints: const BoxConstraints(minWidth: 280, maxWidth: 380),
       child: TextFormField(
         controller: controller,
         keyboardType: keyboardType,
-        readOnly: readOnly,
+        readOnly:
+            readOnly, // Usa o valor passado, que é 'true' apenas para o Turno
         decoration: InputDecoration(
           labelText: label,
           hintText: hint,
@@ -429,202 +572,21 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
             vertical: 14,
           ),
         ),
-        // A Ordem de Produção é o único campo não preenchido que deve ser validado
+        // A validação de Objeto/Detalhe agora só verifica se estão vazios,
+        // mas o salvamento ainda exige os IDs (_objetoID e _detalheID)
+        // obtidos pelo QR Code.
         validator: (value) {
-          // A validação agora não exige que Turno, Ordem de Produção ou Quantidade sejam preenchidos
-          // se forem preenchidos automaticamente (Turno) ou forem opcionais (outros).
-          // Manteremos a validação original do seu código:
-          if (controller == _ordemProducaoController ||
-              controller == _quantidadeController ||
-              controller == _turnoController) {
-            return null; // Não exige validação para campos a serem preenchidos pelo usuário
+          if (controller == _produtoController ||
+              controller == _loteController ||
+              controller == _dataController ||
+              controller == _ordemProducaoController ||
+              controller == _unidadeMedidaController ||
+              controller == _quantidadeController) {
+            return value == null || value.isEmpty ? 'Campo obrigatório' : null;
           }
-          return value == null || value.isEmpty ? 'Campo obrigatório' : null;
+          return null;
         },
       ),
     );
-  }
-
-  Future<void> _consultarMapa() async {
-    FocusScope.of(context).unfocus();
-    final dataBr = _dataController.text.trim();
-    if (dataBr.isEmpty) {
-      _showSnackBar('Informe a Data para consultar.', isError: true);
-      return;
-    }
-
-    final dataIso = _parseDataBrToIso(dataBr);
-    if (dataIso == null) {
-      _showSnackBar('Data inválida. Use o formato dd/MM/yyyy.', isError: true);
-      return;
-    }
-
-    setState(() => _loading = true);
-    try {
-      final uri = Uri.https(_baseUrl, _mapaPath, {
-        'empresaID': _empresaId,
-        'tipoDeDocumentoID': _tipoDocumentoId,
-        'data': dataIso,
-      });
-
-      print('[MapaProducao] Consultando: $uri');
-      final response = await http.get(uri);
-      if (response.statusCode == 200) {
-        final decoded = jsonDecode(response.body);
-        if (decoded is List && decoded.isNotEmpty) {
-          final first = decoded.first;
-          if (first is Map<String, dynamic>) {
-            _preencherCampos(first);
-            _showSnackBar('Dados carregados com sucesso.');
-            print('[MapaProducao] Dados recebidos: $first');
-          } else {
-            _showSnackBar('Estrutura da lista inesperada.', isError: true);
-            print('[MapaProducao][ERRO] Estrutura inesperada: $decoded');
-          }
-        } else if (decoded is Map<String, dynamic>) {
-          _preencherCampos(decoded);
-          _showSnackBar('Dados carregados com sucesso.');
-          print('[MapaProducao] Dados recebidos: $decoded');
-        } else {
-          _showSnackBar('Retorno inesperado do servidor.', isError: true);
-          print('[MapaProducao][ERRO] Retorno inesperado: $decoded');
-        }
-      } else {
-        print(
-          '[MapaProducao][ERRO] HTTP ${response.statusCode}: ${response.body}',
-        );
-        _showSnackBar(
-          'Erro ${response.statusCode} ao consultar o mapa.',
-          isError: true,
-        );
-      }
-    } catch (e) {
-      print('[MapaProducao][ERRO] Falha na consulta: $e');
-      _showSnackBar('Falha na consulta: $e', isError: true);
-    } finally {
-      if (mounted) {
-        setState(() => _loading = false);
-      }
-    }
-  }
-
-  void _preencherCampos(Map<String, dynamic> data) {
-    void setField(TextEditingController controller, List<String> keys) {
-      for (final key in keys) {
-        if (data.containsKey(key) && data[key] != null) {
-          controller.text = data[key].toString();
-          return;
-        }
-      }
-    }
-
-    // Mantido para a função _consultarMapa() original, se for usada.
-    setField(_dataController, ['data']);
-    // Ao consultar, se vier o ID, ele preenche o campo Turno com o ID.
-    // Se você sempre quiser o NOME, mesmo após a consulta, é necessário um mapeamento reverso.
-    setField(_turnoController, ['turnoId', 'turnoID']);
-    setField(_ordemProducaoController, ['ordemProducaoId', 'ordemProducaoID']);
-    setField(_produtoController, ['produtoId', 'produtoID']);
-    setField(_loteController, ['loteId', 'loteID']);
-    setField(_unidadeMedidaController, ['unidadeDeMedida']);
-    setField(_quantidadeController, ['quantidade']);
-  }
-
-  // FUNÇÃO DE SALVAR
-  Future<void> _salvarMapa() async {
-    FocusScope.of(context).unfocus();
-
-    // 1. Obtém o NOME do turno preenchido automaticamente (ex: 'Manhã')
-    final String turnoNome = _turnoController.text.trim();
-
-    // 2. Tenta obter o ID numérico a partir do nome
-    final String? turnoId = _turnoNomeParaIdMap[turnoNome];
-
-    // Validação básica dos campos
-    if (_dataController.text.isEmpty ||
-        turnoNome
-            .isEmpty || // Garante que o campo foi preenchido (automaticamente ou manualmente)
-        _ordemProducaoController.text.isEmpty ||
-        _unidadeMedidaController.text.isEmpty ||
-        _quantidadeController.text.isEmpty) {
-      _showSnackBar(
-        'Por favor, preencha todos os campos obrigatórios (Data, Turno, Ordem, UM, Quantidade).',
-        isError: true,
-      );
-      return;
-    }
-
-    // 3. Validação do ID do Turno
-    if (turnoId == null) {
-      print(
-        '[ERRO_SALVAR] Nome do turno ("$turnoNome") não mapeado para um ID.',
-      );
-      _showSnackBar(
-        'O Turno preenchido é inválido para envio (Nome não encontrado no mapeamento).',
-        isError: true,
-      );
-      return;
-    }
-
-    // Verifica se os IDs do produto/detalhe foram obtidos pela consulta do QR Code
-    if (_objetoID == null || _detalheID == null) {
-      print(
-        '[ERRO_SALVAR] IDs de Objeto/Detalhe estão nulos. Consulta falhou?',
-      );
-      _showSnackBar(
-        'Obrigatório ler o QR Code para obter os IDs do Objeto e Detalhe.',
-        isError: true,
-      );
-      return;
-    }
-
-    // Tenta validar a quantidade como número
-    final double? quantidade = double.tryParse(
-      _quantidadeController.text.trim(),
-    );
-    if (quantidade == null) {
-      _showSnackBar('A quantidade informada é inválida.', isError: true);
-      return;
-    }
-
-    // 4. Monta o payload usando o ID numérico do Turno
-    final payload = {
-      'empresaId': _empresaId,
-      'operacaoId': _operacaoId,
-      'tipoDeDocumentoId': _tipoDocumentoId,
-      'finalidadeId': _finalidadeId,
-      'centroDeCustosId': _centroCustosId,
-      'localizacaoId': _localizacaoId,
-      'data': _parseDataBrToIso(_dataController.text.trim()) ?? '',
-      'turnoId': turnoId, // ✅ USANDO O ID NUMÉRICO
-      'ordemProducaoId': _ordemProducaoController.text.trim(),
-      // Usando os IDs numéricos OBTIDOS (objetoID e detalheID)
-      'produtoId': _objetoID.toString(),
-      'loteId': _detalheID.toString(),
-      'unidadeDeMedida': _unidadeMedidaController.text.trim(),
-      'quantidade': quantidade.toString(), // Usa o valor numérico validado
-    };
-
-    print('[SALVAR] Payload preparado para envio: $payload');
-    _showSnackBar('Payload pronto para envio, IDs numéricos inclusos.');
-
-  }
-
-  void _showSnackBar(String message, {bool isError = false}) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: isError ? Colors.red.shade700 : Colors.green.shade600,
-      ),
-    );
-  }
-
-  String? _parseDataBrToIso(String dataBr) {
-    try {
-      final parsed = DateFormat('dd/MM/yyyy').parseStrict(dataBr);
-      return DateFormat("yyyy-MM-dd'T'00:00:00").format(parsed);
-    } catch (_) {
-      return null;
-    }
   }
 }

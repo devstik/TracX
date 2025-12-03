@@ -4,18 +4,19 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 
-/// 1. CONFIGURAÇÃO E MODELO DE DADOS
+// **********************************************
+// 1. CONFIGURAÇÃO E MODELO DE DADOS
 // **********************************************
 
-/// Define todas as constantes, URLs e credenciais da aplicação.
-abstract class AppConfig {
+/// Define todas as constantes de configuração, URLs e credenciais.
+abstract class AppConstants {
   // Configurações Comuns
   static const String empresaId = '2';
   static const int operacaoIdFiltro = 142;
 
   // --- WMS (MAPAS DE PRODUÇÃO) ---
   static const String authEndpointWMS =
-      'https://visions.topmanager.com.br/auth/api/usuarios/entrar?identificadorDaAplicacao=LogTech_WMS&chaveDaAplicacaoExterna=uvkmv%2BQHum%2FXhF8grWeW4nKmzKFRk4UwJk74x7FnZbGC6ECvl4nbxUf3h7L%2BCGk25qqSA8QOJoovrJtUJlXlsWQ%3D%3D&enderecoDeRetorno=http://qualquer';
+      'https://visions.topmanager.com.br/auth/api/usuarios/entrar?identificadorDaAplicacao=LogTech_WMS&chaveDaAplicacaoExterna=uvkmv%2BQHum%2FXhF8grWeW4nKmzKFRk4UwJk74x7FnZbGC6ECvl4nbxUf3h7L%2BCGk25qSA8QOJoovrJtUJlXlsWQ%3D%3D&enderecoDeRetorno=http://qualquer';
   static const String authEmailWMS = 'suporte.wms';
   static const String authSenhaWMS = '123456';
   static const int authUsuarioIdWMS = 21578;
@@ -33,19 +34,30 @@ abstract class AppConfig {
   static const String baseUrlProd = 'visions.topmanager.com.br';
   static const String prodPath =
       '/Servidor_2.7.0_api/forcadevendas/lancamentodeestoque/consultar';
+
+  // --- CORES TEMA ---
+  static final Color primaryColor = Colors.red.shade700;
+  static final Color secondaryColor = Colors.grey.shade600;
+  static final Color backgroundColor = Colors.grey.shade50;
 }
 
-/// Variáveis globais para cache e autenticação (armazenadas em memória).
-abstract class GlobalState {
-  // Armazena apenas o nome do objeto
-  static final Map<int, String> produtosCache = {};
-  // Armazena o detalhe/lote
-  static final Map<int, String> detalhesCache = {};
+/// Gerencia o cache de dados em memória para evitar consultas repetidas.
+abstract class CacheManager {
+  // Armazena o nome do produto (objeto)
+  static final Map<int, String> produtosNomeCache = {};
+  // Armazena o detalhe/lote do produto
+  static final Map<int, String> produtosDetalheCache = {};
 
   static String? prodApiKey; // Chave de API para o endpoint de produtos
+
+  static void clear() {
+    produtosNomeCache.clear();
+    produtosDetalheCache.clear();
+    prodApiKey = null;
+  }
 }
 
-/// Modelo de dados para um resultado de mapa (uma data e seus registros).
+/// Modelo de dados simplificado para o resultado da consulta por data.
 class MapaResultado {
   final DateTime data;
   final List<Map<String, dynamic>> registros;
@@ -53,11 +65,21 @@ class MapaResultado {
   const MapaResultado({required this.data, required this.registros});
 }
 
-/// 2. SERVIÇO DE API
+// **********************************************
+// 2. SERVIÇO DE API
 // **********************************************
 
-/// Classe responsável por todas as interações com a API.
-class ApiService {
+/// Exceção customizada para erros de API.
+class ApiException implements Exception {
+  final String message;
+  ApiException(this.message);
+
+  @override
+  String toString() => message;
+}
+
+/// Classe responsável por todas as interações com as APIs.
+abstract class ApiService {
   /// Obtém uma chave de API (Bearer Token) através do processo de autenticação.
   static Future<String> authenticate({
     required String endpoint,
@@ -76,35 +98,37 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception('Falha na autenticação (Status: ${response.statusCode})');
+      throw ApiException(
+        'Falha na autenticação (Status: ${response.statusCode})',
+      );
     }
 
     final body = jsonDecode(response.body);
     final redirect = body['redirecionarPara']?.toString();
 
-    // Regex para extrair o JWT (token) do token de redirecionamento.
+    // Regex para extrair o JWT (token)
     final RegExp exp = RegExp("(ey[^\"'\\s]+)");
-    final RegExpMatch? match = exp.firstMatch(redirect!);
+    final RegExpMatch? match = exp.firstMatch(redirect ?? '');
 
     if (match != null) {
       return match.group(1)!;
     }
 
-    throw Exception('Não foi possível extrair a chave da API.');
+    throw ApiException('Não foi possível extrair a chave da API.');
   }
 
-  /// Consulta o endpoint de Força de Vendas e armazena os nomes e detalhes dos produtos no cache.
-  static Future<void> consultarEArmazenarNomes(Set<int> produtosIds) async {
-    if (GlobalState.prodApiKey == null) return;
+  /// Consulta o endpoint de Produtos e armazena nomes e detalhes no cache.
+  static Future<void> cacheProductDetails(Set<int> produtosIds) async {
+    if (CacheManager.prodApiKey == null) return;
 
-    final uri = Uri.https(AppConfig.baseUrlProd, AppConfig.prodPath, {
-      'empresaID': AppConfig.empresaId,
+    final uri = Uri.https(AppConstants.baseUrlProd, AppConstants.prodPath, {
+      'empresaID': AppConstants.empresaId,
     });
 
     try {
       final http.Response response = await http.get(
         uri,
-        headers: {'Authorization': 'Bearer ${GlobalState.prodApiKey}'},
+        headers: {'Authorization': 'Bearer ${CacheManager.prodApiKey}'},
       );
 
       if (response.statusCode == 200) {
@@ -112,42 +136,37 @@ class ApiService {
 
         if (decoded is List) {
           for (final item in decoded) {
-            // Adaptação para a estrutura 'lancamentodeestoque/consultar'
-            if (item is Map<String, dynamic> &&
-                item['objetoID'] is int &&
-                item['objeto'] is String) {
+            if (item is Map<String, dynamic> && item['objetoID'] is int) {
               final id = item['objetoID'] as int;
-              final nome = item['objeto'] as String;
-              final detalhe = item['detalhe'] as String?; // Captura o detalhe
 
               if (produtosIds.contains(id)) {
-                // Armazena apenas o nome
-                GlobalState.produtosCache[id] = nome;
-
-                // Armazena o detalhe no novo cache
-                GlobalState.detalhesCache[id] = detalhe ?? '--';
+                // Armazena nome (objeto) e detalhe (lote)
+                CacheManager.produtosNomeCache[id] =
+                    item['objeto'] as String? ?? 'Nome N/A';
+                CacheManager.produtosDetalheCache[id] =
+                    item['detalhe'] as String? ?? '--';
               }
             }
           }
         }
       } else {
-        throw Exception(
-          'Falha ao consultar nomes de produto (Status: ${response.statusCode})',
+        throw ApiException(
+          'Falha ao consultar detalhes de produto (Status: ${response.statusCode})',
         );
       }
-    } catch (e) {
-      rethrow;
+    } on Exception catch (e) {
+      throw ApiException('Erro ao buscar detalhes de produto: ${e.toString()}');
     }
   }
 
   /// Executa a consulta de mapas de produção para uma data específica.
-  static Future<List<Map<String, dynamic>>> consultarMapaPorData({
+  static Future<List<Map<String, dynamic>>> fetchMapByDate({
     required String apiKeyWMS,
     required String isoDate,
   }) async {
-    final uri = Uri.https(AppConfig.baseUrlWMS, AppConfig.mapaPath, {
-      'empresaID': AppConfig.empresaId,
-      'tipoDeDocumentoID': AppConfig.tipoDocumentoId,
+    final uri = Uri.https(AppConstants.baseUrlWMS, AppConstants.mapaPath, {
+      'empresaID': AppConstants.empresaId,
+      'tipoDeDocumentoID': AppConstants.tipoDocumentoId,
       'data': isoDate,
     });
 
@@ -157,7 +176,7 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
+      throw ApiException(
         'Falha na consulta do mapa (Status: ${response.statusCode})',
       );
     }
@@ -166,25 +185,23 @@ class ApiService {
     List<Map<String, dynamic>> registros = [];
 
     if (decoded is List) {
-      for (final item in decoded) {
-        if (item is Map<String, dynamic>) registros.add(item);
-      }
+      registros.addAll(decoded.whereType<Map<String, dynamic>>());
     } else if (decoded is Map<String, dynamic>) {
       registros.add(decoded);
     }
 
-    // ✅ FILTRAGEM LOCAL: Filtra a lista para incluir apenas a operacaoId desejada.
-    final registrosFiltrados = registros.where((registro) {
-      return registro['operacaoId'] == AppConfig.operacaoIdFiltro;
+    // Filtra a lista para incluir apenas a operacaoId desejada.
+    return registros.where((registro) {
+      return registro['operacaoId'] == AppConstants.operacaoIdFiltro;
     }).toList();
-
-    return registrosFiltrados;
   }
 }
 
-/// 3. INTERFACE DO USUÁRIO (WIDGETS)
+// **********************************************
+// 3. INTERFACE DO USUÁRIO (WIDGETS)
 // **********************************************
 
+/// Classe principal da tela de consulta de mapas.
 class ConsultaMapaProducaoScreen extends StatefulWidget {
   const ConsultaMapaProducaoScreen({super.key});
 
@@ -193,8 +210,29 @@ class ConsultaMapaProducaoScreen extends StatefulWidget {
       _ConsultaMapaProducaoScreenState();
 }
 
-class _ConsultaMapaProducaoScreenState
-    extends State<ConsultaMapaProducaoScreen> {
+/// Mixin para métodos utilitários de UI, limpando a classe State.
+mixin UiUtils on State<ConsultaMapaProducaoScreen> {
+  DateTime? parseDate(String value) {
+    try {
+      return DateFormat('dd/MM/yyyy').parseStrict(value);
+    } on FormatException {
+      return null;
+    }
+  }
+
+  void showSnackBar(String message, {bool isError = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? Colors.red.shade700 : Colors.green.shade600,
+      ),
+    );
+  }
+}
+
+class _ConsultaMapaProducaoScreenState extends State<ConsultaMapaProducaoScreen>
+    with UiUtils {
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _dataInicialController = TextEditingController();
   final TextEditingController _dataFinalController = TextEditingController();
@@ -205,8 +243,6 @@ class _ConsultaMapaProducaoScreenState
   // Variáveis para feedback de progresso
   int _diasTotais = 0;
   int _diasProcessados = 0;
-  // Tempo médio de resposta da API (usado para estimativa de tempo)
-  static const int _avgApiTimeMs = 3200;
 
   @override
   void dispose() {
@@ -221,13 +257,13 @@ class _ConsultaMapaProducaoScreenState
     FocusScope.of(context).unfocus();
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
-    final dataInicial = _parseData(_dataInicialController.text.trim());
-    final dataFinal = _parseData(_dataFinalController.text.trim());
+    final dataInicial = parseDate(_dataInicialController.text.trim());
+    final dataFinal = parseDate(_dataFinalController.text.trim());
 
     if (dataInicial == null ||
         dataFinal == null ||
         dataFinal.isBefore(dataInicial)) {
-      _showSnackBar('Verifique o período de datas.', isError: true);
+      showSnackBar('Período de datas inválido.', isError: true);
       return;
     }
 
@@ -238,8 +274,7 @@ class _ConsultaMapaProducaoScreenState
       _resultados = [];
       _diasTotais = diasTotais;
       _diasProcessados = 0;
-      GlobalState.produtosCache.clear();
-      GlobalState.detalhesCache.clear(); // Limpa o novo cache de detalhes
+      CacheManager.clear(); // Limpa todo o cache
     });
 
     final startTime = DateTime.now();
@@ -247,10 +282,10 @@ class _ConsultaMapaProducaoScreenState
     try {
       // 1. AUTENTICAÇÃO WMS (MAPAS)
       final apiKeyWMS = await ApiService.authenticate(
-        endpoint: AppConfig.authEndpointWMS,
-        email: AppConfig.authEmailWMS,
-        senha: AppConfig.authSenhaWMS,
-        usuarioId: AppConfig.authUsuarioIdWMS,
+        endpoint: AppConstants.authEndpointWMS,
+        email: AppConstants.authEmailWMS,
+        senha: AppConstants.authSenhaWMS,
+        usuarioId: AppConstants.authUsuarioIdWMS,
       );
 
       final List<MapaResultado> novosResultados = [];
@@ -264,12 +299,12 @@ class _ConsultaMapaProducaoScreenState
       ) {
         final isoDate = DateFormat("yyyy-MM-dd'T'00:00:00").format(data);
 
-        // Atualiza o dia processado ANTES da chamada da API
+        // Atualiza o progresso para o dia atual (diasProcessados - 1)
         setState(() {
           _diasProcessados = data.difference(dataInicial).inDays;
         });
 
-        final registrosFiltrados = await ApiService.consultarMapaPorData(
+        final registrosFiltrados = await ApiService.fetchMapByDate(
           apiKeyWMS: apiKeyWMS,
           isoDate: isoDate,
         );
@@ -286,23 +321,22 @@ class _ConsultaMapaProducaoScreenState
           }
         }
 
-        // Atualiza o dia processado DEPOIS da chamada da API
+        // Atualiza progresso para o dia COMPLETO (diasProcessados + 1)
         setState(
           () => _diasProcessados = data.difference(dataInicial).inDays + 1,
         );
       }
 
-      // 3. AUTENTICAÇÃO E CONSULTA DE NOMES E DETALHES DE PRODUTOS
+      // 3. AUTENTICAÇÃO E CACHE DE DETALHES DE PRODUTOS
       if (produtosIdsParaConsultar.isNotEmpty) {
-        // Autenticação Força de Vendas para Produtos
-        GlobalState.prodApiKey = await ApiService.authenticate(
-          endpoint: AppConfig.authEndpointProd,
-          email: AppConfig.authEmailProd,
-          senha: AppConfig.authSenhaProd,
-          usuarioId: AppConfig.authUsuarioIdProd,
+        CacheManager.prodApiKey = await ApiService.authenticate(
+          endpoint: AppConstants.authEndpointProd,
+          email: AppConstants.authEmailProd,
+          senha: AppConstants.authSenhaProd,
+          usuarioId: AppConstants.authUsuarioIdProd,
         );
 
-        await ApiService.consultarEArmazenarNomes(produtosIdsParaConsultar);
+        await ApiService.cacheProductDetails(produtosIdsParaConsultar);
       }
 
       // 4. FINALIZAÇÃO
@@ -313,11 +347,13 @@ class _ConsultaMapaProducaoScreenState
         _diasProcessados = _diasTotais;
       });
 
-      _showSnackBar(
-        'Consulta finalizada. ${novosResultados.length} dia(s) com dados). Tempo: ${totalTime}s',
+      showSnackBar(
+        'Consulta finalizada. ${novosResultados.length} dia(s) com dados. Tempo: ${totalTime}s',
       );
+    } on ApiException catch (e) {
+      showSnackBar('Erro na API: ${e.message}', isError: true);
     } catch (e) {
-      _showSnackBar('Erro na consulta: ${e.toString()}', isError: true);
+      showSnackBar('Erro inesperado: ${e.toString()}', isError: true);
     } finally {
       if (mounted) {
         setState(() {
@@ -327,34 +363,15 @@ class _ConsultaMapaProducaoScreenState
     }
   }
 
-  // Funções Utilitárias de UI
-
-  DateTime? _parseData(String value) {
-    try {
-      return DateFormat('dd/MM/yyyy').parseStrict(value);
-    } catch (_) {
-      return null;
-    }
-  }
-
-  void _showSnackBar(String message, {bool isError = false}) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: isError ? Colors.red.shade700 : Colors.green.shade600,
-      ),
-    );
-  }
-
   // --- WIDGETS DE UI ---
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey.shade50,
+      backgroundColor: AppConstants.backgroundColor,
       appBar: AppBar(
-        title: const Text('Consultar Mapas'),
-        backgroundColor: Colors.red.shade700,
+        title: const Text('Consultar Mapas de Produção'),
+        backgroundColor: AppConstants.primaryColor,
         foregroundColor: Colors.white,
         centerTitle: true,
       ),
@@ -381,16 +398,18 @@ class _ConsultaMapaProducaoScreenState
           child: Row(
             children: [
               Expanded(
-                child: _buildDateField(
+                child: _DateFieldInput(
                   label: 'Data Inicial',
                   controller: _dataInicialController,
+                  parseDate: parseDate,
                 ),
               ),
               const SizedBox(width: 16),
               Expanded(
-                child: _buildDateField(
+                child: _DateFieldInput(
                   label: 'Data Final',
                   controller: _dataFinalController,
+                  parseDate: parseDate,
                 ),
               ),
             ],
@@ -411,13 +430,17 @@ class _ConsultaMapaProducaoScreenState
                     ),
                   )
                 : const Icon(Icons.search),
-            label: Text(_loading ? 'Consultando...' : 'Consultar Mapas'),
+            label: Text(_loading ? 'Consultando...' : 'Consultar Período'),
             style: ElevatedButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 14),
-              backgroundColor: Colors.red.shade700,
+              backgroundColor: AppConstants.primaryColor,
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
+              ),
+              textStyle: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
               ),
             ),
           ),
@@ -426,14 +449,55 @@ class _ConsultaMapaProducaoScreenState
     );
   }
 
-  Widget _buildDateField({
-    required String label,
-    required TextEditingController controller,
-  }) {
+  Widget _buildResultsArea() {
+    if (_loading) {
+      return _LoadingFeedback(
+        diasTotais: _diasTotais,
+        diasProcessados: _diasProcessados,
+      );
+    }
+
+    if (_resultados.isEmpty) {
+      return Center(
+        child: Text(
+          'Nenhum mapa encontrado no período com a Operação ID ${AppConstants.operacaoIdFiltro}.',
+          style: TextStyle(color: AppConstants.secondaryColor),
+          textAlign: TextAlign.center,
+        ),
+      );
+    }
+
+    return ListView.builder(
+      itemCount: _resultados.length,
+      itemBuilder: (_, index) {
+        final resultado = _resultados[index];
+        // O _MapaCard já realiza o filtro interno
+        return _MapaCard(resultado: resultado);
+      },
+    );
+  }
+}
+
+// --- WIDGETS AUXILIARES (COMPONENTES) ---
+
+/// Campo de entrada de data com seletor (DatePicker).
+class _DateFieldInput extends StatelessWidget {
+  final String label;
+  final TextEditingController controller;
+  final DateTime? Function(String) parseDate;
+
+  const _DateFieldInput({
+    required this.label,
+    required this.controller,
+    required this.parseDate,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     Future<void> selectDate() async {
       final DateTime? picked = await showDatePicker(
         context: context,
-        initialDate: DateTime.now(),
+        initialDate: parseDate(controller.text) ?? DateTime.now(),
         firstDate: DateTime(2000),
         lastDate: DateTime(2101),
         locale: const Locale('pt', 'BR'),
@@ -441,12 +505,9 @@ class _ConsultaMapaProducaoScreenState
           return Theme(
             data: ThemeData.light().copyWith(
               colorScheme: ColorScheme.light(
-                primary: Colors.red.shade700,
+                primary: AppConstants.primaryColor,
                 onPrimary: Colors.white,
                 onSurface: Colors.black,
-              ),
-              buttonTheme: const ButtonThemeData(
-                textTheme: ButtonTextTheme.primary,
               ),
             ),
             child: child!,
@@ -474,7 +535,10 @@ class _ConsultaMapaProducaoScreenState
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide(color: Colors.grey.shade300),
         ),
-        suffixIcon: const Icon(Icons.calendar_today, color: Colors.grey),
+        suffixIcon: Icon(
+          Icons.calendar_today,
+          color: AppConstants.secondaryColor,
+        ),
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 16,
           vertical: 14,
@@ -484,57 +548,42 @@ class _ConsultaMapaProducaoScreenState
           value == null || value.isEmpty ? 'Selecione a data' : null,
     );
   }
+}
 
-  Widget _buildResultsArea() {
-    if (_loading) {
-      return _buildLoadingFeedback();
-    }
+/// Feedback visual durante o carregamento de dados.
+class _LoadingFeedback extends StatelessWidget {
+  final int diasTotais;
+  final int diasProcessados;
 
-    if (_resultados.isEmpty) {
-      return Center(
-        child: Text(
-          'Nenhum mapa encontrado para o período informado ou nenhum registro com Operação ID ${AppConfig.operacaoIdFiltro}.',
-          style: TextStyle(color: Colors.grey.shade600),
-          textAlign: TextAlign.center,
-        ),
-      );
-    }
+  const _LoadingFeedback({
+    required this.diasTotais,
+    required this.diasProcessados,
+  });
 
-    return ListView.builder(
-      itemCount: _resultados.length,
-      itemBuilder: (_, index) {
-        final resultado = _resultados[index];
-        return _MapaCard(resultado: resultado);
-      },
-    );
-  }
-
-  Widget _buildLoadingFeedback() {
-    final progresso = _diasTotais == 0 ? 0.0 : _diasProcessados / _diasTotais;
+  @override
+  Widget build(BuildContext context) {
+    final progresso = diasTotais == 0 ? 0.0 : diasProcessados / diasTotais;
     final percentual = (progresso * 100).toStringAsFixed(0);
 
-    // Indicador de status atualizado para refletir o dia real sendo processado
-    final statusText = _diasProcessados < _diasTotais
-        ? 'Consultando dia: ${_diasProcessados + 1} de $_diasTotais'
+    final statusText = diasProcessados < diasTotais
+        ? 'Consultando dia ${diasProcessados + 1} de $diasTotais...'
         : 'Finalizando e buscando detalhes dos produtos...';
 
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Text(
-          'Buscando dados. Total de dias no período: $_diasTotais.',
+          'Total de dias para busca: $diasTotais.',
           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 16),
-        // Barra de Progresso Linear
         LinearProgressIndicator(
           value: progresso,
           backgroundColor: Colors.grey.shade300,
-          color: Colors.red.shade700,
+          color: AppConstants.primaryColor,
         ),
         const SizedBox(height: 8),
-        // Indicador de Progresso (X de Y dias e %)
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 4.0),
           child: Row(
@@ -545,35 +594,34 @@ class _ConsultaMapaProducaoScreenState
                 style: const TextStyle(fontSize: 14),
               ),
               Text(
-                'Dias: $_diasProcessados de $_diasTotais',
-                style: const TextStyle(
+                'Dias: $diasProcessados de $diasTotais',
+                style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.bold,
-                  color: Colors.red,
+                  color: AppConstants.primaryColor,
                 ),
               ),
             ],
           ),
         ),
         const SizedBox(height: 16),
-        // Indicador de status
         Text(
           'Status: $statusText',
           style: TextStyle(
-            color: Colors.grey.shade600,
+            color: AppConstants.secondaryColor,
             fontStyle: FontStyle.italic,
           ),
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 24),
-        const CircularProgressIndicator(color: Colors.red),
+        CircularProgressIndicator(color: AppConstants.primaryColor),
       ],
     );
   }
 }
 
 // **********************************************
-// 4. CARTÃO DE RESULTADO OTIMIZADO (AJUSTADO)
+// 4. CARTÃO DE RESULTADO FINAL (Otimizado)
 // **********************************************
 
 class _MapaCard extends StatefulWidget {
@@ -586,27 +634,22 @@ class _MapaCard extends StatefulWidget {
 }
 
 class _MapaCardState extends State<_MapaCard> {
-  bool _isExpanded = false;
   // Formatador para a quantidade (ex: 12.000,50)
   final NumberFormat _quantityFormat = NumberFormat('#,##0.##', 'pt_BR');
-
-  // Formatador para o total (garante 2 casas decimais para metros)
+  // Formatador para o total (garante 2 casas decimais)
   final NumberFormat _totalFormat = NumberFormat('#,##0.00', 'pt_BR');
 
-  /// Busca o nome do produto no cache global (GlobalState.produtosCache).
-  ///
-  /// ✅ Retorna null se o ID não for encontrado no cache, indicando
-  /// que o item deve ser filtrado (oculto).
-  String? _getNomeProduto(int? produtoId) {
-    if (produtoId == null) return null; // Sem ID não exibe
+  /// Busca o nome do produto no cache. Retorna null se não encontrado.
+  String? _getProductName(int? produtoId) {
+    if (produtoId == null) return null;
+    return CacheManager.produtosNomeCache[produtoId];
+  }
 
-    final nomeEmCache = GlobalState.produtosCache[produtoId];
-
-    if (nomeEmCache == null) {
-      return null; // Retorna null para itens que não acharam nome (não foram encontrados no estoque)
-    }
-
-    return nomeEmCache;
+  /// Busca o detalhe (Lote) do produto no cache.
+  String _getProductDetail(int? produtoId) {
+    if (produtoId == null) return 'Lote: N/A';
+    final detalhe = CacheManager.produtosDetalheCache[produtoId];
+    return 'Lote: ${detalhe ?? 'N/A'}';
   }
 
   @override
@@ -615,65 +658,49 @@ class _MapaCardState extends State<_MapaCard> {
       'dd/MM/yyyy',
     ).format(widget.resultado.data);
 
-    // 1. FILTRAR REGISTROS:
-    // Critério A: Quantidade > 0
-    // Critério B: Nome encontrado no cache (não é nulo)
+    // 1. FILTRAR REGISTROS: Quantidade > 0 E Nome encontrado no cache.
     final filteredRegistros = widget.resultado.registros.where((registro) {
       final produtoId = registro['produtoId'] as int?;
       final quantidade = registro['quantidade'];
 
-      // Filtro A: Quantidade deve ser maior que zero
       final isQuantityValid = quantidade is num && quantidade > 0;
-
-      // Filtro B: Nome do produto deve ser encontrado
-      final isNameFound = _getNomeProduto(produtoId) != null;
+      final isNameFound = _getProductName(produtoId) != null;
 
       return isQuantityValid && isNameFound;
     }).toList();
 
     // 2. CALCULAR SOMA TOTAL DA QUANTIDADE (Metros)
-    double totalQuantidade = filteredRegistros.fold(0.0, (sum, registro) {
+    final double totalQuantidade = filteredRegistros.fold(0.0, (sum, registro) {
       final quantidade = registro['quantidade'];
       return sum + (quantidade is num ? quantidade : 0.0);
     });
 
-    // 3. FORMATAR TEXTOS
+    // Se não houver registros após o filtro, não exibe o card.
+    if (filteredRegistros.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
     final totalQuantidadeFormatada = _totalFormat.format(totalQuantidade);
     final totalRegistros = filteredRegistros.length;
-    final subtitleText = 'Soma total metros: $totalQuantidadeFormatada';
+    final subtitleText = '$totalQuantidadeFormatada metros';
 
-    // Altura calculada para o conteúdo da lista (Baseado no número de registros FILTRADOS)
-    final double contentHeight = totalRegistros * 65.0;
-
-    // Se não houver registros após o filtro, o card não será exibido.
-    if (totalRegistros == 0) {
-      return const SizedBox.shrink(); // Widget vazio
-    }
+    // Altura calculada: Altura mínima por item (95.0) para lista aninhada.
+    final double contentHeight = totalRegistros * 95.0;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      elevation: 6, // Maior elevação para destaque
+      elevation: 4,
       child: ExpansionTile(
-        onExpansionChanged: (bool expanded) {
-          setState(() {
-            _isExpanded = expanded;
-          });
-        },
         tilePadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-        // Design do Tile Principal
-        collapsedShape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         backgroundColor: Colors.white,
         collapsedBackgroundColor: Colors.white,
-        // Mantido apenas o ícone de data para a quebra principal
-        iconColor: Colors.red.shade700,
-        collapsedIconColor: Colors.red.shade700,
+        iconColor: AppConstants.primaryColor,
+        collapsedIconColor: AppConstants.primaryColor,
         leading: Icon(
           Icons.calendar_today,
-          color: Colors.red.shade700,
+          color: AppConstants.primaryColor,
           size: 28,
         ),
         title: Text(
@@ -681,77 +708,82 @@ class _MapaCardState extends State<_MapaCard> {
           style: TextStyle(
             fontWeight: FontWeight.bold,
             fontSize: 16,
-            color: Colors.red.shade700,
+            color: AppConstants.primaryColor,
           ),
         ),
-        // Subtítulo exibe a soma total de metros
         subtitle: Text(
           subtitleText,
-          style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
+          style: TextStyle(color: AppConstants.secondaryColor, fontSize: 14),
         ),
-        // Conteúdo da Expansão
         children: [
-          // Solução para o travamento: Define uma altura fixa para a lista aninhada.
+          // Usa SizedBox com altura fixa e NeverScrollableScrollPhysics para evitar problemas de aninhamento
           SizedBox(
-            // Define uma altura máxima para o conteúdo (Altura por item * número de itens)
             height: contentHeight,
             child: ListView.builder(
-              physics:
-                  const NeverScrollableScrollPhysics(), // Evita scroll duplo
+              physics: const NeverScrollableScrollPhysics(),
               padding: EdgeInsets.zero,
               itemCount: totalRegistros,
               itemBuilder: (context, index) {
-                final registro = filteredRegistros[index]; // Usa lista FILTRADA
+                final registro = filteredRegistros[index];
                 final produtoId = registro['produtoId'] as int?;
                 final quantidade = registro['quantidade'];
 
-                // Garantido que o nome não será nulo neste ponto devido ao filtro.
-                final nomeProduto = _getNomeProduto(produtoId)!;
+                final nomeProduto = _getProductName(produtoId)!;
+                final detalheProduto = _getProductDetail(produtoId);
 
-                // Formata a quantidade para exibição detalhada
                 final quantidadeFormatada = quantidade != null
-                    ? '(${_quantityFormat.format(quantidade)})'
-                    : '(??)';
+                    ? _quantityFormat.format(quantidade)
+                    : '??';
 
                 return Padding(
                   padding: const EdgeInsets.only(
                     left: 20,
                     right: 20,
                     bottom: 8,
-                    top: 0,
                   ),
                   child: Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Colors.grey.shade50,
+                      color: AppConstants.backgroundColor,
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(color: Colors.grey.shade200),
                     ),
                     child: Row(
-                      // ✅ NOVO: Usamos Row para alinhar lado a lado
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Expanded(
-                          // Ocupa o espaço restante e permite quebra de linha
-                          child: Text(
-                            nomeProduto,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w700,
-                              fontSize: 15,
-                              color: Colors.black87,
-                            ),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                nomeProduto,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 15,
+                                  color: Colors.black87,
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                detalheProduto,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w500,
+                                  fontSize: 13,
+                                  color: AppConstants.secondaryColor,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                         const SizedBox(width: 8),
-                        // A quantidade fica à direita e não quebra linha
                         Text(
-                          quantidadeFormatada,
-                          style: const TextStyle(
+                          '$quantidadeFormatada', //
+                          style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 15,
-                            color: Colors.red,
+                            color: AppConstants.primaryColor,
                           ),
                         ),
                       ],
@@ -761,7 +793,7 @@ class _MapaCardState extends State<_MapaCard> {
               },
             ),
           ),
-          const SizedBox(height: 8), // Espaçamento final
+          const SizedBox(height: 8),
         ],
       ),
     );
