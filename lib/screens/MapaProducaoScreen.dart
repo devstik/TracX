@@ -29,6 +29,9 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
   // ✅ Instância do DB Helper
   final EstoqueDbHelper _dbHelper = EstoqueDbHelper();
 
+  // ✅ NOVO: Cache do estoque em memória para buscas rápidas
+  List<EstoqueItem> _estoqueCache = [];
+
   // Mapeamento para converter o NOME do turno para o ID numérico (para o Payload)
   static const Map<String, String> _turnoNomeParaIdMap = {
     'Manhã': '3',
@@ -69,7 +72,7 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
     _inicializarEstoqueLocal();
   }
 
-  // --- FUNÇÕES DE CONTROLE DE ESTOQUE (SQLite) ---
+  // --- FUNÇÕES DE CONTROLE DE ESTOQUE (SQLite e Cache) ---
 
   // ✅ Função para consultar a API (TUDO) e popular o SQLite (Cache Inicial)
   Future<void> _inicializarEstoqueLocal() async {
@@ -121,6 +124,14 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
         print(
           '[DB] ${estoqueItens.length} itens de estoque salvos/atualizados no SQLite.',
         );
+
+        // ✅ NOVO: Carrega o cache em memória após salvar no DB
+        setState(() {
+          _estoqueCache = estoqueItens;
+        });
+        print(
+          '[CACHE] Cache em memória carregado com ${_estoqueCache.length} itens.',
+        );
       } else {
         print(
           '[ERRO_HTTP_INIT] HTTP ${response.statusCode}: Falha ao carregar estoque inicial. ${response.body}',
@@ -139,8 +150,51 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
     }
   }
 
-  // ✅ FUNÇÃO REVISADA: Consulta TUDO no SQLite (sem fallback para API)
-  Future<void> _consultarDetalheDoObjeto(String cdObj) async {
+  // ✅ NOVO: Função para buscar Objeto e Detalhe diretamente no cache em memória (PRIORIDADE)
+  EstoqueItem? _consultarDetalheNoCache(int objetoID, String detalheLote) {
+    if (_estoqueCache.isEmpty) {
+      print('[CACHE] Cache em memória vazio.');
+      return null;
+    }
+
+    final int? detalheIDQrCode = int.tryParse(detalheLote);
+
+    for (final item in _estoqueCache) {
+      // 1. Verifica o ObjetoID
+      if (item.objetoID != objetoID) {
+        continue;
+      }
+
+      // 2. Verifica o Detalhe (ID ou Texto)
+      final String itemDetalheText = item.detalhe.trim().toUpperCase();
+      final String qrDetalheText = detalheLote.trim().toUpperCase();
+
+      bool isMatch = false;
+
+      if (detalheIDQrCode != null && item.detalheID == detalheIDQrCode) {
+        // Match por Detalhe ID
+        isMatch = true;
+      } else if (itemDetalheText == qrDetalheText) {
+        // Match por Texto do Detalhe
+        isMatch = true;
+      }
+
+      if (isMatch) {
+        print('[CACHE] Detalhe/Lote encontrado no cache local.');
+        return item;
+      }
+    }
+    print(
+      '[CACHE] Detalhe/Lote não encontrado no cache local para ObjetoID=$objetoID.',
+    );
+    return null;
+  }
+
+  // ✅ REVISADO: Função principal de consulta (SQLite > API)
+  Future<void> _consultarDetalheDoObjeto(
+    String cdObj, {
+    String? detalheQrCode,
+  }) async {
     final int? objetoID = int.tryParse(cdObj);
 
     if (objetoID == null) {
@@ -148,40 +202,197 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
       return;
     }
 
-    // --- 1. BUSCA NO SQLITE (CACHE RÁPIDO) ---
+    // --- 1. BUSCA DO OBJETO no SQLite (CACHE RÁPIDO) ---
+    // Mesmo que só retorne um item, é usado para validar se o ObjetoID existe.
     print('[CONSULTA] Tentando buscar ObjetoID=$objetoID no SQLite...');
-    EstoqueItem? itemLocal = await _dbHelper.getEstoqueItem(objetoID);
+    EstoqueItem? itemLocalObjeto = await _dbHelper.getEstoqueItem(objetoID);
 
-    if (itemLocal != null) {
-      print('[CONSULTA] Item encontrado no SQLite. Preenchendo campos.');
-      _preencherCamposComItem(itemLocal);
-      _showSnackBar('Detalhes do objeto carregados do cache local.');
-      return; // Sucesso: Item encontrado, sai da função.
+    if (itemLocalObjeto == null) {
+      print(
+        '[CONSULTA] Item ObjetoID=$objetoID NÃO encontrado no cache local.',
+      );
+      _limparCamposObjeto();
+      _showSnackBar(
+        'Objeto $cdObj não encontrado no estoque local. Verifique se o item existe e se o cache foi atualizado.',
+        isError: true,
+      );
+      return;
     }
 
-    // --- 2. SEM FALLBACK: Se não encontrou, avisa o usuário ---
-    print('[CONSULTA] Item ObjetoID=$objetoID NÃO encontrado no cache local.');
+    // Preenche o Objeto (Produto)
+    setState(() {
+      _objetoID = itemLocalObjeto.objetoID;
+      _produtoController.text = itemLocalObjeto.objeto;
+    });
+
+    // --- 2. VALIDAÇÃO E BUSCA DO DETALHE (Lote) ---
+    if (detalheQrCode != null && detalheQrCode.isNotEmpty) {
+      // ✅ 2A. Tenta buscar o detalhe COMPLETO no CACHE (PRIORIDADE)
+      final EstoqueItem? itemLocalDetalhe = _consultarDetalheNoCache(
+        objetoID,
+        detalheQrCode,
+      );
+
+      if (itemLocalDetalhe != null) {
+        // Encontrado localmente!
+        _preencherCamposComDetalhe(itemLocalDetalhe, 'Cache Local');
+        _showSnackBar(
+          'Detalhes do objeto e lote carregados via Cache Local (Rápido).',
+        );
+        return; // ✅ TERMINA AQUI se achou localmente
+      }
+
+      // ✅ 2B. Não encontrado localmente. Tenta buscar na API (FALLBACK LENTO)
+      print(
+        '[FALLBACK] Detalhe não encontrado no cache. Tentando consultar API...',
+      );
+      final EstoqueItem? itemDaApi = await _consultarDetalheNaApi(
+        objetoID,
+        detalheQrCode,
+      );
+
+      if (itemDaApi != null) {
+        // Encontrado na API.
+        _preencherCamposComDetalhe(itemDaApi, 'API (Fallback)');
+        // Opcional: Poderia salvar o novo item no _estoqueCache e DB aqui.
+        _showSnackBar('Detalhes do objeto e lote carregados.');
+      } else {
+        // 2C. Não encontrado na API. Limpa e mostra erro.
+        _limparDetalheComErro(objetoID, detalheQrCode);
+      }
+    } else {
+      // D. Se o QR Code NÃO forneceu o Detalhe: Usa o valor do banco de dados (Fallback original)
+      _preencherCamposComDetalhe(itemLocalObjeto, 'Cache (Objeto Padrão)');
+      _showSnackBar('Detalhes do objeto carregados.');
+    }
+
+    print('[PREENCHIMENTO FINAL] ObjetoID=$_objetoID, DetalheID=$_detalheID');
+  }
+
+  // Funções Auxiliares de Preenchimento/Limpeza
+  void _preencherCamposComDetalhe(EstoqueItem item, String source) {
+    setState(() {
+      _objetoID = item.objetoID;
+      _produtoController.text = item.objeto; // Já deveria estar preenchido
+      _detalheID = item.detalheID;
+      _loteController.text = item.detalhe;
+    });
+    print(
+      '[PREENCHIMENTO] Detalhe/Lote VALIDADO por $source - ID: ${item.detalheID}, Texto: ${item.detalhe}',
+    );
+  }
+
+  void _limparDetalheComErro(int objetoID, String detalheQrCode) {
+    setState(() {
+      _detalheID = null;
+      _loteController.clear();
+    });
+    print(
+      '[ERRO] Detalhe/Lote "$detalheQrCode" não encontrado para ObjetoID=$objetoID (Local e API).',
+    );
     _showSnackBar(
-      'Objeto $cdObj não encontrado no estoque local. Verifique se o item existe e se o cache foi atualizado.',
+      'Não foi encontrado o detalhe/lote desse artigo. Campo "Detalhe" limpo.',
       isError: true,
     );
   }
 
-  // Função auxiliar para preencher os campos a partir do modelo EstoqueItem
-  void _preencherCamposComItem(EstoqueItem item) {
+  void _limparCamposObjeto() {
     setState(() {
-      // Associa os IDs numéricos para o payload final (_salvarMapa)
-      _objetoID = item.objetoID;
-      _detalheID = item.detalheID;
-
-      // Preenche os campos de objeto e detalhe (com a descrição/nome)
-      _produtoController.text = item.objeto; // Objeto (descrição)
-      _loteController.text = item.detalhe; // Detalhe (descrição)
+      _objetoID = null;
+      _detalheID = null;
+      _produtoController.clear();
+      _loteController.clear();
     });
+  }
 
-    print(
-      '[PREENCHIMENTO] Dados preenchidos: ObjetoID=$_objetoID, DetalheID=$_detalheID',
-    );
+  // ✅ REVISADO: Função para consultar a API (APENAS FALLBACK)
+  Future<EstoqueItem?> _consultarDetalheNaApi(
+    int objetoID,
+    String detalheLote,
+  ) async {
+    final token = await AuthService.obterTokenAplicacao();
+
+    if (token == null) {
+      print('[ERRO_TOKEN] Falha na autenticação ao consultar Detalhe na API.');
+      return null;
+    }
+
+    // Tenta obter o detalheID se o valor do QR Code for um número
+    final int? detalheIDQrCode = int.tryParse(detalheLote);
+
+    try {
+      final uri = Uri.https(_baseUrl, _consultaEstoquePath, {
+        'empresaID': _empresaId,
+        'objetoID': objetoID.toString(),
+        'detalhe': detalheLote,
+      });
+
+      print(
+        '[API] Consultando Detalhe na API (FALLBACK): ObjetoID=$objetoID, Detalhe=$detalheLote',
+      );
+      final response = await http.get(
+        uri,
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        List<dynamic> itensJson = [];
+
+        if (decoded is List && decoded.isNotEmpty) {
+          itensJson = decoded;
+        } else if (decoded is Map<String, dynamic>) {
+          itensJson = [decoded];
+        }
+
+        if (itensJson.isNotEmpty) {
+          for (final itemJson in itensJson) {
+            if (itemJson is Map<String, dynamic>) {
+              // 1. VERIFICAÇÃO DE OBJETOID: O ObjetoID retornado deve ser o solicitado
+              if (itemJson['objetoID'] != objetoID) {
+                continue; // Ignora este item
+              }
+
+              final int? apiDetalheID = itemJson['detalheID'] is int
+                  ? itemJson['detalheID']
+                  : int.tryParse(itemJson['detalheID']?.toString() ?? '');
+              final String apiDetalheText =
+                  (itemJson['detalhe']?.toString() ?? '').trim().toUpperCase();
+              final String qrDetalheText = detalheLote.trim().toUpperCase();
+
+              bool isMatch = false;
+
+              // 2. VERIFICAÇÃO DE DETALHE: Prioriza a correspondência por ID
+              if (detalheIDQrCode != null && apiDetalheID == detalheIDQrCode) {
+                isMatch = true;
+              } else if (apiDetalheText == qrDetalheText) {
+                // Correspondência pelo TEXTO do Detalhe
+                isMatch = true;
+              }
+
+              if (isMatch && itemJson['detalheID'] != null) {
+                return EstoqueItem.fromMap(itemJson);
+              }
+            }
+          }
+        }
+        print(
+          '[API] Nenhum Detalhe correspondente encontrado na API (Fallback).',
+        );
+        return null;
+      } else {
+        print(
+          '[ERRO_HTTP_DETALHE] HTTP ${response.statusCode}: Falha ao buscar detalhe específico (API). ${response.body}',
+        );
+        return null;
+      }
+    } catch (e) {
+      print('[ERRO_REDE_DETALHE] Falha de rede ao buscar detalhe (API): $e');
+      return null;
+    }
   }
 
   // --- FUNÇÕES DE UI E OUTROS CONTROLES ---
@@ -234,14 +445,14 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
 
       if (qrData != null) {
         final String? cdObj = qrData['CdObj']?.toString();
+        // ✅ NOVO: Captura o campo 'Detalhe' do JSON
+        final String? detalheQrCode = qrData['Detalhe']?.toString();
 
         if (cdObj != null && cdObj.isNotEmpty) {
-          await _consultarDetalheDoObjeto(cdObj); // Usa a consulta no SQLite
+          // ✅ Chamada correta utilizando o parâmetro nomeado
+          await _consultarDetalheDoObjeto(cdObj, detalheQrCode: detalheQrCode);
         } else {
-          _showSnackBar(
-            'QR Code lido, mas CdObj está vazio ou inválido.',
-            isError: true,
-          );
+          _showSnackBar('QR Code lido, mas está inválido.', isError: true);
         }
       }
     } else {
@@ -276,6 +487,7 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
 
     try {
       final decoded = jsonDecode(cleanedQrCode);
+      // Manteve-se a verificação de 'CdObj' como obrigatória para a consulta no banco
       if (decoded is Map<String, dynamic> && decoded.containsKey('CdObj')) {
         return decoded;
       }
@@ -294,7 +506,6 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
   Future<void> _salvarMapa() async {
     FocusScope.of(context).unfocus();
 
-    // O campo Turno continua lendo o valor do controller (que é preenchido automaticamente)
     final String turnoNome = _turnoController.text.trim();
     final String? turnoId = _turnoNomeParaIdMap[turnoNome];
 
@@ -316,16 +527,9 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
       return;
     }
 
-    // Nota: O fluxo atual permite que os campos 'Objeto' e 'Detalhe' sejam editados
-    // manualmente, mas o código de salvamento AINDA DEPENDE dos IDs numéricos
-    // obtidos pelo QR Code (_objetoID e _detalheID).
-    // Se a intenção é permitir a edição e o envio, mesmo sem um QR Code,
-    // será necessário obter esses IDs de outra forma (por exemplo, buscando
-    // o ID com base no NOME digitado pelo usuário).
-    // Para esta alteração, vamos manter a lógica original: os IDs são OBRIGATÓRIOS.
     if (_objetoID == null || _detalheID == null) {
       _showSnackBar(
-        'Os IDs do Objeto e Detalhe não foram definidos. Obrigatoriamente, leia o QR Code.',
+        'Os IDs do Objeto e Detalhe não foram definidos. Obrigatoriamente, leia o QR Code e garanta que o Detalhe/Lote existe.',
         isError: true,
       );
       return;
@@ -349,7 +553,6 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
       'data': _parseDataBrToIso(_dataController.text.trim()) ?? '',
       'turnoId': turnoId,
       'ordemProducaoId': _ordemProducaoController.text.trim(),
-      // Os IDs são usados no payload, não o texto digitado (requerimento de QR Code)
       'produtoId': _objetoID.toString(),
       'loteId': _detalheID.toString(),
       'unidadeDeMedida': _unidadeMedidaController.text.trim(),
@@ -383,7 +586,6 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
         _ordemProducaoController.clear();
         _unidadeMedidaController.clear();
         _quantidadeController.clear();
-        // Não limpamos _produtoController e _loteController para permitir
         // o fluxo de repetição, como estava no código original.
       } else {
         print('[ERRO_SALVAR] HTTP ${response.statusCode}: ${response.body}');
@@ -549,8 +751,6 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
     String? hint,
     bool readOnly = false, // Padrão 'false' para permitir edição
   }) {
-    // ... (restante do código do _buildField é o mesmo, mas a lógica de chamada
-    // na função build foi alterada) ...
     return ConstrainedBox(
       constraints: const BoxConstraints(minWidth: 280, maxWidth: 380),
       child: TextFormField(

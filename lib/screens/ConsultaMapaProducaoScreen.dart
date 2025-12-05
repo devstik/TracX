@@ -65,9 +65,7 @@ class MapaResultado {
   const MapaResultado({required this.data, required this.registros});
 }
 
-// **********************************************
-// 2. SERVIÇO DE API
-// **********************************************
+
 
 /// Exceção customizada para erros de API.
 class ApiException implements Exception {
@@ -690,7 +688,7 @@ class _MapaCardState extends State<_MapaCard> {
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      elevation: 4,
+      elevation: 0,
       child: ExpansionTile(
         tilePadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),

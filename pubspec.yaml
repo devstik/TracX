@@ -32,6 +32,7 @@ dependencies:
   flutter_zxing: ^2.2.1
   sqflite: ^2.4.2
   permission_handler: ^12.0.1
+  rename: ^3.1.0
 
   flutter_localizations: # <<<<<< Adicione esta linha
     sdk: flutter
