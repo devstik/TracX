@@ -840,7 +840,7 @@ class _RegistroScreenState extends State<RegistroScreen> {
                 Expanded(
                   child: _buildTextField(
                     _quantidadeController,
-                    'Tambores',
+                    'Tambor',
                     Icons.format_list_numbered,
                     isNumeric: true,
                     isRequired: true,
@@ -909,7 +909,7 @@ class _RegistroScreenState extends State<RegistroScreen> {
                 Expanded(
                   child: _buildTextField(
                     _dataTingimentoController,
-                    'Tingimento',
+                    'Ting.',
                     Icons.calendar_today,
                   ),
                 ),

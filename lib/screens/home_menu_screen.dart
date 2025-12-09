@@ -26,10 +26,7 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
   late AnimationController _controller;
   late Animation<double> _fadeAnimation;
 
-  // A lista de admins é necessária para determinar a função
-  final List<String> _admins = const ['Joao', 'Leide', 'Lidinaldo'];
-
-  // NOVO: Determina se o usuário atual é administrador
+  final List<String> _admins = const ['Joao', 'Leide', 'Lidinaldo', 'admin'];
   bool get _isAdmin => _admins.contains(widget.conferente);
 
   @override
@@ -52,7 +49,6 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
     super.dispose();
   }
 
-  // 🔹 Função genérica para aplicar transição personalizada
   void _navigateWithTransition(BuildContext context, Widget page) {
     Navigator.push(
       context,
@@ -77,20 +73,84 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
     );
   }
 
+  void _showAdminMenu() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) {
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade50,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(16),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.admin_panel_settings,
+                    color: Colors.orange.shade700,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Administração',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.orange.shade700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.person_add, color: Colors.blue),
+              title: const Text('Cadastrar Usuário'),
+              onTap: () {
+                Navigator.pop(context);
+                _navigateWithTransition(context, CadastrarUsuarioScreen());
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.lock_reset, color: Colors.green),
+              title: const Text('Alterar Senha'),
+              onTap: () {
+                Navigator.pop(context);
+                _navigateWithTransition(context, AlterarSenhaScreen());
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.list, color: Colors.purple),
+              title: const Text('Listar Usuários'),
+              onTap: () {
+                Navigator.pop(context);
+                _navigateWithTransition(context, ListarUsuariosScreen());
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    // 💡 MUDANÇA 1: Reorganização dos itens para 3 (Embalagem, Localização, Tinturaria)
-    // Os demais (Relatório e Usuários) virão abaixo na ordem em que forem definidos.
-    final List<_MenuItem> menuItems = [
+    // 📦 SEÇÃO 1: REGISTRAR PEDIDOS (3 itens)
+    final List<_MenuItem> registrarItems = [
       _MenuItem(
-        title: 'Registrar', // Novo item principal
-        icon: Icons.app_registration, // Ícone sugestivo para Registro
-        color: Colors.red.shade700, // Cor de destaque
+        title: 'Registrar',
+        icon: Icons.app_registration,
+        color: Colors.red.shade700,
         onTap: () => _navigateWithTransition(
           context,
-          RegistroPrincipalScreen(
-            conferente: widget.conferente,
-          ), // Navega para a tela com abas
+          RegistroPrincipalScreen(conferente: widget.conferente),
         ),
       ),
       _MenuItem(
@@ -99,49 +159,38 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
         color: Colors.purple.shade700,
         onTap: () => _navigateWithTransition(
           context,
-          Localizacaoscreen(
-            conferente: widget.conferente, // PASSANDO O CONFERENTE
-            isAdmin: _isAdmin, // PASSANDO O STATUS ADMIN
-          ),
+          Localizacaoscreen(conferente: widget.conferente, isAdmin: _isAdmin),
         ),
       ),
-      // _MenuItem(
-      //   title: 'Raschelina',
-      //   icon: Icons.color_lens,
-      //   color: Colors.blue.shade700,
-      //   onTap: () => _navigateWithTransition(
-      //     context,
-      //     RegistroScreenTinturaria(conferente: widget.conferente),
-      //   ),
-      // ),
-      // Os itens abaixo ficarão na segunda linha
+      _MenuItem(
+        title: 'Mapa Produção',
+        icon: Icons.map_outlined,
+        color: Colors.indigo.shade600,
+        onTap: () => _navigateWithTransition(context, MapaProducaoScreen()),
+      ),
+    ];
+
+    // 📊 SEÇÃO 2: ANÁLISE DE DADOS (3 itens)
+    final List<_MenuItem> analiseItems = [
       _MenuItem(
         title: 'Registros',
-        icon: Icons.list_alt, // ícone de lista de registros ou documentos
+        icon: Icons.list_alt,
         color: Colors.green.shade700,
         onTap: () => _navigateWithTransition(context, ListaRegistrosScreen()),
       ),
       _MenuItem(
-        title: 'Fluxo', // Nome do card conforme solicitado
-        icon: Icons.track_changes, // Ícone sugestivo para rastreamento
-        color: Colors.cyan.shade700, // Nova cor para diferenciar
+        title: 'Fluxo',
+        icon: Icons.track_changes,
+        color: Colors.cyan.shade700,
         onTap: () {
-          // 🆕 Ação: Navega diretamente para a tela de histórico
-          // passando 0 para indicar que é para buscar TUDO.
           _navigateWithTransition(
             context,
             HistoricoMovimentacaoScreen(
-              nrOrdem: 0, // Passa 0: Nova lógica no service buscará todos
-              titulo: 'Movimentação Geral', // Título fixo
+              nrOrdem: 0,
+              titulo: 'Movimentação Geral',
             ),
           );
         },
-      ),
-      _MenuItem(
-        title: 'Mapa de Produção',
-        icon: Icons.map_outlined,
-        color: Colors.indigo.shade600,
-        onTap: () => _navigateWithTransition(context, MapaProducaoScreen()),
       ),
       _MenuItem(
         title: 'Consultar Mapas',
@@ -154,215 +203,305 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
       ),
     ];
 
-    if (_isAdmin) {
-      // Usando o getter _isAdmin
-      menuItems.add(
-        _MenuItem(
-          title: 'Usuários',
-          icon: Icons.person,
-          color: Colors.orange.shade700,
-          onTap: () {
-            showModalBottomSheet(
-              context: context,
-              shape: const RoundedRectangleBorder(
-                borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-              ),
-              builder: (context) {
-                return Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    ListTile(
-                      leading: const Icon(Icons.person_add),
-                      title: const Text('Cadastrar Usuário'),
-                      onTap: () {
-                        Navigator.pop(context);
-                        _navigateWithTransition(
-                          context,
-                          CadastrarUsuarioScreen(),
-                        );
-                      },
-                    ),
-                    ListTile(
-                      leading: const Icon(Icons.lock_reset),
-                      title: const Text('Alterar Senha'),
-                      onTap: () {
-                        Navigator.pop(context);
-                        _navigateWithTransition(context, AlterarSenhaScreen());
-                      },
-                    ),
-                    ListTile(
-                      leading: const Icon(Icons.list),
-                      title: const Text('Listar Usuários'),
-                      onTap: () {
-                        Navigator.pop(context);
-                        _navigateWithTransition(
-                          context,
-                          ListarUsuariosScreen(),
-                        );
-                      },
-                    ),
-                  ],
-                );
-              },
-            );
-          },
-        ),
-      );
-    }
-
     final size = MediaQuery.of(context).size;
     final bool isPhone = size.width < 600;
-    final bool isLargeScreen = size.width >= 1000;
-    final int crossAxisCount = isLargeScreen
-        ? 4
-        : isPhone
-        ? 2
-        : 3;
-    final double gridSpacing = isPhone ? 18 : 24;
-    final double childAspectRatio = isPhone ? 0.9 : 1.05;
 
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
         child: Column(
           children: [
+            // HEADER COM BOTÃO ADMIN
             FadeTransition(
               opacity: _fadeAnimation,
-              child: SlideTransition(
-                position: Tween<Offset>(
-                  begin: const Offset(0, -0.2),
-                  end: Offset.zero,
-                ).animate(_fadeAnimation),
-                child: Container(
-                  margin: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 16,
+              child: Container(
+                margin: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Colors.blue.shade50, Colors.white],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
                   ),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 16,
-                  ),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [Colors.blue.shade50, Colors.white],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black12,
+                      blurRadius: 8,
+                      offset: const Offset(0, 4),
                     ),
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black12,
-                        blurRadius: 12,
-                        offset: const Offset(0, 6),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text.rich(
+                        TextSpan(
+                          children: [
+                            const TextSpan(
+                              text: 'Bem-vindo, ',
+                              style: TextStyle(
+                                fontSize: 16,
+                                color: Colors.black54,
+                              ),
+                            ),
+                            TextSpan(
+                              text: widget.conferente,
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black87,
+                              ),
+                            ),
+                          ],
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
                       ),
-                    ],
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text.rich(
-                          TextSpan(
-                            children: [
-                              const TextSpan(
-                                text: 'Bem-vindo, ',
-                                style: TextStyle(
-                                  fontSize: 20,
-                                  color: Colors.black54,
-                                ),
-                              ),
-                              TextSpan(
-                                text: widget.conferente,
-                                style: const TextStyle(
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.black87,
-                                ),
-                              ),
-                            ],
+                    ),
+                    const SizedBox(width: 12),
+
+                    // BOTÃO ADMIN (só aparece para administradores)
+                    if (_isAdmin) ...[
+                      GestureDetector(
+                        onTap: _showAdminMenu,
+                        child: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Colors.orange.shade100,
                           ),
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 1,
+                          child: Icon(
+                            Icons.admin_panel_settings,
+                            color: Colors.orange.shade700,
+                            size: 20,
+                          ),
                         ),
                       ),
-                      const SizedBox(width: 16),
-                      MouseRegion(
-                        cursor: SystemMouseCursors.click,
-                        child: GestureDetector(
-                          onTap: () {
-                            Navigator.pushAndRemoveUntil(
-                              context,
-                              MaterialPageRoute(builder: (_) => LoginScreen()),
-                              (route) => false,
+                      const SizedBox(width: 8),
+                    ],
+
+                    // BOTÃO LOGOUT
+                    GestureDetector(
+                      onTap: () {
+                        showDialog(
+                          context: context,
+                          builder: (BuildContext context) {
+                            return AlertDialog(
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              title: Row(
+                                children: [
+                                  Icon(
+                                    Icons.logout,
+                                    color: Colors.red.shade700,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  const Text('Sair do Sistema'),
+                                ],
+                              ),
+                              content: const Text(
+                                'Tem certeza que deseja sair?',
+                                style: TextStyle(fontSize: 16),
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(context),
+                                  child: Text(
+                                    'Cancelar',
+                                    style: TextStyle(
+                                      color: Colors.grey.shade700,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                                ElevatedButton(
+                                  onPressed: () {
+                                    Navigator.pop(context); // Fecha o dialog
+                                    Navigator.pushAndRemoveUntil(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => LoginScreen(),
+                                      ),
+                                      (route) => false,
+                                    );
+                                  },
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.red.shade700,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                  ),
+                                  child: const Text(
+                                    'Sair',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             );
                           },
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 200),
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: Colors.grey.shade200,
-                            ),
-                            child: const Icon(
-                              Icons.logout,
-                              color: Colors.black87,
-                            ),
-                          ),
+                        );
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Colors.grey.shade200,
+                        ),
+                        child: const Icon(
+                          Icons.logout,
+                          color: Colors.black87,
+                          size: 20,
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
             ),
+
             Expanded(
-              child: GridView.builder(
+              child: SingleChildScrollView(
                 padding: EdgeInsets.symmetric(
-                  horizontal: isPhone ? 16 : 32,
-                  vertical: isPhone ? 12 : 24,
+                  horizontal: isPhone ? 16 : 24,
+                  vertical: 8,
                 ),
-                itemCount: menuItems.length,
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: crossAxisCount,
-                  crossAxisSpacing: gridSpacing,
-                  mainAxisSpacing: gridSpacing,
-                  childAspectRatio: childAspectRatio,
-                ),
-                itemBuilder: (context, index) {
-                  final item = menuItems[index];
-                  return AnimatedBuilder(
-                    animation: _controller,
-                    builder: (context, child) {
-                      final double start = index * 0.1;
-                      final double end = start + 0.5;
-                      double opacity;
-                      if (_controller.value < start) {
-                        opacity = 0.0;
-                      } else if (_controller.value > end) {
-                        opacity = 1.0;
-                      } else {
-                        opacity = (_controller.value - start) / (end - start);
-                      }
-                      final double translateY = 50 * (1 - opacity);
-                      return Opacity(
-                        opacity: opacity,
-                        child: Transform.translate(
-                          offset: Offset(0, translateY),
-                          child: child,
-                        ),
-                      );
-                    },
-                    child: _MenuItemCard(
-                      title: item.title,
-                      icon: item.icon,
-                      color: item.color,
-                      onTap: item.onTap,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // TÍTULO SEÇÃO 1
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 12, 8, 12),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.edit_document,
+                            color: Colors.red.shade700,
+                            size: 24,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Registrar Pedidos',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.grey[800],
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  );
-                },
+
+                    // GRID SEÇÃO 1 (3 colunas)
+                    GridView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      padding: EdgeInsets.zero,
+                      itemCount: registrarItems.length,
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 3,
+                            crossAxisSpacing: 10,
+                            mainAxisSpacing: 10,
+                            childAspectRatio: 1.0,
+                          ),
+                      itemBuilder: (context, index) {
+                        return _buildAnimatedCard(registrarItems[index], index);
+                      },
+                    ),
+
+                    const SizedBox(height: 24),
+
+                    // TÍTULO SEÇÃO 2
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 12, 8, 12),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.bar_chart,
+                            color: Colors.green.shade700,
+                            size: 24,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Análise de Dados',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.grey[800],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // GRID SEÇÃO 2 (3 colunas)
+                    GridView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      padding: EdgeInsets.zero,
+                      itemCount: analiseItems.length,
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 3,
+                            crossAxisSpacing: 10,
+                            mainAxisSpacing: 10,
+                            childAspectRatio: 1.0,
+                          ),
+                      itemBuilder: (context, index) {
+                        return _buildAnimatedCard(
+                          analiseItems[index],
+                          index + registrarItems.length,
+                        );
+                      },
+                    ),
+
+                    const SizedBox(height: 16),
+                  ],
+                ),
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildAnimatedCard(_MenuItem item, int index) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        final double start = index * 0.08;
+        final double end = start + 0.4;
+        double opacity;
+        if (_controller.value < start) {
+          opacity = 0.0;
+        } else if (_controller.value > end) {
+          opacity = 1.0;
+        } else {
+          opacity = (_controller.value - start) / (end - start);
+        }
+        final double translateY = 30 * (1 - opacity);
+        return Opacity(
+          opacity: opacity,
+          child: Transform.translate(
+            offset: Offset(0, translateY),
+            child: child,
+          ),
+        );
+      },
+      child: _MenuItemCard(
+        title: item.title,
+        icon: item.icon,
+        color: item.color,
+        onTap: item.onTap,
       ),
     );
   }
@@ -439,12 +578,9 @@ class _MenuItemCardState extends State<_MenuItemCard>
             return Transform.scale(
               scale: _scaleAnimation.value,
               child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 20,
-                ),
+                padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(10),
                   gradient: LinearGradient(
                     colors: _isHovered
                         ? [widget.color.withOpacity(0.25), Colors.white]
@@ -454,32 +590,27 @@ class _MenuItemCardState extends State<_MenuItemCard>
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(_isHovered ? 0.25 : 0.15),
-                      blurRadius: _isHovered ? 16 : 12,
-                      offset: const Offset(0, 6),
+                      color: Colors.black.withOpacity(_isHovered ? 0.2 : 0.12),
+                      blurRadius: _isHovered ? 12 : 8,
+                      offset: const Offset(0, 4),
                     ),
                   ],
                 ),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    SizedBox(
-                      height: 60,
-                      width: 60,
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Icon(widget.icon, size: 40, color: widget.color),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
+                    Icon(widget.icon, size: 28, color: widget.color),
+                    const SizedBox(height: 6),
                     Text(
                       widget.title,
                       style: TextStyle(
-                        fontSize: 15,
+                        fontSize: 11,
                         fontWeight: FontWeight.bold,
                         color: Colors.grey[900],
                       ),
                       textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),

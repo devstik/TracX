@@ -397,7 +397,7 @@ class _ConsultaMapaProducaoScreenState extends State<ConsultaMapaProducaoScreen>
             children: [
               Expanded(
                 child: _DateFieldInput(
-                  label: 'Data Inicial',
+                  label: 'Inicial',
                   controller: _dataInicialController,
                   parseDate: parseDate,
                 ),
@@ -405,7 +405,7 @@ class _ConsultaMapaProducaoScreenState extends State<ConsultaMapaProducaoScreen>
               const SizedBox(width: 16),
               Expanded(
                 child: _DateFieldInput(
-                  label: 'Data Final',
+                  label: 'Final',
                   controller: _dataFinalController,
                   parseDate: parseDate,
                 ),
@@ -458,7 +458,7 @@ class _ConsultaMapaProducaoScreenState extends State<ConsultaMapaProducaoScreen>
     if (_resultados.isEmpty) {
       return Center(
         child: Text(
-          'Nenhum mapa encontrado no período com a Operação ID ${AppConstants.operacaoIdFiltro}.',
+          'Nenhum mapa encontrado no período.',
           style: TextStyle(color: AppConstants.secondaryColor),
           textAlign: TextAlign.center,
         ),

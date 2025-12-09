@@ -4,11 +4,53 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart'; // Para debugPrint
 
 class AuthService {
+  // --- Credenciais Offline (Novas Constantes) ---
+  static const String _adminUsername =
+      'admin'; // Usuário fixo para login offline (Privado)
+  static const String _adminPassword =
+      'admin'; // Senha fixa para login offline (Privado)
+
+  // CORREÇÃO: Tornada pública para ser acessível na LoginScreen
+  static const String offlineAdminToken =
+      'OFFLINE_ADMIN_TOKEN_VALIDO'; // Token "falso" para modo offline (PÚBLICO)
+
   // --- Chaves e Validade ---
   static const String _tokenKey = 'token'; // Chave usada para salvar o token
   static const String _expiryKey =
       'tokenExpiry'; // Chave para salvar a data de expiração
   static const int _defaultTokenValiditySeconds = 3600; // 60 minutos
+
+  // --- FUNÇÃO DE LOGIN OFFLINE (NOVA) ---
+  /// Tenta logar o usuário usando as credenciais fixas de admin.
+  /// Se for bem-sucedido, salva um token não expirável localmente.
+  static Future<bool> loginAdminOffline(
+    String username,
+    String password,
+  ) async {
+    // 1. Verifica as credenciais fixas (usando os campos privados)
+    if (username.toLowerCase() == _adminUsername &&
+        password == _adminPassword) {
+      final prefs = await SharedPreferences.getInstance();
+
+      // 2. Salva o token offline (usando o campo público) e a data de expiração muito distante
+      await prefs.setString(_tokenKey, offlineAdminToken);
+
+      // Define uma data de expiração muito distante (ex: 10 anos) para evitar expiração offline
+      final expiryTime = DateTime.now()
+          .add(const Duration(days: 3650))
+          .toIso8601String();
+
+      await prefs.setString(_expiryKey, expiryTime);
+
+      debugPrint(
+        '[AUTH] Login Admin Offline bem-sucedido. Token: $offlineAdminToken',
+      );
+      return true;
+    }
+
+    debugPrint('[AUTH] Falha no Login Admin Offline. Credenciais inválidas.');
+    return false;
+  }
 
   // --- Funções de Extração/Decodificação ---
   static String extrairToken(String respostaDaApi) {
@@ -40,10 +82,17 @@ class AuthService {
     }
   }
 
-  // --- Nova Lógica de Verificação de Expiração ---
+  // --- Lógica de Verificação de Expiração (AJUSTADA) ---
   static Future<bool> _isTokenExpirado() async {
     final prefs = await SharedPreferences.getInstance();
     final expiryString = prefs.getString(_expiryKey);
+    final savedToken = prefs.getString(_tokenKey);
+
+    // Se o token salvo for o token offline (PÚBLICO), ele NUNCA expira.
+    if (savedToken == offlineAdminToken) {
+      debugPrint('[AUTH] Token offline detectado. Não expirável.');
+      return false;
+    }
 
     if (expiryString == null) {
       debugPrint(
@@ -74,7 +123,7 @@ class AuthService {
     }
   }
 
-  // --- Função Principal de Obtenção de Token (AJUSTADA) ---
+  // --- Função Principal de Obtenção de Token ---
   static Future<String?> obterTokenAplicacao() async {
     final prefs = await SharedPreferences.getInstance();
     final savedToken = prefs.getString(_tokenKey);
@@ -89,7 +138,7 @@ class AuthService {
     return savedToken;
   }
 
-  // --- Função de Solicitação de Token (AJUSTADA) ---
+  // --- Função de Solicitação de Token (API) ---
   static Future<String?> _solicitarNovoToken() async {
     const String apiUrl =
         'https://visions.topmanager.com.br/auth/api/usuarios/entrar?identificadorDaAplicacao=ForcaDeVendas&chaveDaAplicacaoExterna=2awwG8Tqp12sJtzQcyYIzVrYfQNmMg0crxWq8ohNQMlQU4cU5lvO1Y%2FGNN0hbkAD0JNPPQz3489u8paqUO3jOg%3D%3D&enderecoDeRetorno=http://qualquer';

@@ -3,6 +3,8 @@ import 'package:tracx/screens/home_menu_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'; // Para feedback tátil
 import 'package:http/http.dart' as http;
+// ** IMPORTANTE: Certifique-se de que este import está correto **
+import 'package:tracx/services/auth_service.dart';
 
 class LoginScreen extends StatefulWidget {
   @override
@@ -16,6 +18,11 @@ class _LoginScreenState extends State<LoginScreen> {
 
   bool _loading = false;
   bool _obscurePassword = true;
+
+  // --- Credenciais Admin Offline (Para checagem local) ---
+  static const String _adminUsernameCheck = 'admin';
+  static const String _adminPasswordCheck = 'admin';
+  // -------------------------------------------------------
 
   // Cores da Identidade Visual
   static const Color primaryColor = Color(0xFFb41c1c); // Vermelho da marca
@@ -32,17 +39,40 @@ class _LoginScreenState extends State<LoginScreen> {
   static const String _authSenha = '123456';
   static const int _authUsuarioId = 21578;
 
+  // --- LÓGICA DE LOGIN MODIFICADA PARA OFFLINE ---
   void _login() async {
     if (_formKey.currentState!.validate()) {
       setState(() => _loading = true);
       HapticFeedback.lightImpact(); // Feedback tátil ao iniciar o login
 
       final username = _userController.text.trim();
+      final password = _passwordController.text.trim();
       String? apiKey;
 
+      // 1. TENTATIVA DE LOGIN ADMIN OFFLINE
+      if (username.toLowerCase() == _adminUsernameCheck &&
+          password == _adminPasswordCheck) {
+        // Chama a função da AuthService para salvar o token admin no storage
+        final loginSucesso = await AuthService.loginAdminOffline(
+          username,
+          password,
+        );
+
+        if (loginSucesso) {
+          // Agora acessando o token público
+          apiKey = AuthService.offlineAdminToken;
+          _navegarParaHome(username, apiKey!);
+          return; // Sai do processo de login
+        }
+      }
+
+      // 2. TENTATIVA DE LOGIN ONLINE (Tradicional)
+      // Se não foi o login admin ou o login admin falhou, tenta o online.
       try {
+        // Primeiro, obtém a chave da API (Token de Serviço)
         apiKey = await _obterChaveApi();
 
+        // Segundo, consulta o endpoint de usuários (Auth/Permissão)
         final response = await http.get(
           Uri.parse('http://168.190.90.2:5000/consulta/usuarios'),
         );
@@ -75,13 +105,7 @@ class _LoginScreenState extends State<LoginScreen> {
           }
 
           if (usuarioEncontrado) {
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(
-                builder: (_) =>
-                    HomeMenuScreen(conferente: username, apiKey: apiKey),
-              ),
-            );
+            _navegarParaHome(username, apiKey!);
           } else {
             _showError(mensagemErro ?? 'Usuário não encontrado.');
           }
@@ -91,11 +115,20 @@ class _LoginScreenState extends State<LoginScreen> {
           );
         }
       } catch (e) {
-        _showError('Erro de conexão: Verifique sua rede.');
+        _showError('Erro de conexão: Verifique sua rede ou dados. ($e)');
       } finally {
         if (mounted) setState(() => _loading = false);
       }
     }
+  }
+
+  void _navegarParaHome(String username, String apiKey) {
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => HomeMenuScreen(conferente: username, apiKey: apiKey),
+      ),
+    );
   }
 
   void _showError(String message) {

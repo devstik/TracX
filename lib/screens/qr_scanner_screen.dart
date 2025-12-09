@@ -11,12 +11,12 @@ class ScannerOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const double scanAreaSize = 150;
+    const double scanAreaSize = 160;
 
     return Stack(
       children: [
         ColorFiltered(
-          colorFilter: const ColorFilter.mode(Colors.black54, BlendMode.srcOut),
+          colorFilter: const ColorFilter.mode(Colors.black45, BlendMode.srcOut),
           child: Stack(
             children: [
               Container(
@@ -92,35 +92,21 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
   String? _lastScannedCode;
   int _sameCodeCount = 0;
 
-  // Configurações otimizadas para leitura de QR codes danificados
-  final int _tryHarder = 1; // Ativa o modo "try harder"
-  final double _scanDelay = 100; // Reduz o delay entre scans
+  // Configurações para Zebra TC26
+  final double _scanDelay = 120;
 
   void _onCodeDetected(Code result) {
-    if (result.text != null && result.text!.isNotEmpty) {
-      // Validação por redundância: só aceita se ler o mesmo código 2-3 vezes
-      if (_lastScannedCode == result.text) {
-        _sameCodeCount++;
+    final text = result.text?.trim();
+    if (text == null || text.isEmpty) return;
 
-        // Após 2 leituras idênticas, considera válido
-        if (_sameCodeCount >= 2) {
-          debugPrint('-----------------------------');
-          debugPrint('CONTEÚDO VALIDADO: ${result.text}');
-          debugPrint('Leituras confirmadas: $_sameCodeCount');
-          debugPrint('-----------------------------');
-
-          if (mounted) {
-            Navigator.of(context).pop(result.text);
-          }
-        }
-      } else {
-        // Novo código detectado, reinicia a contagem
-        _lastScannedCode = result.text;
-        _sameCodeCount = 1;
-        debugPrint(
-          'Novo código detectado (aguardando confirmação): ${result.text}',
-        );
+    if (_lastScannedCode == text) {
+      _sameCodeCount++;
+      if (_sameCodeCount >= 2) {
+        if (mounted) Navigator.of(context).pop(text);
       }
+    } else {
+      _lastScannedCode = text;
+      _sameCodeCount = 1;
     }
   }
 
@@ -132,30 +118,29 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
 
     if (controller != null && controller.value.isInitialized) {
       _cameraController = controller;
-      _configureCameraForOptimalScanning();
-    } else {
-      _cameraController = null;
+      _configureCamera();
     }
   }
 
-  // Configura a câmera para melhor leitura
-  Future<void> _configureCameraForOptimalScanning() async {
+  Future<void> _configureCamera() async {
     final cam = _cameraController;
     if (cam == null || !cam.value.isInitialized) return;
 
     try {
-      // Ativa o foco contínuo se disponível
-      if (cam.value.focusMode == FocusMode.auto) {
-        await cam.setFocusMode(FocusMode.auto);
-      }
-
-      // Define exposição para melhor contraste
-      await cam.setExposureMode(ExposureMode.auto);
-
-      debugPrint('Câmera configurada para leitura otimizada');
+      // Uso de FocusMode.auto por compatibilidade com a maioria das versões do plugin.
+      // Se a sua versão suportar foco contínuo, substitua por FocusMode.continuous (após atualizar o package).
+      await cam.setFocusMode(FocusMode.auto);
     } catch (e) {
-      debugPrint('Erro ao configurar câmera: $e');
+      debugPrint('Aviso: não foi possível setar focusMode: $e');
     }
+
+    try {
+      await cam.setExposureMode(ExposureMode.auto);
+    } catch (e) {
+      debugPrint('Aviso: não foi possível setar exposureMode: $e');
+    }
+
+    debugPrint('Câmera configurada (modo compatível) para TC26');
   }
 
   Future<void> _toggleTorch() async {
@@ -177,6 +162,7 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
 
   @override
   void dispose() {
+    // Se você iniciou um CameraController manualmente em outro ponto, lembre de chamar dispose nele.
     _cameraController = null;
     super.dispose();
   }
@@ -195,40 +181,29 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
           IconButton(
             icon: Icon(_isTorchOn ? Icons.flash_on : Icons.flash_off),
             onPressed: _toggleTorch,
-            tooltip: _isTorchOn ? 'Desligar Lanterna' : 'Ligar Lanterna',
           ),
-          const SizedBox(width: 8),
         ],
       ),
       body: Stack(
         children: [
           ReaderWidget(
             onScan: _onCodeDetected,
-            onScanFailure: (code) => debugPrint("Erro de leitura: $code"),
+            onScanFailure: (c) => debugPrint("Falhou: $c"),
 
-            // CONFIGURAÇÕES OTIMIZADAS PARA QR CODES DANIFICADOS
-            tryHarder: true, // Ativa algoritmos mais robustos
-            tryInverted: true, // Tenta ler códigos invertidos
-            scanDelay: Duration(
-              milliseconds: _scanDelay.toInt(),
-            ), // Scan mais frequente
-            // Ativa múltiplos formatos para melhor detecção
-            codeFormat: Format.any, // Aceita qualquer formato
-            // Configurações de resolução otimizadas
-            resolution:
-                ResolutionPreset.high, // Maior resolução para melhor leitura
-            // Desativa botões nativos
+            // === CONFIGS PARA TC26 ===
+            tryHarder: false, // evita travamentos em dispositivos Zebra
+            tryInverted: true,
+            scanDelay: Duration(milliseconds: _scanDelay.toInt()),
+            resolution: ResolutionPreset.medium,
+            codeFormat: Format.any,
             showFlashlight: false,
-            showToggleCamera: false,
             showGallery: false,
-
+            showToggleCamera: false,
             onControllerCreated: _onControllerCreated,
           ),
 
-          // Overlay personalizado
-          const IgnorePointer(ignoring: true, child: ScannerOverlay()),
+          const IgnorePointer(child: ScannerOverlay()),
 
-          // Indicador de status de leitura
           if (_sameCodeCount > 0 && _sameCodeCount < 2)
             Positioned(
               top: 100,
@@ -237,15 +212,15 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
               child: Center(
                 child: Container(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
+                    horizontal: 18,
+                    vertical: 10,
                   ),
                   decoration: BoxDecoration(
                     color: Colors.orange.withOpacity(0.9),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
-                    'Validando leitura... ($_sameCodeCount/2)',
+                    'Validando... ($_sameCodeCount/2)',
                     style: const TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.bold,

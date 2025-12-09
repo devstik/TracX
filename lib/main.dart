@@ -25,7 +25,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'TraceX',
+      title: 'TracX',
       debugShowCheckedModeBanner: false,
 
       // >>> CONFIGURAÇÃO ESSENCIAL DE LOCALIZAÇÃO (pt_BR) <<<
