@@ -1,0 +1,31 @@
+{
+  "PROFILE_NAME": "TracX_Profile",
+  "PROFILE_ENABLED": "true",
+  "CONFIG_MODE": "CREATE_IF_NOT_EXIST",
+  "PROFILE_VERSION": "10",
+  "APP_LIST": [
+    {
+      "PACKAGE_NAME": "com.example.tracx",
+      "ACTIVITY_LIST": ["*"]
+    }
+  ],
+  "PLUGIN_CONFIG": [
+    {
+      "PLUGIN_NAME": "BARCODE",
+      "PARAM_LIST": {
+        "scanner_selection": "auto",
+        "decoder_code128": "true",
+        "decoder_qrcode": "true",
+        "decoder_code39": "true"
+      }
+    },
+    {
+      "PLUGIN_NAME": "INTENT",
+      "PARAM_LIST": {
+        "intent_output_enabled": "true",
+        "intent_action": "com.example.tracx.SCAN",
+        "intent_delivery": "BROADCAST"
+      }
+    }
+  ]
+}

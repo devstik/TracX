@@ -353,7 +353,7 @@ class _SplashScreenState extends State<SplashScreen>
 
                             // Subtítulo
                             Text(
-                              'TracX',
+                              'TraceX',
                               style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w700,

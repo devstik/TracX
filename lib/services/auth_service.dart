@@ -8,6 +8,7 @@ class AuthService {
   static const String _adminUsername =
       'admin'; // Usuário fixo para login offline (Privado)
   static const String _adminPassword =
+  
       'admin'; // Senha fixa para login offline (Privado)
 
   // CORREÇÃO: Tornada pública para ser acessível na LoginScreen
@@ -19,6 +20,23 @@ class AuthService {
   static const String _expiryKey =
       'tokenExpiry'; // Chave para salvar a data de expiração
   static const int _defaultTokenValiditySeconds = 3600; // 60 minutos
+
+  // ✅ NOVO MÉTODO (FALTANDO ANTERIORMENTE)
+  // --- NOVO: Função para checar se está em modo Offline ---
+  static Future<bool> isOfflineModeActive() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedToken = prefs.getString(_tokenKey);
+    // Verifica se o token salvo é o token falso usado para o modo offline
+    return savedToken == offlineAdminToken;
+  }
+
+  // --- NOVO: Função para forçar a expiração local do token ---
+  static Future<void> clearToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_tokenKey);
+    await prefs.remove(_expiryKey);
+    debugPrint('[AUTH] Token local e data de expiração LIMPOS.');
+  }
 
   // --- FUNÇÃO DE LOGIN OFFLINE (NOVA) ---
   /// Tenta logar o usuário usando as credenciais fixas de admin.

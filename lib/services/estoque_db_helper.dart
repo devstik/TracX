@@ -49,6 +49,16 @@ class EstoqueDbHelper {
     });
   }
 
+  // ✅ FUNÇÃO ADICIONADA: Consulta TODOS os itens do estoque
+  Future<List<EstoqueItem>> getAllEstoque() async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query('estoque');
+
+    return List.generate(maps.length, (i) {
+      return EstoqueItem.fromMap(maps[i]);
+    });
+  }
+
   // Consulta um item pelo objetoID (usado no QR Code)
   Future<EstoqueItem?> getEstoqueItem(int objetoID) async {
     final db = await database;
@@ -59,6 +69,7 @@ class EstoqueDbHelper {
     );
 
     if (maps.isNotEmpty) {
+      // Como objetoID é a chave primária, maps.first deve ser o único resultado.
       return EstoqueItem.fromMap(maps.first);
     }
     return null;

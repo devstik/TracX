@@ -3,13 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:sqflite/sqflite.dart'; // Importação necessária para o SQLite
-// Importações Corrigidas para o formato relativo:
-import '../models/estoque_item.dart'; // Certifique-se de que este arquivo existe
-import '../services/estoque_db_helper.dart'; // Certifique-se de que este arquivo existe
+// Note: Certifique-se de que os imports abaixo estão corretos no seu projeto
+import '../models/estoque_item.dart';
+import '../services/estoque_db_helper.dart';
 import '../services/auth_service.dart';
-// IMPORTAÇÃO DA NOVA TELA DO LEITOR (usando flutter_zxing)
-import 'qr_scanner_screen.dart';
 
 class MapaProducaoScreen extends StatefulWidget {
   const MapaProducaoScreen({super.key});
@@ -19,6 +16,7 @@ class MapaProducaoScreen extends StatefulWidget {
 }
 
 class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
+  // --- CONSTANTES DO SISTEMA ---
   static const String _empresaId = '2';
   static const String _tipoDocumentoId = '62';
   static const String _operacaoId = '62';
@@ -26,20 +24,15 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
   static const String _centroCustosId = '13';
   static const String _localizacaoId = '2026';
 
-  // ✅ Instância do DB Helper
   final EstoqueDbHelper _dbHelper = EstoqueDbHelper();
-
-  // ✅ NOVO: Cache do estoque em memória para buscas rápidas
   List<EstoqueItem> _estoqueCache = [];
 
-  // Mapeamento para converter o NOME do turno para o ID numérico (para o Payload)
   static const Map<String, String> _turnoNomeParaIdMap = {
     'Manhã': '3',
     'Tarde': '4',
     'Noite': '6',
   };
 
-  // Endpoint de Consulta para Objeto/Detalhe
   static const String _consultaEstoquePath =
       '/Servidor_2.7.0_api/forcadevendas/lancamentodeestoque/consultar';
 
@@ -47,8 +40,12 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
   final String _baseUrl = 'visions.topmanager.com.br';
   final String _mapaPath =
       '/Servidor_2.8.0_api/logtechwms/itemdemapadeproducao/incluir';
+
+  // ✅ FLAG DE CONTROLE: Previne execuções simultâneas e race condition
+  bool _isProcessingScan = false;
   bool _loading = false;
 
+  // --- CONTROLLERS ---
   final TextEditingController _dataController = TextEditingController();
   final TextEditingController _turnoController = TextEditingController();
   final TextEditingController _ordemProducaoController =
@@ -59,7 +56,11 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
       TextEditingController();
   final TextEditingController _quantidadeController = TextEditingController();
 
-  // Variáveis para armazenar os IDs numéricos para o payload de _salvarMapa
+  // Controller e FocusNode para o campo de input de Hardware (DataWedge)
+  final TextEditingController _hardwareScannerController =
+      TextEditingController();
+  final FocusNode _hardwareScannerFocusNode = FocusNode();
+
   int? _objetoID;
   int? _detalheID;
 
@@ -68,27 +69,52 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
     super.initState();
     _dataController.text = DateFormat('dd/MM/yyyy').format(DateTime.now());
     _determinarTurnoAtual();
-    // ✅ NOVO: Inicia a consulta e cache do estoque ao iniciar a tela
     _inicializarEstoqueLocal();
+
+    // 🚀 NOVO CÓDIGO PARA FOCO AUTOMÁTICO
+    // Garante que o campo de scanner seja focado assim que a tela estiver pronta.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Verifica se a tela ainda está montada antes de tentar focar.
+      if (mounted) {
+        FocusScope.of(context).requestFocus(_hardwareScannerFocusNode);
+        print('[FLUXO] Foco inicial automático aplicado ao campo de scanner.');
+        _showSnackBar(
+          'PRONTO PARA BIPAR: Pressione o botão físico do coletor.',
+          isError: false,
+          duration: const Duration(seconds: 3),
+        );
+      }
+    });
+    // ------------------------------------
   }
 
   // --- FUNÇÕES DE CONTROLE DE ESTOQUE (SQLite e Cache) ---
 
-  // ✅ Função para consultar a API (TUDO) e popular o SQLite (Cache Inicial)
-  Future<void> _inicializarEstoqueLocal() async {
+  // ✅ CORREÇÃO APLICADA: Implementando a lógica de retry para 401
+  Future<void> _inicializarEstoqueLocal({bool isRetry = false}) async {
     print(
       '[DB] Inicializando Estoque Local: Consultando API e salvando no DB.',
     );
     final token = await AuthService.obterTokenAplicacao();
 
-    if (token == null) {
-      print('[ERRO_TOKEN] Falha na autenticação ao inicializar DB.');
-      // Continua, mas sem dados de estoque
+    if (token == null || await AuthService.isOfflineModeActive()) {
+      print(
+        '[ERRO_TOKEN] Usando modo OFFLINE. DB não será inicializado pela API.',
+      );
+
+      final List<EstoqueItem> itensLocais = await _dbHelper.getAllEstoque();
+      if (mounted) {
+        setState(() {
+          _estoqueCache = itensLocais;
+        });
+        print(
+          '[CACHE] Cache carregado do DB local com ${itensLocais.length} itens.',
+        );
+      }
       return;
     }
 
     try {
-      // 1. Consulta a API sem filtros para obter a lista completa
       final uri = Uri.https(_baseUrl, _consultaEstoquePath, {
         'empresaID': _empresaId,
       });
@@ -110,7 +136,6 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
           itensJson = [decoded];
         }
 
-        // 2. Converte JSON para o modelo EstoqueItem, filtrando nulos
         final List<EstoqueItem> estoqueItens = itensJson
             .where(
               (e) =>
@@ -119,23 +144,32 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
             .map((e) => EstoqueItem.fromMap(e as Map<String, dynamic>))
             .toList();
 
-        // 3. Salva a lista INTEIRA no SQLite
         await _dbHelper.insertAllEstoque(estoqueItens);
         print(
           '[DB] ${estoqueItens.length} itens de estoque salvos/atualizados no SQLite.',
         );
 
-        // ✅ NOVO: Carrega o cache em memória após salvar no DB
+        if (!mounted) return;
+
         setState(() {
           _estoqueCache = estoqueItens;
         });
         print(
           '[CACHE] Cache em memória carregado com ${_estoqueCache.length} itens.',
         );
+      } else if (response.statusCode == 401 && !isRetry) {
+        // Se falhou com 401 (token inválido) e não é um retry, limpa o token e tenta de novo.
+        print(
+          '[DB] Token expirado/inválido (401). Forçando renovação e retry...',
+        );
+        await AuthService.clearToken(); // Chama a função para limpar o token
+        await _inicializarEstoqueLocal(isRetry: true); // Tenta novamente
+        return;
       } else {
         print(
           '[ERRO_HTTP_INIT] HTTP ${response.statusCode}: Falha ao carregar estoque inicial. ${response.body}',
         );
+        if (!mounted) return;
         _showSnackBar(
           'Falha ao carregar estoque inicial (código: ${response.statusCode}).',
           isError: true,
@@ -143,6 +177,7 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
       }
     } catch (e) {
       print('[ERRO_REDE_INIT] Falha na inicialização de rede do estoque: $e');
+      if (!mounted) return;
       _showSnackBar(
         'Falha de rede ao carregar o estoque inicial.',
         isError: true,
@@ -150,32 +185,27 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
     }
   }
 
-  // ✅ NOVO: Função para buscar Objeto e Detalhe diretamente no cache em memória (PRIORIDADE)
   EstoqueItem? _consultarDetalheNoCache(int objetoID, String detalheLote) {
     if (_estoqueCache.isEmpty) {
-      print('[CACHE] Cache em memória vazio.');
+      print('[CACHE] Cache em memória vazio. Tentando consultar DB...');
       return null;
     }
 
     final int? detalheIDQrCode = int.tryParse(detalheLote);
 
     for (final item in _estoqueCache) {
-      // 1. Verifica o ObjetoID
       if (item.objetoID != objetoID) {
         continue;
       }
 
-      // 2. Verifica o Detalhe (ID ou Texto)
       final String itemDetalheText = item.detalhe.trim().toUpperCase();
       final String qrDetalheText = detalheLote.trim().toUpperCase();
 
       bool isMatch = false;
 
       if (detalheIDQrCode != null && item.detalheID == detalheIDQrCode) {
-        // Match por Detalhe ID
         isMatch = true;
       } else if (itemDetalheText == qrDetalheText) {
-        // Match por Texto do Detalhe
         isMatch = true;
       }
 
@@ -190,7 +220,6 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
     return null;
   }
 
-  // ✅ REVISADO: Função principal de consulta (SQLite > API)
   Future<void> _consultarDetalheDoObjeto(
     String cdObj, {
     String? detalheQrCode,
@@ -198,51 +227,67 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
     final int? objetoID = int.tryParse(cdObj);
 
     if (objetoID == null) {
-      _showSnackBar('Código do Objeto inválido no QR Code.', isError: true);
+      if (mounted)
+        _showSnackBar('Código do Objeto inválido no QR Code.', isError: true);
       return;
     }
 
-    // --- 1. BUSCA DO OBJETO no SQLite (CACHE RÁPIDO) ---
-    // Mesmo que só retorne um item, é usado para validar se o ObjetoID existe.
-    print('[CONSULTA] Tentando buscar ObjetoID=$objetoID no SQLite...');
-    EstoqueItem? itemLocalObjeto = await _dbHelper.getEstoqueItem(objetoID);
+    print('[CONSULTA] Iniciando busca por ObjetoID=$objetoID...');
 
-    if (itemLocalObjeto == null) {
+    EstoqueItem? itemObjeto = _estoqueCache.firstWhereOrNull(
+      (item) => item.objetoID == objetoID,
+    );
+
+    if (itemObjeto == null) {
       print(
-        '[CONSULTA] Item ObjetoID=$objetoID NÃO encontrado no cache local.',
+        '[CONSULTA] Objeto não achado no Cache de Memória. Buscando no SQLite...',
+      );
+      itemObjeto = await _dbHelper.getEstoqueItem(objetoID);
+    }
+
+    if (itemObjeto == null) {
+      print(
+        '[CONSULTA] Item ObjetoID=$objetoID NÃO encontrado no cache local/sqlite.',
       );
       _limparCamposObjeto();
-      _showSnackBar(
-        'Objeto $cdObj não encontrado no estoque local. Verifique se o item existe e se o cache foi atualizado.',
-        isError: true,
-      );
+      if (mounted) {
+        _showSnackBar(
+          'Objeto $cdObj não encontrado no estoque local. Verifique se o item existe e se o cache foi atualizado.',
+          isError: true,
+        );
+      }
       return;
     }
 
-    // Preenche o Objeto (Produto)
-    setState(() {
-      _objetoID = itemLocalObjeto.objetoID;
-      _produtoController.text = itemLocalObjeto.objeto;
-    });
+    print('[CONSULTA] Item Objeto encontrado: ${itemObjeto.objeto}');
 
-    // --- 2. VALIDAÇÃO E BUSCA DO DETALHE (Lote) ---
+    if (mounted) {
+      setState(() {
+        _objetoID = itemObjeto!.objetoID;
+        _produtoController.text = itemObjeto!.objeto;
+      });
+    }
+
     if (detalheQrCode != null && detalheQrCode.isNotEmpty) {
-      // ✅ 2A. Tenta buscar o detalhe COMPLETO no CACHE (PRIORIDADE)
+      print(
+        '[CONSULTA] Detalhe no QR Code: "$detalheQrCode". Buscando no Cache...',
+      );
+
       final EstoqueItem? itemLocalDetalhe = _consultarDetalheNoCache(
         objetoID,
         detalheQrCode,
       );
 
       if (itemLocalDetalhe != null) {
-        // Encontrado localmente!
         _preencherCamposComDetalhe(itemLocalDetalhe, 'Cache Local');
-        _showSnackBar(
-          'Detalhes do objeto e lote carregados via Cache Local (Rápido).',
-        );
-        return; // ✅ TERMINA AQUI se achou localmente
+        if (mounted) {
+          _showSnackBar(
+            'Detalhes do objeto e lote carregados via Cache Local (Rápido).',
+          );
+        }
+        return;
       }
 
-      // ✅ 2B. Não encontrado localmente. Tenta buscar na API (FALLBACK LENTO)
       print(
         '[FALLBACK] Detalhe não encontrado no cache. Tentando consultar API...',
       );
@@ -252,28 +297,28 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
       );
 
       if (itemDaApi != null) {
-        // Encontrado na API.
         _preencherCamposComDetalhe(itemDaApi, 'API (Fallback)');
-        // Opcional: Poderia salvar o novo item no _estoqueCache e DB aqui.
-        _showSnackBar('Detalhes do objeto e lote carregados.');
+        if (mounted)
+          _showSnackBar('Detalhes do objeto e lote carregados via API.');
       } else {
-        // 2C. Não encontrado na API. Limpa e mostra erro.
         _limparDetalheComErro(objetoID, detalheQrCode);
       }
     } else {
-      // D. Se o QR Code NÃO forneceu o Detalhe: Usa o valor do banco de dados (Fallback original)
-      _preencherCamposComDetalhe(itemLocalObjeto, 'Cache (Objeto Padrão)');
-      _showSnackBar('Detalhes do objeto carregados.');
+      _preencherCamposComDetalhe(itemObjeto!, 'Cache (Objeto Padrão)');
+      if (mounted)
+        _showSnackBar(
+          'Detalhes do objeto carregados (Sem Detalhe no QR Code).',
+        );
     }
 
     print('[PREENCHIMENTO FINAL] ObjetoID=$_objetoID, DetalheID=$_detalheID');
   }
 
-  // Funções Auxiliares de Preenchimento/Limpeza
   void _preencherCamposComDetalhe(EstoqueItem item, String source) {
+    if (!mounted) return;
     setState(() {
       _objetoID = item.objetoID;
-      _produtoController.text = item.objeto; // Já deveria estar preenchido
+      _produtoController.text = item.objeto;
       _detalheID = item.detalheID;
       _loteController.text = item.detalhe;
     });
@@ -283,6 +328,7 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
   }
 
   void _limparDetalheComErro(int objetoID, String detalheQrCode) {
+    if (!mounted) return;
     setState(() {
       _detalheID = null;
       _loteController.clear();
@@ -297,6 +343,7 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
   }
 
   void _limparCamposObjeto() {
+    if (!mounted) return;
     setState(() {
       _objetoID = null;
       _detalheID = null;
@@ -305,19 +352,19 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
     });
   }
 
-  // ✅ REVISADO: Função para consultar a API (APENAS FALLBACK)
   Future<EstoqueItem?> _consultarDetalheNaApi(
     int objetoID,
     String detalheLote,
   ) async {
     final token = await AuthService.obterTokenAplicacao();
 
-    if (token == null) {
-      print('[ERRO_TOKEN] Falha na autenticação ao consultar Detalhe na API.');
+    if (token == null || await AuthService.isOfflineModeActive()) {
+      print(
+        '[ERRO_TOKEN] Falha na autenticação ou modo offline ativo. Não consulta API.',
+      );
       return null;
     }
 
-    // Tenta obter o detalheID se o valor do QR Code for um número
     final int? detalheIDQrCode = int.tryParse(detalheLote);
 
     try {
@@ -351,9 +398,8 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
         if (itensJson.isNotEmpty) {
           for (final itemJson in itensJson) {
             if (itemJson is Map<String, dynamic>) {
-              // 1. VERIFICAÇÃO DE OBJETOID: O ObjetoID retornado deve ser o solicitado
               if (itemJson['objetoID'] != objetoID) {
-                continue; // Ignora este item
+                continue;
               }
 
               final int? apiDetalheID = itemJson['detalheID'] is int
@@ -365,11 +411,9 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
 
               bool isMatch = false;
 
-              // 2. VERIFICAÇÃO DE DETALHE: Prioriza a correspondência por ID
               if (detalheIDQrCode != null && apiDetalheID == detalheIDQrCode) {
                 isMatch = true;
               } else if (apiDetalheText == qrDetalheText) {
-                // Correspondência pelo TEXTO do Detalhe
                 isMatch = true;
               }
 
@@ -397,7 +441,6 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
 
   // --- FUNÇÕES DE UI E OUTROS CONTROLES ---
 
-  // Função para determinar o turno e preencher o controlador
   void _determinarTurnoAtual() {
     final now = DateTime.now();
     final hour = now.hour;
@@ -405,11 +448,11 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
     String turnoNome;
 
     if (hour >= 6 && hour < 14) {
-      turnoNome = 'Manhã'; // ID: 3
+      turnoNome = 'Manhã';
     } else if (hour >= 14 && hour < 22) {
-      turnoNome = 'Tarde'; // ID: 4
+      turnoNome = 'Tarde';
     } else {
-      turnoNome = 'Noite'; // ID: 6
+      turnoNome = 'Noite';
     }
 
     _turnoController.text = turnoNome;
@@ -418,6 +461,7 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
 
   @override
   void dispose() {
+    // ⚠️ Disposição de Controllers e FocusNodes
     _dataController.dispose();
     _turnoController.dispose();
     _ordemProducaoController.dispose();
@@ -425,50 +469,114 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
     _loteController.dispose();
     _unidadeMedidaController.dispose();
     _quantidadeController.dispose();
+    _hardwareScannerController.dispose();
+    _hardwareScannerFocusNode.dispose();
     super.dispose();
   }
 
-  // FUNÇÃO PARA INICIAR O LEITOR DE QR CODE E PROCESSAR O RESULTADO
-  Future<void> _iniciarLeituraQrCode() async {
+  // FUNÇÃO PARA RE-FOCAR A LEITURA (SIMPLIFICADA)
+  Future<void> _reFocarScanner() async {
+    // ⚠️ Verifica se já está em processamento
+    if (_isProcessingScan) {
+      _showSnackBar(
+        'Aguarde: Um QR Code já está em processamento.',
+        isError: true,
+      );
+      return;
+    }
+
     FocusScope.of(context).unfocus();
-    setState(() => _loading = true);
 
-    print('[FLUXO] Iniciando leitor de QR Code...');
+    // Limpa o campo antes de focar para garantir que a próxima leitura seja limpa
+    _hardwareScannerController.clear();
+    print('[FLUXO] Re-focando campo de scanner. Limpando o valor anterior.');
 
-    final result = await Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (context) => const QrScannerScreen()));
+    // 1. Foca o campo de texto invisível
+    FocusScope.of(context).requestFocus(_hardwareScannerFocusNode);
 
-    if (result != null && result is String && result.isNotEmpty) {
-      print('[FLUXO] Resultado do scanner recebido: $result');
-      final qrData = _parseQrCodeJson(result);
+    // 2. Avisa o usuário
+    _showSnackBar(
+      'PRONTO PARA BIPAR: Campo de leitura re-focado.',
+      isError: false,
+      duration: const Duration(seconds: 3),
+    );
+  }
 
-      if (qrData != null) {
-        final String? cdObj = qrData['CdObj']?.toString();
-        // ✅ NOVO: Captura o campo 'Detalhe' do JSON
-        final String? detalheQrCode = qrData['Detalhe']?.toString();
+  // FUNÇÃO QUE PROCESSA O RESULTADO INJETADO PELO HARDWARE (Disparado por ENTER ou Plano B)
+  void _onHardwareScanSubmitted(String rawQrCode) async {
+    // ⚠️ VERIFICAÇÃO DE BLOQUEIO: Garante que não haja execução duplicada
+    if (_isProcessingScan) {
+      print('[FLUXO] Processo já ativo. Ignorando chamada duplicada.');
+      return;
+    }
 
-        if (cdObj != null && cdObj.isNotEmpty) {
-          // ✅ Chamada correta utilizando o parâmetro nomeado
-          await _consultarDetalheDoObjeto(cdObj, detalheQrCode: detalheQrCode);
-        } else {
-          _showSnackBar('QR Code lido, mas está inválido.', isError: true);
-        }
-      }
-    } else {
+    // 1. Bloqueia o processo e inicia o loading
+    if (mounted) {
+      setState(() {
+        _loading = true;
+        _isProcessingScan = true;
+      });
+    }
+
+    // Garante que o teclado desapareça imediatamente
+    FocusScope.of(context).unfocus();
+
+    if (rawQrCode.isEmpty) {
       _showSnackBar(
         'Leitura de QR Code cancelada ou sem resultado.',
         isError: true,
       );
+      // O desbloqueio será feito no bloco finally
+      return;
     }
 
-    setState(() => _loading = false);
+    print(
+      '[FLUXO] onFieldSubmitted DISPARADO. Resultado do scanner: $rawQrCode',
+    );
+
+    try {
+      final qrData = _parseQrCodeJson(rawQrCode);
+
+      if (qrData != null) {
+        final String? cdObj = qrData['CdObj']?.toString();
+        final String? detalheQrCode = qrData['Detalhe']?.toString();
+
+        if (cdObj != null && cdObj.isNotEmpty) {
+          await _consultarDetalheDoObjeto(cdObj, detalheQrCode: detalheQrCode);
+        } else {
+          _showSnackBar(
+            'QR Code lido, mas está inválido (CdObj não encontrado).',
+            isError: true,
+          );
+        }
+      }
+    } catch (e) {
+      print('[ERRO_SCANNER] Erro durante o processamento do QR Code: $e');
+      if (mounted)
+        _showSnackBar(
+          'Erro grave ao processar o QR Code. Consulte o log.',
+          isError: true,
+        );
+    } finally {
+      // 2. Desbloqueia e limpa (Bloco Finally para segurança)
+      if (mounted) {
+        // O campo não será mais utilizado após essa limpeza.
+        _hardwareScannerController.clear();
+        setState(() {
+          _loading = false;
+          _isProcessingScan = false;
+        });
+        // Re-foca o scanner para o próximo item
+        FocusScope.of(context).requestFocus(_hardwareScannerFocusNode);
+      }
+    }
   }
 
   // FUNÇÃO PARA ANALISAR O JSON DO QR CODE
   Map<String, dynamic>? _parseQrCodeJson(String rawQrCode) {
     String cleanedQrCode = rawQrCode.trim();
-    // WORKAROUND: Tenta corrigir o JSON inválido
+
+    // Correção de JSON para casos em que o DataWedge injeta mal a aspa final
     if (cleanedQrCode.endsWith('"}') && cleanedQrCode.contains(':')) {
       int lastQuoteIndex = cleanedQrCode.lastIndexOf('"');
       if (lastQuoteIndex == cleanedQrCode.length - 2) {
@@ -476,7 +584,6 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
           cleanedQrCode.lastIndexOf(':') + 1,
           lastQuoteIndex,
         );
-
         if (int.tryParse(potentialNumber) != null) {
           cleanedQrCode =
               cleanedQrCode.substring(0, lastQuoteIndex) +
@@ -487,25 +594,27 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
 
     try {
       final decoded = jsonDecode(cleanedQrCode);
-      // Manteve-se a verificação de 'CdObj' como obrigatória para a consulta no banco
       if (decoded is Map<String, dynamic> && decoded.containsKey('CdObj')) {
+        print('[PARSER] JSON válido encontrado e pronto para consulta.');
         return decoded;
       }
       _showSnackBar(
-        'QR Code lido não contém o formato JSON esperado.',
+        'QR Code lido não contém o formato JSON esperado (Falta CdObj).',
         isError: true,
       );
       return null;
     } catch (e) {
-      _showSnackBar('QR Code lido não é um JSON válido.', isError: true);
+      print('[PARSER_ERRO] Falha ao decodificar JSON: $e');
+      _showSnackBar(
+        'QR Code lido não é um JSON válido. Verifique o formato.',
+        isError: true,
+      );
       return null;
     }
   }
 
-  // FUNÇÃO DE SALVAR
+  // FUNÇÃO DE SALVAR (Mantida)
   Future<void> _salvarMapa() async {
-    FocusScope.of(context).unfocus();
-
     final String turnoNome = _turnoController.text.trim();
     final String? turnoId = _turnoNomeParaIdMap[turnoNome];
 
@@ -536,7 +645,7 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
     }
 
     final double? quantidade = double.tryParse(
-      _quantidadeController.text.trim().replaceAll(',', '.'), // Permite vírgula
+      _quantidadeController.text.trim().replaceAll(',', '.'),
     );
     if (quantidade == null) {
       _showSnackBar('A quantidade informada é inválida.', isError: true);
@@ -559,12 +668,17 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
       'quantidade': quantidade.toString(),
     };
 
-    setState(() => _loading = true);
+    print('[SALVAR] Payload de envio: $payload');
+
+    if (mounted) setState(() => _loading = true);
     final token = await AuthService.obterTokenAplicacao();
 
-    if (token == null) {
-      setState(() => _loading = false);
-      _showSnackBar('Falha na autenticação ao salvar.', isError: true);
+    if (token == null || await AuthService.isOfflineModeActive()) {
+      if (mounted) setState(() => _loading = false);
+      _showSnackBar(
+        'Falha na autenticação ou modo offline ativo. Não é possível salvar na API.',
+        isError: true,
+      );
       return;
     }
 
@@ -581,31 +695,49 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
       );
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
-        _showSnackBar('Mapa de produção salvo com sucesso!');
-        // Limpar campos
-        _ordemProducaoController.clear();
-        _unidadeMedidaController.clear();
-        _quantidadeController.clear();
-        // o fluxo de repetição, como estava no código original.
+        if (mounted) {
+          _showSnackBar('Mapa de produção salvo com sucesso!');
+          // Limpar campos após sucesso, exceto data e turno
+          _ordemProducaoController.clear();
+          _produtoController.clear();
+          _loteController.clear();
+          _unidadeMedidaController.clear();
+          _quantidadeController.clear();
+          _objetoID = null;
+          _detalheID = null;
+          // Re-focar o scanner para o próximo item
+          _reFocarScanner();
+        }
+        print('[SALVAR] Sucesso: Documento salvo.');
       } else {
         print('[ERRO_SALVAR] HTTP ${response.statusCode}: ${response.body}');
-        _showSnackBar(
-          'Erro ${response.statusCode} ao salvar. ${jsonDecode(response.body)['Message'] ?? ''}',
-          isError: true,
-        );
+        if (mounted) {
+          _showSnackBar(
+            'Erro ${response.statusCode} ao salvar. ${jsonDecode(response.body)['Message'] ?? ''}',
+            isError: true,
+          );
+        }
       }
     } catch (e) {
-      _showSnackBar('Falha de rede ao salvar: $e', isError: true);
+      if (mounted) _showSnackBar('Falha de rede ao salvar: $e', isError: true);
+      print('[ERRO_REDE] Falha de rede ao salvar: $e');
     } finally {
-      setState(() => _loading = false);
+      if (mounted) setState(() => _loading = false);
     }
   }
 
-  void _showSnackBar(String message, {bool isError = false}) {
+  void _showSnackBar(
+    String message, {
+    bool isError = false,
+    Duration duration = const Duration(seconds: 4),
+  }) {
+    if (!mounted) return;
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
         backgroundColor: isError ? Colors.red.shade700 : Colors.green.shade600,
+        duration: duration,
       ),
     );
   }
@@ -630,116 +762,151 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
         centerTitle: true,
         backgroundColor: Colors.red.shade700,
         foregroundColor: Colors.white,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.qr_code_scanner, color: Colors.white),
-            onPressed: _loading ? null : _iniciarLeituraQrCode,
-            tooltip: 'Ler QR Code e Consultar Detalhes',
+      ),
+      body: Stack(
+        children: [
+          SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // CAMPO DE TEXTO OCULTO PARA RECEBER A LEITURA DO HARDWARE
+                  // O campo está oculto, mas sempre focado ao iniciar a tela.
+                  SizedBox(
+                    height: 0,
+                    width: 0,
+                    child: Opacity(
+                      opacity: 0,
+                      child: TextFormField(
+                        controller: _hardwareScannerController,
+                        focusNode: _hardwareScannerFocusNode,
+                        keyboardType: TextInputType.none,
+
+                        // PLAIN B: Tenta forçar o processamento se onFieldSubmitted falhar
+                        onChanged: (value) {
+                          if (value.isNotEmpty) {
+                            print(
+                              '[DEBUG-WEDGE] onChanged: Valor injetado: $value',
+                            );
+
+                            // ⚠️ ATENÇÃO AO BLOQUEIO: Só dispara se não estiver processando
+                            if (value.endsWith('}') && !_isProcessingScan) {
+                              print(
+                                '[PLANO B] Forçando _onHardwareScanSubmitted, pois o DataWedge não enviou ENTER.',
+                              );
+                              _onHardwareScanSubmitted(value);
+                            }
+                          }
+                        },
+
+                        // Processa o JSON injetado (Dispara se o DataWedge enviar 'ENTER')
+                        onFieldSubmitted: _onHardwareScanSubmitted,
+                      ),
+                    ),
+                  ),
+
+                  // O restante da sua UI
+                  const Text(
+                    'Informações do Documento',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 16),
+                  Wrap(
+                    spacing: 16,
+                    runSpacing: 16,
+                    children: [
+                      _buildField(
+                        label: 'Data (dd/MM/yyyy)',
+                        controller: _dataController,
+                        hint: '24/11/2025',
+                        keyboardType: TextInputType.datetime,
+                        readOnly: false,
+                      ),
+                      _buildField(
+                        label: 'Turno',
+                        controller: _turnoController,
+                        readOnly: true,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  const Text(
+                    'Identificação da Produção',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 16),
+                  Wrap(
+                    spacing: 16,
+                    runSpacing: 16,
+                    children: [
+                      _buildField(
+                        label: 'Ordem de Produção',
+                        controller: _ordemProducaoController,
+                        keyboardType: TextInputType.number,
+                        readOnly: false,
+                      ),
+                      _buildField(
+                        label: 'Objeto',
+                        controller: _produtoController,
+                        readOnly: false,
+                      ),
+                      _buildField(
+                        label: 'Detalhe',
+                        controller: _loteController,
+                        readOnly: false,
+                      ),
+                      _buildField(
+                        label: 'Unidade de Medida',
+                        controller: _unidadeMedidaController,
+                        readOnly: false,
+                      ),
+                      _buildField(
+                        label: 'Quantidade',
+                        controller: _quantidadeController,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        readOnly: false,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: (_loading || _isProcessingScan)
+                          ? null
+                          : _salvarMapa,
+                      icon: (_loading || _isProcessingScan)
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : const Icon(Icons.save_outlined),
+                      label: Text(
+                        (_loading || _isProcessingScan)
+                            ? 'Consultando/Salvando...'
+                            : 'Salvar Mapa',
+                        style: const TextStyle(fontSize: 16),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        backgroundColor: Colors.red.shade700,
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ],
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Informações do Documento',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 16),
-              Wrap(
-                spacing: 16,
-                runSpacing: 16,
-                children: [
-                  _buildField(
-                    label: 'Data (dd/MM/yyyy)',
-                    controller: _dataController,
-                    hint: '24/11/2025',
-                    keyboardType: TextInputType.datetime,
-                    readOnly: false, // Mantido editável (padrão)
-                  ),
-                  _buildField(
-                    label: 'Turno',
-                    controller: _turnoController,
-                    readOnly: true, // ÚNICO CAMPO NÃO EDITÁVEL
-                  ),
-                ],
-              ),
-              const SizedBox(height: 24),
-              const Text(
-                'Identificação da Produção',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 16),
-              Wrap(
-                spacing: 16,
-                runSpacing: 16,
-                children: [
-                  _buildField(
-                    label: 'Ordem de Produção',
-                    controller: _ordemProducaoController,
-                    keyboardType: TextInputType.number,
-                    readOnly: false, // Editável
-                  ),
-                  _buildField(
-                    label: 'Objeto',
-                    controller: _produtoController,
-                    readOnly:
-                        false, // AGORA EDITÁVEL (Removido 'readOnly: true')
-                  ),
-                  _buildField(
-                    label: 'Detalhe',
-                    controller: _loteController,
-                    readOnly:
-                        false, // AGORA EDITÁVEL (Removido 'readOnly: true')
-                  ),
-                  _buildField(
-                    label: 'Unidade de Medida',
-                    controller: _unidadeMedidaController,
-                    readOnly: false, // Editável
-                  ),
-                  _buildField(
-                    label: 'Quantidade',
-                    controller: _quantidadeController,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                    ),
-                    readOnly: false, // Editável
-                  ),
-                ],
-              ),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: _loading ? null : _salvarMapa,
-                  icon: _loading
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2,
-                          ),
-                        )
-                      : const Icon(Icons.save_outlined),
-                  label: Text(
-                    _loading ? 'Consultando/Salvando...' : 'Salvar Mapa',
-                    style: const TextStyle(fontSize: 16),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    backgroundColor: Colors.red.shade700,
-                    foregroundColor: Colors.white,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }
@@ -749,15 +916,14 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
     required TextEditingController controller,
     TextInputType? keyboardType,
     String? hint,
-    bool readOnly = false, // Padrão 'false' para permitir edição
+    bool readOnly = false,
   }) {
     return ConstrainedBox(
       constraints: const BoxConstraints(minWidth: 280, maxWidth: 380),
       child: TextFormField(
         controller: controller,
         keyboardType: keyboardType,
-        readOnly:
-            readOnly, // Usa o valor passado, que é 'true' apenas para o Turno
+        readOnly: readOnly,
         decoration: InputDecoration(
           labelText: label,
           hintText: hint,
@@ -772,9 +938,6 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
             vertical: 14,
           ),
         ),
-        // A validação de Objeto/Detalhe agora só verifica se estão vazios,
-        // mas o salvamento ainda exige os IDs (_objetoID e _detalheID)
-        // obtidos pelo QR Code.
         validator: (value) {
           if (controller == _produtoController ||
               controller == _loteController ||
@@ -788,5 +951,15 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
         },
       ),
     );
+  }
+}
+
+// Extensão necessária para o método firstWhereOrNull na lista de EstoqueItem
+extension EstoqueListExtensions on List<EstoqueItem> {
+  EstoqueItem? firstWhereOrNull(bool Function(EstoqueItem element) test) {
+    for (var element in this) {
+      if (test(element)) return element;
+    }
+    return null;
   }
 }

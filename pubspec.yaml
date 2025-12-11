@@ -14,7 +14,7 @@ dependencies:
   # Ícones do iOS
   cupertino_icons: ^1.0.8
 
-  # Dependências normais (foram movidas para cá)
+  # Dependências normais
   intl: ^0.20.2
   mobile_scanner: ^3.5.4
   json_annotation: ^4.8.0
@@ -33,8 +33,10 @@ dependencies:
   sqflite: ^2.4.2
   permission_handler: ^12.0.1
   rename: ^3.1.0
+  flutter_datawedge: ^3.2.0
+  connectivity_plus: ^7.0.0
 
-  flutter_localizations: # <<<<<< Adicione esta linha
+  flutter_localizations:
     sdk: flutter
 
 dev_dependencies:

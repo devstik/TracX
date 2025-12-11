@@ -1,6 +1,7 @@
 import 'package:tracx/screens/ListaRegistrosScreen.dart';
 import 'package:tracx/views/RegistroEmbalagem.dart' as embalagem;
 import 'package:tracx/screens/login_screen.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:tracx/screens/CadastrarUsuarioScreen.dart';
 import 'package:tracx/screens/ListarUsuariosScreen.dart';
@@ -26,7 +27,10 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
   late AnimationController _controller;
   late Animation<double> _fadeAnimation;
 
-  final List<String> _admins = const ['Joao', 'Leide', 'Lidinaldo', 'admin'];
+  // A lista de admins é necessária para determinar a função
+  final List<String> _admins = const ['Joao', 'Leide', 'Lidinaldo'];
+
+  // NOVO: Determina se o usuário atual é administrador
   bool get _isAdmin => _admins.contains(widget.conferente);
 
   @override
@@ -49,6 +53,7 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
     super.dispose();
   }
 
+  // 🔹 Função genérica para aplicar transição personalizada
   void _navigateWithTransition(BuildContext context, Widget page) {
     Navigator.push(
       context,
@@ -73,7 +78,7 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
     );
   }
 
-  void _showAdminMenu() {
+  void _showUserActionsSheet() {
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -83,34 +88,8 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
         return Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.orange.shade50,
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(16),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.admin_panel_settings,
-                    color: Colors.orange.shade700,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Administração',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.orange.shade700,
-                    ),
-                  ),
-                ],
-              ),
-            ),
             ListTile(
-              leading: const Icon(Icons.person_add, color: Colors.blue),
+              leading: const Icon(Icons.person_add),
               title: const Text('Cadastrar Usuário'),
               onTap: () {
                 Navigator.pop(context);
@@ -118,7 +97,7 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
               },
             ),
             ListTile(
-              leading: const Icon(Icons.lock_reset, color: Colors.green),
+              leading: const Icon(Icons.lock_reset),
               title: const Text('Alterar Senha'),
               onTap: () {
                 Navigator.pop(context);
@@ -126,24 +105,48 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
               },
             ),
             ListTile(
-              leading: const Icon(Icons.list, color: Colors.purple),
+              leading: const Icon(Icons.list),
               title: const Text('Listar Usuários'),
               onTap: () {
                 Navigator.pop(context);
                 _navigateWithTransition(context, ListarUsuariosScreen());
               },
             ),
-            const SizedBox(height: 8),
           ],
         );
       },
     );
   }
 
+  Widget _buildHeaderIconButton({
+    required IconData icon,
+    required VoidCallback onTap,
+    String? tooltip,
+    Color color = Colors.black87,
+  }) {
+    final button = MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: Colors.grey.shade200,
+          ),
+          child: Icon(icon, color: color),
+        ),
+      ),
+    );
+    return tooltip != null ? Tooltip(message: tooltip, child: button) : button;
+  }
+
   @override
   Widget build(BuildContext context) {
-    // 📦 SEÇÃO 1: REGISTRAR PEDIDOS (3 itens)
-    final List<_MenuItem> registrarItems = [
+    // 💡 MUDANÇA 1: Reorganização dos itens para 3 (Embalagem, Localização, Tinturaria)
+    // Os demais (Relatório e Usuários) virão abaixo na ordem em que forem definidos.
+    final List<_MenuItem> menuItems = [
       _MenuItem(
         title: 'Registrar',
         icon: Icons.app_registration,
@@ -152,31 +155,6 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
           context,
           RegistroPrincipalScreen(conferente: widget.conferente),
         ),
-      ),
-      _MenuItem(
-        title: 'Localização',
-        icon: Icons.location_on,
-        color: Colors.purple.shade700,
-        onTap: () => _navigateWithTransition(
-          context,
-          Localizacaoscreen(conferente: widget.conferente, isAdmin: _isAdmin),
-        ),
-      ),
-      _MenuItem(
-        title: 'Mapa Produção',
-        icon: Icons.map_outlined,
-        color: Colors.indigo.shade600,
-        onTap: () => _navigateWithTransition(context, MapaProducaoScreen()),
-      ),
-    ];
-
-    // 📊 SEÇÃO 2: ANÁLISE DE DADOS (3 itens)
-    final List<_MenuItem> analiseItems = [
-      _MenuItem(
-        title: 'Registros',
-        icon: Icons.list_alt,
-        color: Colors.green.shade700,
-        onTap: () => _navigateWithTransition(context, ListaRegistrosScreen()),
       ),
       _MenuItem(
         title: 'Fluxo',
@@ -193,6 +171,27 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
         },
       ),
       _MenuItem(
+        title: 'Mapa de Produção',
+        icon: Icons.map_outlined,
+        color: Colors.indigo.shade600,
+        onTap: () => _navigateWithTransition(context, MapaProducaoScreen()),
+      ),
+      _MenuItem(
+        title: 'Registros',
+        icon: Icons.list_alt,
+        color: Colors.green.shade700,
+        onTap: () => _navigateWithTransition(context, ListaRegistrosScreen()),
+      ),
+      _MenuItem(
+        title: 'Localização',
+        icon: Icons.location_on,
+        color: Colors.purple.shade700,
+        onTap: () => _navigateWithTransition(
+          context,
+          Localizacaoscreen(conferente: widget.conferente, isAdmin: _isAdmin),
+        ),
+      ),
+      _MenuItem(
         title: 'Consultar Mapas',
         icon: Icons.analytics_outlined,
         color: Colors.deepPurple.shade600,
@@ -205,303 +204,150 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
 
     final size = MediaQuery.of(context).size;
     final bool isPhone = size.width < 600;
+    const int crossAxisCount = 3;
+    final double gridSpacing = isPhone ? 18 : 24;
+
+    // 💡 CORREÇÃO 1: childAspectRatio para 1.0 para forçar cards quadrados em telas pequenas.
+    final double childAspectRatio = isPhone ? 1.0 : 1.05;
 
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
         child: Column(
           children: [
-            // HEADER COM BOTÃO ADMIN
             FadeTransition(
               opacity: _fadeAnimation,
-              child: Container(
-                margin: const EdgeInsets.fromLTRB(20, 12, 20, 8),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
-                ),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [Colors.blue.shade50, Colors.white],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(0, -0.2),
+                  end: Offset.zero,
+                ).animate(_fadeAnimation),
+                child: Container(
+                  margin: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 16,
                   ),
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black12,
-                      blurRadius: 8,
-                      offset: const Offset(0, 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 16,
+                  ),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Colors.blue.shade50, Colors.white],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
                     ),
-                  ],
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text.rich(
-                        TextSpan(
-                          children: [
-                            const TextSpan(
-                              text: 'Bem-vindo, ',
-                              style: TextStyle(
-                                fontSize: 16,
-                                color: Colors.black54,
-                              ),
-                            ),
-                            TextSpan(
-                              text: widget.conferente,
-                              style: const TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.black87,
-                              ),
-                            ),
-                          ],
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                        maxLines: 1,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black12,
+                        blurRadius: 12,
+                        offset: const Offset(0, 6),
                       ),
-                    ),
-                    const SizedBox(width: 12),
-
-                    // BOTÃO ADMIN (só aparece para administradores)
-                    if (_isAdmin) ...[
-                      GestureDetector(
-                        onTap: _showAdminMenu,
-                        child: Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: Colors.orange.shade100,
-                          ),
-                          child: Icon(
-                            Icons.admin_panel_settings,
-                            color: Colors.orange.shade700,
-                            size: 20,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
                     ],
-
-                    // BOTÃO LOGOUT
-                    GestureDetector(
-                      onTap: () {
-                        showDialog(
-                          context: context,
-                          builder: (BuildContext context) {
-                            return AlertDialog(
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                              title: Row(
-                                children: [
-                                  Icon(
-                                    Icons.logout,
-                                    color: Colors.red.shade700,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  const Text('Sair do Sistema'),
-                                ],
-                              ),
-                              content: const Text(
-                                'Tem certeza que deseja sair?',
-                                style: TextStyle(fontSize: 16),
-                              ),
-                              actions: [
-                                TextButton(
-                                  onPressed: () => Navigator.pop(context),
-                                  child: Text(
-                                    'Cancelar',
-                                    style: TextStyle(
-                                      color: Colors.grey.shade700,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text.rich(
+                          TextSpan(
+                            children: [
+                              const TextSpan(
+                                text: 'Bem-vindo, ',
+                                style: TextStyle(
+                                  fontSize: 20,
+                                  color: Colors.black54,
                                 ),
-                                ElevatedButton(
-                                  onPressed: () {
-                                    Navigator.pop(context); // Fecha o dialog
-                                    Navigator.pushAndRemoveUntil(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) => LoginScreen(),
-                                      ),
-                                      (route) => false,
-                                    );
-                                  },
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.red.shade700,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                  ),
-                                  child: const Text(
-                                    'Sair',
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
+                              ),
+                              TextSpan(
+                                text: widget.conferente,
+                                style: const TextStyle(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.black87,
                                 ),
-                              ],
-                            );
-                          },
-                        );
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: Colors.grey.shade200,
-                        ),
-                        child: const Icon(
-                          Icons.logout,
-                          color: Colors.black87,
-                          size: 20,
+                              ),
+                            ],
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
                         ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 16),
+                      if (_isAdmin) ...[
+                        _buildHeaderIconButton(
+                          icon: CupertinoIcons.person_crop_circle,
+                          tooltip: 'Gerenciar usuários',
+                          onTap: _showUserActionsSheet,
+                          color: Colors.blueAccent,
+                        ),
+                        const SizedBox(width: 12),
+                      ],
+                      _buildHeaderIconButton(
+                        icon: Icons.logout,
+                        tooltip: 'Sair',
+                        onTap: () {
+                          Navigator.pushAndRemoveUntil(
+                            context,
+                            MaterialPageRoute(builder: (_) => LoginScreen()),
+                            (route) => false,
+                          );
+                        },
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
-
             Expanded(
-              child: SingleChildScrollView(
+              child: GridView.builder(
                 padding: EdgeInsets.symmetric(
-                  horizontal: isPhone ? 16 : 24,
-                  vertical: 8,
+                  horizontal: isPhone ? 16 : 32,
+                  vertical: isPhone ? 12 : 24,
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // TÍTULO SEÇÃO 1
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(8, 12, 8, 12),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.edit_document,
-                            color: Colors.red.shade700,
-                            size: 24,
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Registrar Pedidos',
-                            style: TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.grey[800],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-
-                    // GRID SEÇÃO 1 (3 colunas)
-                    GridView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      padding: EdgeInsets.zero,
-                      itemCount: registrarItems.length,
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 3,
-                            crossAxisSpacing: 10,
-                            mainAxisSpacing: 10,
-                            childAspectRatio: 1.0,
-                          ),
-                      itemBuilder: (context, index) {
-                        return _buildAnimatedCard(registrarItems[index], index);
-                      },
-                    ),
-
-                    const SizedBox(height: 24),
-
-                    // TÍTULO SEÇÃO 2
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(8, 12, 8, 12),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.bar_chart,
-                            color: Colors.green.shade700,
-                            size: 24,
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Análise de Dados',
-                            style: TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.grey[800],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-
-                    // GRID SEÇÃO 2 (3 colunas)
-                    GridView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      padding: EdgeInsets.zero,
-                      itemCount: analiseItems.length,
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 3,
-                            crossAxisSpacing: 10,
-                            mainAxisSpacing: 10,
-                            childAspectRatio: 1.0,
-                          ),
-                      itemBuilder: (context, index) {
-                        return _buildAnimatedCard(
-                          analiseItems[index],
-                          index + registrarItems.length,
-                        );
-                      },
-                    ),
-
-                    const SizedBox(height: 16),
-                  ],
+                itemCount: menuItems.length,
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: crossAxisCount,
+                  crossAxisSpacing: gridSpacing,
+                  mainAxisSpacing: gridSpacing,
+                  childAspectRatio: childAspectRatio,
                 ),
+                itemBuilder: (context, index) {
+                  final item = menuItems[index];
+                  return AnimatedBuilder(
+                    animation: _controller,
+                    builder: (context, child) {
+                      final double start = index * 0.1;
+                      final double end = start + 0.5;
+                      double opacity;
+                      if (_controller.value < start) {
+                        opacity = 0.0;
+                      } else if (_controller.value > end) {
+                        opacity = 1.0;
+                      } else {
+                        opacity = (_controller.value - start) / (end - start);
+                      }
+                      final double translateY = 50 * (1 - opacity);
+                      return Opacity(
+                        opacity: opacity,
+                        child: Transform.translate(
+                          offset: Offset(0, translateY),
+                          child: child,
+                        ),
+                      );
+                    },
+                    child: _MenuItemCard(
+                      title: item.title,
+                      icon: item.icon,
+                      color: item.color,
+                      onTap: item.onTap,
+                    ),
+                  );
+                },
               ),
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildAnimatedCard(_MenuItem item, int index) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        final double start = index * 0.08;
-        final double end = start + 0.4;
-        double opacity;
-        if (_controller.value < start) {
-          opacity = 0.0;
-        } else if (_controller.value > end) {
-          opacity = 1.0;
-        } else {
-          opacity = (_controller.value - start) / (end - start);
-        }
-        final double translateY = 30 * (1 - opacity);
-        return Opacity(
-          opacity: opacity,
-          child: Transform.translate(
-            offset: Offset(0, translateY),
-            child: child,
-          ),
-        );
-      },
-      child: _MenuItemCard(
-        title: item.title,
-        icon: item.icon,
-        color: item.color,
-        onTap: item.onTap,
       ),
     );
   }
@@ -557,7 +403,16 @@ class _MenuItemCardState extends State<_MenuItemCard>
   }
 
   @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    // Detecta se é um dispositivo pequeno para ajustes finos.
+    final bool isSmallDevice = MediaQuery.of(context).size.width < 600;
+
     return MouseRegion(
       onEnter: (_) {
         setState(() => _isHovered = true);
@@ -578,9 +433,13 @@ class _MenuItemCardState extends State<_MenuItemCard>
             return Transform.scale(
               scale: _scaleAnimation.value,
               child: Container(
-                padding: const EdgeInsets.all(8),
+                // 💡 CORREÇÃO 2: Redução drástica do padding vertical para economizar espaço no card quadrado.
+                padding: EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: isSmallDevice ? 10 : 20,
+                ),
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(16),
                   gradient: LinearGradient(
                     colors: _isHovered
                         ? [widget.color.withOpacity(0.25), Colors.white]
@@ -590,27 +449,47 @@ class _MenuItemCardState extends State<_MenuItemCard>
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(_isHovered ? 0.2 : 0.12),
-                      blurRadius: _isHovered ? 12 : 8,
-                      offset: const Offset(0, 4),
+                      color: Colors.black.withOpacity(_isHovered ? 0.25 : 0.15),
+                      blurRadius: _isHovered ? 16 : 12,
+                      offset: const Offset(0, 6),
                     ),
                   ],
                 ),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Icon(widget.icon, size: 28, color: widget.color),
-                    const SizedBox(height: 6),
-                    Text(
-                      widget.title,
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.grey[900],
+                    // O ícone usa FittedBox e um Padding leve.
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Padding(
+                        // Padding do ícone reduzido para dar mais espaço ao texto
+                        padding: const EdgeInsets.only(top: 4.0, bottom: 4.0),
+                        child: Icon(
+                          widget.icon,
+                          size: isSmallDevice ? 32 : 40, // Ícone menor
+                          color: widget.color,
+                        ),
                       ),
-                      textAlign: TextAlign.center,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(
+                      height: 4,
+                    ), // Espaçamento entre ícone e texto reduzido
+                    // O texto usa Expanded e agora maxLines: 1 para forçar uma única linha.
+                    Expanded(
+                      child: Text(
+                        widget.title,
+                        style: TextStyle(
+                          // 💡 CORREÇÃO 3: Fonte reduzida para 11px em telas pequenas (necessário para maxLines: 1).
+                          fontSize: isSmallDevice ? 11 : 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.grey[900],
+                        ),
+                        textAlign: TextAlign.center,
+                        maxLines: 1, // FORÇA O TEXTO A FICAR EM UMA ÚNICA LINHA
+                        overflow: TextOverflow
+                            .ellipsis, // Adiciona '...' se for cortado
+                      ),
                     ),
                   ],
                 ),
@@ -620,11 +499,5 @@ class _MenuItemCardState extends State<_MenuItemCard>
         ),
       ),
     );
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
   }
 }
