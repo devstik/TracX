@@ -4,38 +4,82 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart'; // Para debugPrint
 
 class AuthService {
-  // --- Credenciais Offline (Novas Constantes) ---
+  // --- Credenciais Offline ---
   static const String _adminUsername =
-      'admin'; // Usuário fixo para login offline (Privado)
-  static const String _adminPassword =
-  
-      'admin'; // Senha fixa para login offline (Privado)
-
-  // CORREÇÃO: Tornada pública para ser acessível na LoginScreen
+      'admin'; // Usuário fixo para login offline
+  static const String _adminPassword = 'admin'; // Senha fixa para login offline
   static const String offlineAdminToken =
-      'OFFLINE_ADMIN_TOKEN_VALIDO'; // Token "falso" para modo offline (PÚBLICO)
+      'OFFLINE_ADMIN_TOKEN_VALIDO'; // Token "falso" para modo offline
 
   // --- Chaves e Validade ---
   static const String _tokenKey = 'token'; // Chave usada para salvar o token
   static const String _expiryKey =
       'tokenExpiry'; // Chave para salvar a data de expiração
-  static const int _defaultTokenValiditySeconds = 3600; // 60 minutos (usado apenas para login offline)
+  static const int _defaultTokenValiditySeconds = 3600; // 60 minutos
+
+  // --- Constantes WMS/LogTech ---
   static const String _wmsAuthUrl =
       'https://visions.topmanager.com.br/auth/api/usuarios/entrar?identificadorDaAplicacao=LogTech_WMS&chaveDaAplicacaoExterna=uvkmv%2BQHum%2FXhF8grWeW4nKmzKFRk4UwJk74x7FnZbGC6ECvl4nbxUf3h7L%2BCGk25qSA8QOJoovrJtUJlXlsWQ%3D%3D&enderecoDeRetorno=http://qualquer';
   static const String _wmsEmail = 'suporte.wms';
   static const String _wmsPassword = '123456';
   static const String _wmsUsuarioId = '21578';
 
-  // ✅ NOVO MÉTODO (FALTANDO ANTERIORMENTE)
-  // --- NOVO: Função para checar se está em modo Offline ---
+  // --- Constantes Força de Vendas (Adicionadas para clareza) ---
+  static const String _forcaDeVendasAuthUrl =
+      'https://visions.topmanager.com.br/auth/api/usuarios/entrar?identificadorDaAplicacao=ForcaDeVendas&chaveDaAplicacaoExterna=2awwG8Tqp12sJtzQcyYIzVrYfQNmMg0crxWq8ohNQMlQU4cU5lvO1Y%2FGNN0hbkAD0JNPPQz3489u8paqUO3jOg%3D%3D&enderecoDeRetorno=http://qualquer';
+  static const String _forcaDeVendasEmail = 'Stik.ForcaDeVendas';
+  static const String _forcaDeVendasPassword = '123456';
+  static const String _forcaDeVendasUsuarioId = '15980';
+
+  // --- Gerenciamento de Token Local ---
+
+  /// Salva o token e define a data de expiração local (padrão 1 hora).
+  static Future<void> _salvarToken(
+    String token, {
+    int validitySeconds = _defaultTokenValiditySeconds,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_tokenKey, token);
+
+    final expiryTime = DateTime.now()
+        .add(Duration(seconds: validitySeconds))
+        .toIso8601String();
+
+    await prefs.setString(_expiryKey, expiryTime);
+    debugPrint(
+      '[AUTH] Token salvo localmente com validade de $validitySeconds segundos.',
+    );
+  }
+
+  /// Verifica se a data de expiração salva está no passado.
+  static bool _isTokenExpired(String? expiryString) {
+    if (expiryString == null) return true;
+    try {
+      final expiryDate = DateTime.parse(expiryString);
+
+      // O token offline tem uma expiração muito distante (3650 dias),
+      // então é considerado sempre válido
+      if (expiryDate.year >= 2030) return false;
+
+      // Adiciona uma pequena tolerância (ex: 5 minutos) antes da expiração real,
+      // para garantir que um novo token seja obtido antes de falhar. (Lógica do V1)
+      final toleranceTime = expiryDate.subtract(const Duration(minutes: 5));
+
+      return DateTime.now().isAfter(toleranceTime);
+    } catch (e) {
+      debugPrint('[AUTH] Erro ao analisar data de expiração: $e');
+      return true; // Assume expirado em caso de erro de parse
+    }
+  }
+
+  // --- Funções Auxiliares de Gerenciamento ---
+
   static Future<bool> isOfflineModeActive() async {
     final prefs = await SharedPreferences.getInstance();
     final savedToken = prefs.getString(_tokenKey);
-    // Verifica se o token salvo é o token falso usado para o modo offline
     return savedToken == offlineAdminToken;
   }
 
-  // --- NOVO: Função para forçar a expiração local do token ---
   static Future<void> clearToken() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_tokenKey);
@@ -43,51 +87,32 @@ class AuthService {
     debugPrint('[AUTH] Token local e data de expiração LIMPOS.');
   }
 
-  // --- FUNÇÃO DE LOGIN OFFLINE (NOVA) ---
-  /// Tenta logar o usuário usando as credenciais fixas de admin.
-  /// Se for bem-sucedido, salva um token não expirável localmente.
   static Future<bool> loginAdminOffline(
     String username,
     String password,
   ) async {
-    // 1. Verifica as credenciais fixas (usando os campos privados)
     if (username.toLowerCase() == _adminUsername &&
         password == _adminPassword) {
-      final prefs = await SharedPreferences.getInstance();
-
-      // 2. Salva o token offline (usando o campo público) e a data de expiração muito distante
-      await prefs.setString(_tokenKey, offlineAdminToken);
-
-      // Define uma data de expiração muito distante (ex: 10 anos) para evitar expiração offline
-      final expiryTime = DateTime.now()
-          .add(const Duration(days: 3650))
-          .toIso8601String();
-
-      await prefs.setString(_expiryKey, expiryTime);
-
+      // Define uma expiração de 10 anos
+      await _salvarToken(offlineAdminToken, validitySeconds: 3650 * 24 * 3600);
       debugPrint(
         '[AUTH] Login Admin Offline bem-sucedido. Token: $offlineAdminToken',
       );
       return true;
     }
-
     debugPrint('[AUTH] Falha no Login Admin Offline. Credenciais inválidas.');
     return false;
   }
 
-  // --- Funções de Extração/Decodificação ---
   static String extrairToken(String respostaDaApi) {
-    // Tenta extrair o token de uma string do tipo 'token="VALOR_DO_TOKEN"' (Regex original)
     RegExp regex = RegExp(r'(?<==)[\w\.-]+(?=")');
     Match? match = regex.firstMatch(respostaDaApi);
 
     if (match != null) {
       return match.group(0)!;
     } else {
-      // Alternativamente, tenta decodificar JSON se a API retornar um objeto
       try {
         final decodedJson = jsonDecode(respostaDaApi);
-        // Assumindo que o campo retornado é 'Token' ou 'token' (em JSON)
         if (decodedJson is Map) {
           if (decodedJson.containsKey('Token')) {
             return decodedJson['Token'] as String;
@@ -105,57 +130,74 @@ class AuthService {
     }
   }
 
-  // --- Lógica de Verificação de Expiração (AJUSTADA) ---
-  // --- Função Principal de Obtenção de Token ---
-  static Future<String?> obterTokenAplicacao() async {
+  // --- Função Base de Obtenção de Token (Unificada) ---
+
+  /// Lógica centralizada para obter e gerenciar o ciclo de vida do token.
+  static Future<String?> _obterTokenBase(
+    Future<String?> Function() tokenRequester,
+  ) async {
     final prefs = await SharedPreferences.getInstance();
     final savedToken = prefs.getString(_tokenKey);
+    final expiryString = prefs.getString(_expiryKey);
 
     if (savedToken == offlineAdminToken) {
       debugPrint('[AUTH] Token offline detectado. Retornando modo offline.');
       return savedToken;
     }
 
-    final token = await _solicitarNovoToken();
+    // Se houver um token salvo E ele NÃO estiver expirado, retorna.
+    if (savedToken != null &&
+        savedToken.isNotEmpty &&
+        !_isTokenExpired(expiryString)) {
+      debugPrint('[AUTH] Token salvo válido. Retornando...');
+      return savedToken;
+    }
+
+    // Se não houver token ou se estiver expirado, solicita um novo.
+    debugPrint('[AUTH] Token ausente/expirado. Solicitando novo token...');
+    final token = await tokenRequester();
+
     if (token != null) {
-      debugPrint('[AUTH] Token Força obtido: $token');
+      // Salva o novo token com a validade padrão (1h)
+      await _salvarToken(token);
     }
     return token;
   }
 
+  // --- Funções Públicas de Acesso ao Token ---
+
+  /// Obtém ou renova o token para a API Força de Vendas.
+  static Future<String?> obterTokenAplicacao() async {
+    return _obterTokenBase(_solicitarNovoTokenForcaDeVendas);
+  }
+
+  /// Obtém ou renova o token para a API Logtech (WMS).
   static Future<String?> obterTokenLogtech() async {
-    final token = await _solicitarNovoTokenWms();
-    if (token != null) {
-      debugPrint('[AUTH WMS] Token recém-obtido: $token');
-    }
-    return token;
+    return _obterTokenBase(_solicitarNovoTokenWms);
   }
 
-  // --- Função de Solicitação de Token (API) ---
-  static Future<String?> _solicitarNovoToken() async {
-    const String apiUrl =
-        'https://visions.topmanager.com.br/auth/api/usuarios/entrar?identificadorDaAplicacao=ForcaDeVendas&chaveDaAplicacaoExterna=2awwG8Tqp12sJtzQcyYIzVrYfQNmMg0crxWq8ohNQMlQU4cU5lvO1Y%2FGNN0hbkAD0JNPPQz3489u8paqUO3jOg%3D%3D&enderecoDeRetorno=http://qualquer';
-    debugPrint('[AUTH] Solicitando token no endpoint: $apiUrl');
+  // --- Funções de Solicitação de Token (Requisição Pura) ---
 
+  /// Solicita novo token para Força de Vendas (NÃO salva, apenas retorna).
+  static Future<String?> _solicitarNovoTokenForcaDeVendas() async {
     final Map<String, String> requestBody = {
-      "email": "Stik.ForcaDeVendas",
-      "senha": "123456",
-      "usuarioID": "15980",
+      "email": _forcaDeVendasEmail,
+      "senha": _forcaDeVendasPassword,
+      "usuarioID": _forcaDeVendasUsuarioId,
     };
 
     try {
       final response = await http.post(
-        Uri.parse(apiUrl),
+        Uri.parse(_forcaDeVendasAuthUrl),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode(requestBody),
       );
 
       if (response.statusCode == 200) {
-        final String newToken = extrairToken(response.body);
-        return newToken;
+        return extrairToken(response.body);
       } else {
         debugPrint(
-          'ERRO: Falha ao gerar novo token. Status: ${response.statusCode}',
+          'ERRO: Falha ao gerar novo token Força de Vendas. Status: ${response.statusCode}',
         );
         debugPrint(response.body);
         return null;
@@ -166,22 +208,23 @@ class AuthService {
     }
   }
 
+  /// Solicita novo token para WMS/Logtech (NÃO salva, apenas retorna).
   static Future<String?> _solicitarNovoTokenWms() async {
+    final Map<String, String> requestBody = {
+      "email": _wmsEmail,
+      "senha": _wmsPassword,
+      "usuarioID": _wmsUsuarioId,
+    };
+
     try {
-      debugPrint('[AUTH WMS] Solicitando token no endpoint: $_wmsAuthUrl');
       final response = await http.post(
         Uri.parse(_wmsAuthUrl),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          "email": _wmsEmail,
-          "senha": _wmsPassword,
-          "usuarioID": _wmsUsuarioId,
-        }),
+        body: jsonEncode(requestBody),
       );
 
       if (response.statusCode == 200) {
-        final String newToken = extrairToken(response.body);
-        return newToken;
+        return extrairToken(response.body);
       } else {
         debugPrint(
           '[AUTH WMS] Falha ao gerar novo token. Status: ${response.statusCode}',
@@ -190,7 +233,9 @@ class AuthService {
         return null;
       }
     } catch (e) {
-      debugPrint('[AUTH WMS] ERRO DE REDE: Exceção ao tentar obter novo token: $e');
+      debugPrint(
+        '[AUTH WMS] ERRO DE REDE: Exceção ao tentar obter novo token: $e',
+      );
       return null;
     }
   }

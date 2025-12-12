@@ -41,7 +41,7 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
   final String _mapaPath =
       '/Servidor_2.7.0_api/logtechwms/itemdemapadeproducao/incluir';
 
-  // ✅ FLAG DE CONTROLE: Previne execuções simultâneas e race condition
+  // ✅ FLAG DE CONTROLE
   bool _isProcessingScan = false;
   bool _loading = false;
 
@@ -55,10 +55,11 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
   final TextEditingController _quantidadeController = TextEditingController();
   final TextEditingController _palletController = TextEditingController();
 
-  // Controller e FocusNode para o campo de input de Hardware (DataWedge)
+  // FocusNodes
+  final FocusNode _produtoFocusNode = FocusNode(); // <-- Adicionado
+  final FocusNode _hardwareScannerFocusNode = FocusNode();
   final TextEditingController _hardwareScannerController =
       TextEditingController();
-  final FocusNode _hardwareScannerFocusNode = FocusNode();
 
   int? _objetoID;
   int? _detalheID;
@@ -70,10 +71,7 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
     _determinarTurnoAtual();
     _inicializarEstoqueLocal();
 
-    // 🚀 NOVO CÓDIGO PARA FOCO AUTOMÁTICO
-    // Garante que o campo de scanner seja focado assim que a tela estiver pronta.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      // Verifica se a tela ainda está montada antes de tentar focar.
       if (mounted) {
         FocusScope.of(context).requestFocus(_hardwareScannerFocusNode);
         print('[FLUXO] Foco inicial automático aplicado ao campo de scanner.');
@@ -84,7 +82,6 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
         );
       }
     });
-    // ------------------------------------
   }
 
   // --- FUNÇÕES DE CONTROLE DE ESTOQUE (SQLite e Cache) ---
@@ -92,7 +89,7 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
     print(
       '[DB] Inicializando Estoque Local: Consultando API e salvando no DB.',
     );
-    final token = await AuthService.obterTokenLogtech();
+    final token = await AuthService.obterTokenAplicacao();
 
     if (token == null || await AuthService.isOfflineModeActive()) {
       print(
@@ -161,7 +158,6 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
           '[CACHE] Cache em memória carregado com ${estoqueItens.length} itens.',
         );
       } else if (response.statusCode == 401 && !isRetry) {
-        // Se falhou com 401 (token inválido) e não é um retry, limpa o token e tenta de novo.
         print(
           '[DB] Token expirado/inválido (401). Forçando renovação e retry...',
         );
@@ -267,6 +263,7 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
     if (mounted) {
       setState(() {
         _objetoID = itemObjeto!.objetoID;
+        // Preenche o controller usado pelo RawAutocomplete
         _produtoController.text = itemObjeto!.objeto;
       });
     }
@@ -320,28 +317,34 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
   Future<void> _pesquisarObjetoDigitado() async {
     final codigoDigitado = _produtoController.text.trim();
     if (codigoDigitado.isEmpty) {
-      _showSnackBar('Informe o código do objeto para pesquisar.', isError: true);
-      return;
-    }
-
-    if (int.tryParse(codigoDigitado) == null) {
       _showSnackBar(
-        'O código do objeto deve ser numérico para consulta.',
+        'Informe o código do objeto para pesquisar.',
         isError: true,
       );
       return;
     }
 
-    await _consultarDetalheDoObjeto(codigoDigitado);
+    if (int.tryParse(codigoDigitado) != null) {
+      await _consultarDetalheDoObjeto(codigoDigitado);
+    } else {
+      final item = _estoqueCache.firstWhereOrNull(
+        (e) => e.objeto.toLowerCase().contains(codigoDigitado.toLowerCase()),
+      );
+      if (item != null) {
+        _preencherCamposComDetalhe(item, 'Pesquisa Manual');
+      } else {
+        _showSnackBar('Objeto não encontrado no cache.', isError: true);
+      }
+    }
   }
 
   void _preencherCamposComDetalhe(EstoqueItem item, String source) {
     if (!mounted) return;
     setState(() {
       _objetoID = item.objetoID;
-      _produtoController.text = item.objeto;
+      _produtoController.text = item.objeto; // Preenche Objeto
       _detalheID = item.detalheID;
-      _loteController.text = item.detalhe;
+      _loteController.text = item.detalhe; // Preenche Detalhe
     });
     print(
       '[PREENCHIMENTO] Detalhe/Lote VALIDADO por $source - ID: ${item.detalheID}, Texto: ${item.detalhe}',
@@ -373,12 +376,11 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
     });
   }
 
-
   Future<EstoqueItem?> _consultarDetalheNaApi(
     int objetoID,
     String detalheLote,
   ) async {
-    final token = await AuthService.obterTokenLogtech();
+    final token = await AuthService.obterTokenAplicacao();
 
     if (token == null || await AuthService.isOfflineModeActive()) {
       print(
@@ -493,6 +495,7 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
     _palletController.dispose();
     _hardwareScannerController.dispose();
     _hardwareScannerFocusNode.dispose();
+    _produtoFocusNode.dispose(); // <-- Limpeza do novo FocusNode
     super.dispose();
   }
 
@@ -664,7 +667,7 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
 
     if (_objetoID == null || _detalheID == null) {
       _showSnackBar(
-        'Os IDs do Objeto e Detalhe não foram definidos. Obrigatoriamente, leia o QR Code e garanta que o Detalhe/Lote existe.',
+        'Os IDs do Objeto e Detalhe não foram definidos. Selecione um item da lista ou leia o QR Code.',
         isError: true,
       );
       return;
@@ -677,8 +680,9 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
       _showSnackBar('A quantidade informada é inválida.', isError: true);
       return;
     }
-    final double quantidadeNormalizada =
-        double.parse(quantidade.toStringAsFixed(6));
+    final double quantidadeNormalizada = double.parse(
+      quantidade.toStringAsFixed(6),
+    );
 
     final String palletTexto = _palletController.text.trim();
     final int? pallet = int.tryParse(palletTexto);
@@ -714,13 +718,16 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
     }
 
     final String? turnoIdStr = _turnoNomeParaIdMap[turnoNome];
-    final int? turnoIdInt = turnoIdStr != null ? int.tryParse(turnoIdStr) : null;
+    final int? turnoIdInt = turnoIdStr != null
+        ? int.tryParse(turnoIdStr)
+        : null;
     if (turnoIdInt == null) {
       _showSnackBar('Turno selecionado inválido.', isError: true);
       return;
     }
-    final int? ordemProducaoId =
-        int.tryParse(_ordemProducaoController.text.trim());
+    final int? ordemProducaoId = int.tryParse(
+      _ordemProducaoController.text.trim(),
+    );
     if (ordemProducaoId == null) {
       _showSnackBar('Ordem de Produção inválida.', isError: true);
       return;
@@ -771,7 +778,6 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
           _palletController.clear();
           _objetoID = null;
           _detalheID = null;
-          // Re-focar o scanner para o próximo item
           _reFocarScanner();
         }
         print('[SALVAR] Sucesso: Documento salvo.');
@@ -850,7 +856,6 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // CAMPO DE TEXTO OCULTO PARA RECEBER A LEITURA DO HARDWARE
-                  // O campo está oculto, mas sempre focado ao iniciar a tela.
                   SizedBox(
                     height: 0,
                     width: 0,
@@ -860,31 +865,19 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
                         controller: _hardwareScannerController,
                         focusNode: _hardwareScannerFocusNode,
                         keyboardType: TextInputType.none,
-
-                        // PLAIN B: Tenta forçar o processamento se onFieldSubmitted falhar
                         onChanged: (value) {
                           if (value.isNotEmpty) {
-                            print(
-                              '[DEBUG-WEDGE] onChanged: Valor injetado: $value',
-                            );
-
-                            // ⚠️ ATENÇÃO AO BLOQUEIO: Só dispara se não estiver processando
                             if (value.endsWith('}') && !_isProcessingScan) {
-                              print(
-                                '[PLANO B] Forçando _onHardwareScanSubmitted, pois o DataWedge não enviou ENTER.',
-                              );
                               _onHardwareScanSubmitted(value);
                             }
                           }
                         },
-
-                        // Processa o JSON injetado (Dispara se o DataWedge enviar 'ENTER')
                         onFieldSubmitted: _onHardwareScanSubmitted,
                       ),
                     ),
                   ),
 
-                  // O restante da sua UI
+                  // UI Principal
                   const Text(
                     'Informações do Documento',
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
@@ -924,18 +917,136 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
                         keyboardType: TextInputType.number,
                         readOnly: false,
                       ),
-                      _buildField(
-                        label: 'Objeto',
-                        controller: _produtoController,
-                        keyboardType: TextInputType.number,
-                        textInputAction: TextInputAction.search,
-                        onFieldSubmitted: (_) => _pesquisarObjetoDigitado(),
-                        suffixIcon: IconButton(
-                          icon: const Icon(Icons.search),
-                          tooltip: 'Pesquisar objeto',
-                          onPressed: _pesquisarObjetoDigitado,
+
+                      // --- CORREÇÃO: Usando RawAutocomplete ---
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(
+                          minWidth: 280,
+                          maxWidth: 380,
+                        ),
+                        child: RawAutocomplete<EstoqueItem>(
+                          // 1. Passamos o controller EXPLICITAMENTE
+                          textEditingController: _produtoController,
+                          // 2. Passamos o focusNode EXPLICITAMENTE
+                          focusNode: _produtoFocusNode,
+
+                          optionsBuilder: (TextEditingValue textEditingValue) {
+                            if (textEditingValue.text.isEmpty) {
+                              return const Iterable<EstoqueItem>.empty();
+                            }
+                            return _estoqueCache.where((EstoqueItem option) {
+                              final String input = textEditingValue.text
+                                  .toLowerCase();
+                              // Busca por Objeto ou Detalhe
+                              return option.objeto.toLowerCase().contains(
+                                    input,
+                                  ) ||
+                                  option.detalhe.toLowerCase().contains(input);
+                            });
+                          },
+                          // Garante que apenas o nome do objeto seja preenchido no input
+                          displayStringForOption: (EstoqueItem option) =>
+                              option.objeto,
+                          onSelected: (EstoqueItem selection) {
+                            print(
+                              'Item selecionado: ${selection.objeto} - Detalhe: ${selection.detalhe}',
+                            );
+                            _preencherCamposComDetalhe(
+                              selection,
+                              'Autocomplete',
+                            );
+                          },
+                          // 3. Renderizamos o campo de input (TextFormField)
+                          fieldViewBuilder:
+                              (
+                                BuildContext context,
+                                TextEditingController controller,
+                                FocusNode focusNode,
+                                VoidCallback onFieldSubmitted,
+                              ) {
+                                return TextFormField(
+                                  controller:
+                                      controller, // Usando o _produtoController
+                                  focusNode: focusNode,
+                                  decoration: InputDecoration(
+                                    labelText: 'Objeto',
+                                    hintText: 'Digite código ou nome',
+                                    filled: true,
+                                    fillColor: Colors.white,
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: BorderSide.none,
+                                    ),
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 14,
+                                    ),
+                                    suffixIcon: IconButton(
+                                      icon: const Icon(Icons.search),
+                                      onPressed: _pesquisarObjetoDigitado,
+                                    ),
+                                  ),
+                                  validator: (value) {
+                                    return value == null || value.isEmpty
+                                        ? 'Campo obrigatório'
+                                        : null;
+                                  },
+                                  onFieldSubmitted: (value) {
+                                    // Submissão manual (Enter) tenta pesquisar/validar o item digitado
+                                    _pesquisarObjetoDigitado();
+                                  },
+                                );
+                              },
+                          // 4. Renderizamos a lista de opções (Dropdown)
+                          optionsViewBuilder:
+                              (
+                                BuildContext context,
+                                AutocompleteOnSelected<EstoqueItem> onSelected,
+                                Iterable<EstoqueItem> options,
+                              ) {
+                                return Align(
+                                  alignment: Alignment.topLeft,
+                                  child: Material(
+                                    elevation: 4.0,
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: SizedBox(
+                                      width:
+                                          380, // Mesma largura máxima do input
+                                      height: 250,
+                                      child: ListView.builder(
+                                        padding: const EdgeInsets.all(8.0),
+                                        itemCount: options.length,
+                                        itemBuilder:
+                                            (BuildContext context, int index) {
+                                              final EstoqueItem option = options
+                                                  .elementAt(index);
+                                              return ListTile(
+                                                title: Text(
+                                                  option.objeto,
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                ),
+                                                subtitle: Text(
+                                                  'Detalhe/Lote: ${option.detalhe}',
+                                                  style: TextStyle(
+                                                    color: Colors.grey.shade600,
+                                                  ),
+                                                ),
+                                                onTap: () {
+                                                  onSelected(option);
+                                                },
+                                              );
+                                            },
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
                         ),
                       ),
+
+                      // --- FIM CORREÇÃO AUTOCOMPLETE ---
                       _buildField(
                         label: 'Detalhe',
                         controller: _loteController,

@@ -1,8 +1,9 @@
 import 'dart:convert';
 import 'package:tracx/screens/home_menu_screen.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // Para feedback tátil
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // Importação para persistência
 
 class LoginScreen extends StatefulWidget {
   @override
@@ -17,11 +18,18 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _loading = false;
   bool _obscurePassword = true;
 
-  // Cores Consistentes com a identidade visual (Vermelho e Branco)
-  static const Color primaryColor = Color(0xFFb41c1c); // Vermelho forte (base)
-  static const Color focusColor = Color(
-    0xFFd32f2f,
-  ); // Vermelho mais claro (foco)
+  // Chave para SharedPreferences
+  static const String _lastLoggedInUserKey = 'lastLoggedInUser';
+
+  // Cores da Identidade Visual
+  static const Color primaryColor = Color(0xFFb41c1c); // Vermelho da marca
+  static const Color darkText = Color(0xFF1F2937); // Cinza escuro para texto
+  static const Color lightBg = Color(0xFFF9FAFB); // Fundo da tela (Off-White)
+  static const Color inputFill = Color(
+    0xFFF3F4F6,
+  ); // Fundo dos inputs (Cinza claro)
+
+  // Configurações de API (Mantidas originais)
   static const String _authEndpoint =
       'https://visions.topmanager.com.br/auth/api/usuarios/entrar?identificadorDaAplicacao=LogTech_WMS&chaveDaAplicacaoExterna=uvkmv%2BQHum%2FXhF8grWeW4nKmzKFRk4UwJk74x7FnZbGC6ECvl4nbxUf3h7L%2BCGk25qSA8QOJoovrJtUJlXlsWQ%3D%3D&enderecoDeRetorno=http://qualquer';
   static const String _authEmail = 'suporte.wms';
@@ -31,53 +39,34 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   void initState() {
     super.initState();
-    _loadLastUser();
+    _carregarUltimoUsuario();
   }
 
-  void _navigateToHome(String username, String? apiKey) {
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (_) => HomeMenuScreen(
-          conferente: username,
-          apiKey: apiKey,
-        ),
-      ),
-    );
-  }
-
-  Future<void> _loadLastUser() async {
+  // Novo método: Carrega o último usuário salvo e preenche o campo
+  void _carregarUltimoUsuario() async {
     final prefs = await SharedPreferences.getInstance();
-    final lastUser = prefs.getString('last_user');
+    final lastUser = prefs.getString(_lastLoggedInUserKey);
     if (lastUser != null && lastUser.isNotEmpty) {
       _userController.text = lastUser;
     }
   }
 
-  Future<void> _saveLastUser(String username) async {
+  // Novo método: Salva o usuário logado
+  void _salvarUltimoUsuario(String username) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('last_user', username);
+    await prefs.setString(_lastLoggedInUserKey, username);
   }
 
   void _login() async {
     if (_formKey.currentState!.validate()) {
       setState(() => _loading = true);
+      HapticFeedback.lightImpact(); // Feedback tátil ao iniciar o login
 
       final username = _userController.text.trim();
-      final bool isRedeOptional =
-          username.toLowerCase() == 'joao'; // Usuário liberado sem API local
       String? apiKey;
 
       try {
-        if (!isRedeOptional) {
-          apiKey = await _obterChaveApi();
-        }
-
-        if (isRedeOptional) {
-          await _saveLastUser(username);
-          _navigateToHome(username, apiKey);
-          return;
-        }
+        apiKey = await _obterChaveApi();
 
         final response = await http.get(
           Uri.parse('http://168.190.90.2:5000/consulta/usuarios'),
@@ -91,8 +80,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
           if (data is Map<String, dynamic>) {
             if (data['usuarios'] is List) {
-              final usuarios = (data['usuarios'] as List)
-                  .map((user) => user.toString().trim().toLowerCase());
+              final usuarios = (data['usuarios'] as List).map(
+                (user) => user.toString().trim().toLowerCase(),
+              );
               usuarioEncontrado = usuarios.contains(username.toLowerCase());
             }
 
@@ -110,63 +100,58 @@ class _LoginScreenState extends State<LoginScreen> {
           }
 
           if (usuarioEncontrado) {
-            await _saveLastUser(username);
-            _navigateToHome(username, apiKey);
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(mensagemErro ?? 'Usuário não encontrado.'),
-                backgroundColor: primaryColor,
+            _salvarUltimoUsuario(username); // ⭐️ Chama o método para salvar
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (_) =>
+                    HomeMenuScreen(conferente: username, apiKey: apiKey!),
               ),
             );
+          } else {
+            _showError(mensagemErro ?? 'Usuário não encontrado.');
           }
         } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Erro ao consultar usuários. Código: ${response.statusCode}',
-              ),
-              backgroundColor: primaryColor,
-            ),
+          _showError(
+            'Erro ao consultar usuários. Código: ${response.statusCode}',
           );
         }
       } catch (e) {
-        if (isRedeOptional) {
-          debugPrint(
-            '[Login] Rede ignorada para $username: ${e.toString()}',
-          );
-          await _saveLastUser(username);
-          _navigateToHome(username, apiKey);
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Erro de conexão: Verifique sua rede.'),
-              backgroundColor: Colors.orange,
-            ),
-          );
-        }
+        // Logar o erro para debug, mas mostrar uma mensagem amigável ao usuário
+        print('Erro no login: $e');
+        _showError(
+          'Erro de conexão ou autenticação: Verifique sua rede e credenciais.',
+        );
       } finally {
-        setState(() => _loading = false);
+        if (mounted) setState(() => _loading = false);
       }
     }
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message, style: const TextStyle(color: Colors.white)),
+        backgroundColor: primaryColor,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        margin: const EdgeInsets.all(16),
+      ),
+    );
   }
 
   Future<String> _obterChaveApi() async {
     final response = await http.post(
       Uri.parse(_authEndpoint),
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode(
-        {
-          'email': _authEmail,
-          'senha': _authSenha,
-          'usuarioID': _authUsuarioId,
-        },
-      ),
+      body: jsonEncode({
+        'email': _authEmail,
+        'senha': _authSenha,
+        'usuarioID': _authUsuarioId,
+      }),
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'Falha ao autenticar. Código: ${response.statusCode}',
-      );
+      throw Exception('Falha ao autenticar. Código: ${response.statusCode}');
     }
 
     final body = jsonDecode(response.body);
@@ -182,9 +167,7 @@ class _LoginScreenState extends State<LoginScreen> {
         orElse: () => '',
       );
       if (token.isNotEmpty) return token;
-    } catch (_) {
-      // fallback to regex below
-    }
+    } catch (_) {}
 
     final RegExp exp = RegExp("(ey[^\"'\\s]+)");
     final RegExpMatch? match = exp.firstMatch(redirect);
@@ -195,210 +178,223 @@ class _LoginScreenState extends State<LoginScreen> {
     throw Exception('Não foi possível extrair a chave da API.');
   }
 
+  // Widget auxiliar para TextFields modernos
+  Widget _buildModernTextField({
+    required TextEditingController controller,
+    required String label,
+    required IconData icon,
+    bool isPassword = false,
+    bool isObscure = false,
+    VoidCallback? onVisibilityToggle,
+    String? Function(String?)? validator,
+  }) {
+    return TextFormField(
+      controller: controller,
+      obscureText: isObscure,
+      style: const TextStyle(fontWeight: FontWeight.w500, color: darkText),
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: TextStyle(color: Colors.grey[500], fontSize: 14),
+        floatingLabelStyle: const TextStyle(
+          color: primaryColor,
+          fontWeight: FontWeight.bold,
+        ),
+        prefixIcon: Icon(icon, color: Colors.grey[400], size: 20),
+        suffixIcon: isPassword
+            ? IconButton(
+                icon: Icon(
+                  isObscure
+                      ? Icons.visibility_off_rounded
+                      : Icons.visibility_rounded,
+                  color: Colors.grey[400],
+                  size: 20,
+                ),
+                onPressed: onVisibilityToggle,
+              )
+            : null,
+        filled: true,
+        fillColor: inputFill, // Fundo cinza claro
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide.none, // Sem borda padrão
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: Colors.transparent),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(
+            color: primaryColor,
+            width: 1.5,
+          ), // Borda fina ao focar
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: Colors.red.shade100, width: 1),
+        ),
+        contentPadding: const EdgeInsets.symmetric(
+          vertical: 18,
+          horizontal: 20,
+        ),
+      ),
+      validator: validator,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white, // Fundo branco limpo
+      backgroundColor: lightBg, // Fundo Off-White moderno
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24.0),
-          child: Container(
-            // ✅ ALTERADO: Gradiente cinza para o fundo do Card
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(20),
-              gradient: LinearGradient(
-                colors: [Colors.grey.shade200, Colors.grey.shade100],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.15), // Sombra ajustada
-                  blurRadius: 12,
-                  offset: const Offset(0, 6),
-                ),
-              ],
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(
-                32.0,
-              ), // Padding aumentado para mais "respiro"
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // 1. LOGO TRACX (Tipografia Moderna)
+              RichText(
+                textAlign: TextAlign.center,
+                text: const TextSpan(
+                  style: TextStyle(
+                    fontSize: 48,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -2.0,
+                    fontFamily: 'Segoe UI',
+                  ),
                   children: [
-                    // Logo STIK
-                    Container(
-                      height: 80,
-                      child: Image.asset(
-                        'assets/logo_login.png',
-                        fit: BoxFit.contain,
-                      ),
+                    TextSpan(
+                      text: 'Trac',
+                      style: TextStyle(color: darkText),
                     ),
-                    const SizedBox(height: 32),
-
-                    // Título e Subtítulo Modernos
-                    const Text(
-                      'Bem-vindo!',
+                    TextSpan(
+                      text: 'X',
                       style: TextStyle(
-                        fontSize: 32,
-                        fontWeight: FontWeight.w900,
                         color: primaryColor,
-                        letterSpacing: -0.5,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Entre com suas credenciais para continuar.',
-                      style: TextStyle(fontSize: 16, color: Colors.grey[600]),
-                      textAlign: TextAlign.center,
-                    ),
-
-                    const SizedBox(height: 40),
-
-                    // Campo Conferente
-                    TextFormField(
-                      controller: _userController,
-                      style: const TextStyle(color: Colors.black87),
-                      decoration: InputDecoration(
-                        labelText: "Conferente",
-                        labelStyle: TextStyle(color: Colors.grey[600]),
-                        prefixIcon: const Icon(
-                          Icons.person_outline,
-                          color: primaryColor,
-                        ), // Ícone moderno e cor vermelha
-                        filled: true,
-                        fillColor: Colors.white, // Input field continua branco
-                        contentPadding: const EdgeInsets.symmetric(
-                          vertical: 18,
-                          horizontal: 20,
-                        ), // Melhor padding
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(
-                            12,
-                          ), // Mais arredondado
-                          borderSide: BorderSide.none,
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(
-                            color: Colors.grey.shade300, // Borda cinza suave
-                            width: 1,
-                          ),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(
-                            color: focusColor, // Borda vermelha de foco
-                            width: 2,
-                          ),
-                        ),
-                      ),
-                      validator: (value) => value == null || value.isEmpty
-                          ? "Informe o nome de usuário"
-                          : null,
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Campo Senha
-                    TextFormField(
-                      controller: _passwordController,
-                      obscureText: _obscurePassword,
-                      style: const TextStyle(color: Colors.black87),
-                      decoration: InputDecoration(
-                        labelText: "Senha",
-                        labelStyle: TextStyle(color: Colors.grey[600]),
-                        prefixIcon: const Icon(
-                          Icons.lock_outline,
-                          color: primaryColor,
-                        ), // Ícone moderno e cor vermelha
-                        suffixIcon: IconButton(
-                          icon: Icon(
-                            _obscurePassword
-                                ? Icons.visibility_off_outlined
-                                : Icons.visibility_outlined,
-                            color: primaryColor.withOpacity(0.6),
-                          ),
-                          onPressed: () {
-                            setState(
-                              () => _obscurePassword = !_obscurePassword,
-                            );
-                          },
-                        ),
-                        filled: true,
-                        fillColor: Colors.white, // Input field continua branco
-                        contentPadding: const EdgeInsets.symmetric(
-                          vertical: 18,
-                          horizontal: 20,
-                        ), // Melhor padding
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide.none,
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(
-                            color: Colors.grey.shade300,
-                            width: 1,
-                          ),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(
-                            color: focusColor,
-                            width: 2,
-                          ),
-                        ),
-                      ),
-                      validator: (value) => value == null || value.isEmpty
-                          ? "Informe a senha"
-                          : null,
-                    ),
-                    const SizedBox(height: 32),
-
-                    // Botão de Login
-                    AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 300),
-                      child: _loading
-                          ? const CircularProgressIndicator(color: primaryColor)
-                          : SizedBox(
-                              width: double.infinity,
-                              child: ElevatedButton.icon(
-                                onPressed: _login,
-                                icon: const Icon(
-                                  Icons.arrow_forward_rounded,
-                                  size: 20,
-                                ), // Ícone de seta moderna
-                                label: const Text(
-                                  "ENTRAR",
-                                  style: TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor:
-                                      primaryColor, // Vermelho forte
-                                  foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 16,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(
-                                      12,
-                                    ), // Mais arredondado
-                                  ),
-                                  elevation:
-                                      8, // Elevação para o efeito 3D suave
-                                ),
-                              ),
-                            ),
+                      ), // O "X" em vermelho
                     ),
                   ],
                 ),
               ),
-            ),
+              const SizedBox(height: 8),
+              Text(
+                'Gestão Logística Inteligente',
+                style: TextStyle(
+                  color: Colors.grey[500],
+                  fontSize: 14,
+                  letterSpacing: 1.2,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+
+              const SizedBox(height: 48),
+
+              // 2. CARD DE LOGIN (Container principal)
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.06),
+                      blurRadius: 24,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                padding: const EdgeInsets.all(32),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        "Acesso",
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: darkText,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+
+                      // CAMPO CONFERENTE
+                      _buildModernTextField(
+                        controller: _userController,
+                        label: "Conferente",
+                        icon: Icons.person_rounded,
+                        validator: (value) => value == null || value.isEmpty
+                            ? "Informe o usuário"
+                            : null,
+                      ),
+
+                      const SizedBox(height: 16),
+
+                      // CAMPO SENHA
+                      _buildModernTextField(
+                        controller: _passwordController,
+                        label: "Senha",
+                        icon: Icons.lock_rounded,
+                        isPassword: true,
+                        isObscure: _obscurePassword,
+                        onVisibilityToggle: () {
+                          setState(() {
+                            _obscurePassword = !_obscurePassword;
+                          });
+                        },
+                        validator: (value) => value == null || value.isEmpty
+                            ? "Informe a senha"
+                            : null,
+                      ),
+
+                      const SizedBox(height: 32),
+
+                      // BOTÃO DE LOGIN
+                      SizedBox(
+                        width: double.infinity,
+                        height: 56,
+                        child: ElevatedButton(
+                          onPressed: _loading ? null : _login,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: primaryColor,
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                          ),
+                          child: _loading
+                              ? const SizedBox(
+                                  height: 24,
+                                  width: 24,
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white,
+                                    strokeWidth: 2.5,
+                                  ),
+                                )
+                              : const Text(
+                                  "ENTRAR",
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ), // Fim do Container (Card de Login)
+              // 3. Rodapé discreto (Fora do Card, mas dentro da tela)
+              const SizedBox(height: 32),
+              Text(
+                "© 2025 - Stik Tech",
+                style: TextStyle(color: Colors.grey[400], fontSize: 12),
+              ),
+              const SizedBox(height: 24), // Espaçamento extra no final
+            ],
           ),
         ),
       ),
