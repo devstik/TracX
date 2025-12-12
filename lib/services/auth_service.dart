@@ -135,6 +135,7 @@ class AuthService {
   static Future<String?> _solicitarNovoToken() async {
     const String apiUrl =
         'https://visions.topmanager.com.br/auth/api/usuarios/entrar?identificadorDaAplicacao=ForcaDeVendas&chaveDaAplicacaoExterna=2awwG8Tqp12sJtzQcyYIzVrYfQNmMg0crxWq8ohNQMlQU4cU5lvO1Y%2FGNN0hbkAD0JNPPQz3489u8paqUO3jOg%3D%3D&enderecoDeRetorno=http://qualquer';
+    debugPrint('[AUTH] Solicitando token no endpoint: $apiUrl');
 
     final Map<String, String> requestBody = {
       "email": "Stik.ForcaDeVendas",
@@ -167,6 +168,7 @@ class AuthService {
 
   static Future<String?> _solicitarNovoTokenWms() async {
     try {
+      debugPrint('[AUTH WMS] Solicitando token no endpoint: $_wmsAuthUrl');
       final response = await http.post(
         Uri.parse(_wmsAuthUrl),
         headers: {'Content-Type': 'application/json'},

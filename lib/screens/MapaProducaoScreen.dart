@@ -703,7 +703,7 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
       return;
     }
 
-    final token = await AuthService.obterTokenAplicacao();
+    final token = await AuthService.obterTokenLogtech();
 
     if (token == null) {
       _showSnackBar(
@@ -713,8 +713,12 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
       return;
     }
 
-    const int turnoIdInt = 4;
-
+    final String? turnoIdStr = _turnoNomeParaIdMap[turnoNome];
+    final int? turnoIdInt = turnoIdStr != null ? int.tryParse(turnoIdStr) : null;
+    if (turnoIdInt == null) {
+      _showSnackBar('Turno selecionado inválido.', isError: true);
+      return;
+    }
     final int? ordemProducaoId =
         int.tryParse(_ordemProducaoController.text.trim());
     if (ordemProducaoId == null) {
@@ -736,6 +740,7 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
       'OrdemProducaoID': ordemProducaoId,
       'ProdutoID': _objetoID!,
       'LoteID': _detalheID!,
+      'UnidadeMedida': 'MT',
       'Quantidade': quantidadeNormalizada,
       'Pallet': pallet,
     };

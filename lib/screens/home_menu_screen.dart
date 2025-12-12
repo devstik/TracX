@@ -205,10 +205,8 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
     final size = MediaQuery.of(context).size;
     final bool isPhone = size.width < 600;
     const int crossAxisCount = 3;
-    final double gridSpacing = isPhone ? 18 : 24;
-
-    // 💡 CORREÇÃO 1: childAspectRatio para 1.0 para forçar cards quadrados em telas pequenas.
-    final double childAspectRatio = isPhone ? 1.0 : 1.05;
+    final double gridSpacing = isPhone ? 14 : 20;
+    final double childAspectRatio = isPhone ? 0.9 : 1.0;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -435,8 +433,8 @@ class _MenuItemCardState extends State<_MenuItemCard>
               child: Container(
                 // 💡 CORREÇÃO 2: Redução drástica do padding vertical para economizar espaço no card quadrado.
                 padding: EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: isSmallDevice ? 10 : 20,
+                  horizontal: isSmallDevice ? 8 : 12,
+                  vertical: isSmallDevice ? 8 : 14,
                 ),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(16),
@@ -472,23 +470,22 @@ class _MenuItemCardState extends State<_MenuItemCard>
                         ),
                       ),
                     ),
-                    const SizedBox(
-                      height: 4,
-                    ), // Espaçamento entre ícone e texto reduzido
-                    // O texto usa Expanded e agora maxLines: 1 para forçar uma única linha.
-                    Expanded(
-                      child: Text(
-                        widget.title,
-                        style: TextStyle(
-                          // 💡 CORREÇÃO 3: Fonte reduzida para 11px em telas pequenas (necessário para maxLines: 1).
-                          fontSize: isSmallDevice ? 11 : 14,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.grey[900],
+                    const SizedBox(height: 6),
+                    SizedBox(
+                      height: isSmallDevice ? 48 : 60,
+                      child: Center(
+                        child: Text(
+                          widget.title,
+                          style: TextStyle(
+                            fontSize: isSmallDevice ? 14 : 18,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.grey[900],
+                            height: 1.2,
+                          ),
+                          textAlign: TextAlign.center,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        textAlign: TextAlign.center,
-                        maxLines: 1, // FORÇA O TEXTO A FICAR EM UMA ÚNICA LINHA
-                        overflow: TextOverflow
-                            .ellipsis, // Adiciona '...' se for cortado
                       ),
                     ),
                   ],
