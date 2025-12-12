@@ -19,7 +19,7 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
   // --- CONSTANTES DO SISTEMA ---
   static const String _empresaId = '2';
   static const String _tipoDocumentoId = '62';
-  static const String _operacaoId = '62';
+  static const String _operacaoId = '142';
   static const String _finalidadeId = '7';
   static const String _centroCustosId = '13';
   static const String _localizacaoId = '2026';
@@ -39,7 +39,7 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
   final _formKey = GlobalKey<FormState>();
   final String _baseUrl = 'visions.topmanager.com.br';
   final String _mapaPath =
-      '/Servidor_2.8.0_api/logtechwms/itemdemapadeproducao/incluir';
+      '/Servidor_2.7.0_api/logtechwms/itemdemapadeproducao/incluir';
 
   // ✅ FLAG DE CONTROLE: Previne execuções simultâneas e race condition
   bool _isProcessingScan = false;
@@ -52,9 +52,8 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
       TextEditingController();
   final TextEditingController _produtoController = TextEditingController();
   final TextEditingController _loteController = TextEditingController();
-  final TextEditingController _unidadeMedidaController =
-      TextEditingController();
   final TextEditingController _quantidadeController = TextEditingController();
+  final TextEditingController _palletController = TextEditingController();
 
   // Controller e FocusNode para o campo de input de Hardware (DataWedge)
   final TextEditingController _hardwareScannerController =
@@ -89,13 +88,11 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
   }
 
   // --- FUNÇÕES DE CONTROLE DE ESTOQUE (SQLite e Cache) ---
-
-  // ✅ CORREÇÃO APLICADA: Implementando a lógica de retry para 401
   Future<void> _inicializarEstoqueLocal({bool isRetry = false}) async {
     print(
       '[DB] Inicializando Estoque Local: Consultando API e salvando no DB.',
     );
-    final token = await AuthService.obterTokenAplicacao();
+    final token = await AuthService.obterTokenLogtech();
 
     if (token == null || await AuthService.isOfflineModeActive()) {
       print(
@@ -107,10 +104,12 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
         setState(() {
           _estoqueCache = itensLocais;
         });
-        print(
-          '[CACHE] Cache carregado do DB local com ${itensLocais.length} itens.',
-        );
+      } else {
+        _estoqueCache = itensLocais;
       }
+      print(
+        '[CACHE] Cache carregado do DB local com ${itensLocais.length} itens.',
+      );
       return;
     }
 
@@ -151,11 +150,15 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
 
         if (!mounted) return;
 
-        setState(() {
+        if (mounted) {
+          setState(() {
+            _estoqueCache = estoqueItens;
+          });
+        } else {
           _estoqueCache = estoqueItens;
-        });
+        }
         print(
-          '[CACHE] Cache em memória carregado com ${_estoqueCache.length} itens.',
+          '[CACHE] Cache em memória carregado com ${estoqueItens.length} itens.',
         );
       } else if (response.statusCode == 401 && !isRetry) {
         // Se falhou com 401 (token inválido) e não é um retry, limpa o token e tenta de novo.
@@ -314,6 +317,24 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
     print('[PREENCHIMENTO FINAL] ObjetoID=$_objetoID, DetalheID=$_detalheID');
   }
 
+  Future<void> _pesquisarObjetoDigitado() async {
+    final codigoDigitado = _produtoController.text.trim();
+    if (codigoDigitado.isEmpty) {
+      _showSnackBar('Informe o código do objeto para pesquisar.', isError: true);
+      return;
+    }
+
+    if (int.tryParse(codigoDigitado) == null) {
+      _showSnackBar(
+        'O código do objeto deve ser numérico para consulta.',
+        isError: true,
+      );
+      return;
+    }
+
+    await _consultarDetalheDoObjeto(codigoDigitado);
+  }
+
   void _preencherCamposComDetalhe(EstoqueItem item, String source) {
     if (!mounted) return;
     setState(() {
@@ -352,11 +373,12 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
     });
   }
 
+
   Future<EstoqueItem?> _consultarDetalheNaApi(
     int objetoID,
     String detalheLote,
   ) async {
-    final token = await AuthService.obterTokenAplicacao();
+    final token = await AuthService.obterTokenLogtech();
 
     if (token == null || await AuthService.isOfflineModeActive()) {
       print(
@@ -467,8 +489,8 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
     _ordemProducaoController.dispose();
     _produtoController.dispose();
     _loteController.dispose();
-    _unidadeMedidaController.dispose();
     _quantidadeController.dispose();
+    _palletController.dispose();
     _hardwareScannerController.dispose();
     _hardwareScannerFocusNode.dispose();
     super.dispose();
@@ -615,15 +637,19 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
 
   // FUNÇÃO DE SALVAR (Mantida)
   Future<void> _salvarMapa() async {
+    if (_loading || _isProcessingScan) {
+      return;
+    }
+
     final String turnoNome = _turnoController.text.trim();
     final String? turnoId = _turnoNomeParaIdMap[turnoNome];
 
     if (_dataController.text.isEmpty ||
         _ordemProducaoController.text.isEmpty ||
-        _unidadeMedidaController.text.isEmpty ||
         _quantidadeController.text.isEmpty ||
         _produtoController.text.isEmpty ||
-        _loteController.text.isEmpty) {
+        _loteController.text.isEmpty ||
+        _palletController.text.isEmpty) {
       _showSnackBar(
         'Por favor, preencha todos os campos obrigatórios.',
         isError: true,
@@ -651,36 +677,71 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
       _showSnackBar('A quantidade informada é inválida.', isError: true);
       return;
     }
+    final double quantidadeNormalizada =
+        double.parse(quantidade.toStringAsFixed(6));
 
-    final payload = {
-      'empresaId': _empresaId,
-      'operacaoId': _operacaoId,
-      'tipoDeDocumentoId': _tipoDocumentoId,
-      'finalidadeId': _finalidadeId,
-      'centroDeCustosId': _centroCustosId,
-      'localizacaoId': _localizacaoId,
-      'data': _parseDataBrToIso(_dataController.text.trim()) ?? '',
-      'turnoId': turnoId,
-      'ordemProducaoId': _ordemProducaoController.text.trim(),
-      'produtoId': _objetoID.toString(),
-      'loteId': _detalheID.toString(),
-      'unidadeDeMedida': _unidadeMedidaController.text.trim(),
-      'quantidade': quantidade.toString(),
-    };
+    final String palletTexto = _palletController.text.trim();
+    final int? pallet = int.tryParse(palletTexto);
+    if (pallet == null) {
+      _showSnackBar('O campo Pallet deve ser numérico.', isError: true);
+      return;
+    }
 
-    print('[SALVAR] Payload de envio: $payload');
+    final String dataTexto = _dataController.text.trim();
+    final String? dataIso = _parseDataBrToIso(dataTexto);
+    if (dataIso == null) {
+      _showSnackBar('Data inválida para envio/consulta.', isError: true);
+      return;
+    }
 
-    if (mounted) setState(() => _loading = true);
-    final token = await AuthService.obterTokenAplicacao();
-
-    if (token == null || await AuthService.isOfflineModeActive()) {
-      if (mounted) setState(() => _loading = false);
+    final bool isOffline = await AuthService.isOfflineModeActive();
+    if (isOffline) {
       _showSnackBar(
-        'Falha na autenticação ou modo offline ativo. Não é possível salvar na API.',
+        'Modo offline ativo. Conecte-se e faça login para enviar ao servidor.',
         isError: true,
       );
       return;
     }
+
+    final token = await AuthService.obterTokenAplicacao();
+
+    if (token == null) {
+      _showSnackBar(
+        'Falha na autenticação. Não é possível salvar na API.',
+        isError: true,
+      );
+      return;
+    }
+
+    const int turnoIdInt = 4;
+
+    final int? ordemProducaoId =
+        int.tryParse(_ordemProducaoController.text.trim());
+    if (ordemProducaoId == null) {
+      _showSnackBar('Ordem de Produção inválida.', isError: true);
+      return;
+    }
+
+    if (mounted) setState(() => _loading = true);
+
+    final payload = {
+      'EmpresaID': int.tryParse(_empresaId) ?? 0,
+      'OperacaoID': int.tryParse(_operacaoId) ?? 0,
+      'TipoDeDocumentoID': int.tryParse(_tipoDocumentoId) ?? 0,
+      'FinalidadeID': int.tryParse(_finalidadeId) ?? 0,
+      'CentroDeCustosID': int.tryParse(_centroCustosId) ?? 0,
+      'LocalizacaoID': int.tryParse(_localizacaoId) ?? 0,
+      'Data': dataIso,
+      'TurnoID': turnoIdInt,
+      'OrdemProducaoID': ordemProducaoId,
+      'ProdutoID': _objetoID!,
+      'LoteID': _detalheID!,
+      'Quantidade': quantidadeNormalizada,
+      'Pallet': pallet,
+    };
+
+    print('[SALVAR] Payload de envio: $payload');
+    print('[SALVAR] JSON: ${jsonEncode(payload)}');
 
     try {
       final uri = Uri.https(_baseUrl, _mapaPath);
@@ -701,8 +762,8 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
           _ordemProducaoController.clear();
           _produtoController.clear();
           _loteController.clear();
-          _unidadeMedidaController.clear();
           _quantidadeController.clear();
+          _palletController.clear();
           _objetoID = null;
           _detalheID = null;
           // Re-focar o scanner para o próximo item
@@ -711,9 +772,20 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
         print('[SALVAR] Sucesso: Documento salvo.');
       } else {
         print('[ERRO_SALVAR] HTTP ${response.statusCode}: ${response.body}');
+        String extraMensagem = '';
+        if (response.body.isNotEmpty) {
+          try {
+            final decoded = jsonDecode(response.body);
+            if (decoded is Map && decoded['Message'] != null) {
+              extraMensagem = ' ${decoded['Message']}';
+            }
+          } catch (_) {
+            // Ignora erros de parsing e mantém mensagem extra vazia
+          }
+        }
         if (mounted) {
           _showSnackBar(
-            'Erro ${response.statusCode} ao salvar. ${jsonDecode(response.body)['Message'] ?? ''}',
+            'Erro ${response.statusCode} ao salvar.$extraMensagem',
             isError: true,
           );
         }
@@ -850,16 +922,18 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
                       _buildField(
                         label: 'Objeto',
                         controller: _produtoController,
-                        readOnly: false,
+                        keyboardType: TextInputType.number,
+                        textInputAction: TextInputAction.search,
+                        onFieldSubmitted: (_) => _pesquisarObjetoDigitado(),
+                        suffixIcon: IconButton(
+                          icon: const Icon(Icons.search),
+                          tooltip: 'Pesquisar objeto',
+                          onPressed: _pesquisarObjetoDigitado,
+                        ),
                       ),
                       _buildField(
                         label: 'Detalhe',
                         controller: _loteController,
-                        readOnly: false,
-                      ),
-                      _buildField(
-                        label: 'Unidade de Medida',
-                        controller: _unidadeMedidaController,
                         readOnly: false,
                       ),
                       _buildField(
@@ -868,6 +942,12 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
                         keyboardType: const TextInputType.numberWithOptions(
                           decimal: true,
                         ),
+                        readOnly: false,
+                      ),
+                      _buildField(
+                        label: 'Pallet',
+                        controller: _palletController,
+                        keyboardType: TextInputType.number,
                         readOnly: false,
                       ),
                     ],
@@ -917,6 +997,9 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
     TextInputType? keyboardType,
     String? hint,
     bool readOnly = false,
+    TextInputAction? textInputAction,
+    void Function(String value)? onFieldSubmitted,
+    Widget? suffixIcon,
   }) {
     return ConstrainedBox(
       constraints: const BoxConstraints(minWidth: 280, maxWidth: 380),
@@ -924,6 +1007,8 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
         controller: controller,
         keyboardType: keyboardType,
         readOnly: readOnly,
+        textInputAction: textInputAction,
+        onFieldSubmitted: onFieldSubmitted,
         decoration: InputDecoration(
           labelText: label,
           hintText: hint,
@@ -937,14 +1022,15 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
             horizontal: 16,
             vertical: 14,
           ),
+          suffixIcon: suffixIcon,
         ),
         validator: (value) {
           if (controller == _produtoController ||
               controller == _loteController ||
               controller == _dataController ||
               controller == _ordemProducaoController ||
-              controller == _unidadeMedidaController ||
-              controller == _quantidadeController) {
+              controller == _quantidadeController ||
+              controller == _palletController) {
             return value == null || value.isEmpty ? 'Campo obrigatório' : null;
           }
           return null;

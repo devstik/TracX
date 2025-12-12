@@ -65,6 +65,20 @@ class MapaResultado {
   const MapaResultado({required this.data, required this.registros});
 }
 
+class _ObjetoResumo {
+  final int produtoId;
+  final String nome;
+  final String detalhe;
+  double quantidade;
+
+  _ObjetoResumo({
+    required this.produtoId,
+    required this.nome,
+    required this.detalhe,
+    required this.quantidade,
+  });
+}
+
 
 
 /// Exceção customizada para erros de API.
@@ -234,6 +248,8 @@ class _ConsultaMapaProducaoScreenState extends State<ConsultaMapaProducaoScreen>
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _dataInicialController = TextEditingController();
   final TextEditingController _dataFinalController = TextEditingController();
+  final TextEditingController _objetoFiltroController = TextEditingController();
+  String _objetoFiltro = '';
 
   bool _loading = false;
   List<MapaResultado> _resultados = [];
@@ -243,13 +259,61 @@ class _ConsultaMapaProducaoScreenState extends State<ConsultaMapaProducaoScreen>
   int _diasProcessados = 0;
 
   @override
+  void initState() {
+    super.initState();
+    _objetoFiltroController.addListener(() {
+      setState(() {
+        _objetoFiltro = _objetoFiltroController.text.trim().toLowerCase();
+      });
+    });
+  }
+
+  @override
   void dispose() {
     _dataInicialController.dispose();
     _dataFinalController.dispose();
+    _objetoFiltroController.dispose();
     super.dispose();
   }
 
   // --- LÓGICA DE NEGÓCIOS / API ---
+  String? _nomeProduto(int? produtoId) {
+    if (produtoId == null) return null;
+    return CacheManager.produtosNomeCache[produtoId];
+  }
+
+  String _detalheProduto(int? produtoId) {
+    if (produtoId == null) return 'Lote: N/A';
+    final detalhe = CacheManager.produtosDetalheCache[produtoId];
+    return detalhe ?? 'N/A';
+  }
+
+  List<_ObjetoResumo> _agruparObjetos() {
+    final mapa = <int, _ObjetoResumo>{};
+    for (final resultado in _resultados) {
+      for (final registro in resultado.registros) {
+        final produtoId = registro['produtoId'] as int?;
+        final nome = _nomeProduto(produtoId);
+        final quantidade = registro['quantidade'];
+        final quantidadeNum = quantidade is num ? quantidade.toDouble() : 0.0;
+        if (produtoId == null || nome == null || quantidadeNum <= 0) continue;
+        mapa.putIfAbsent(
+          produtoId,
+          () => _ObjetoResumo(
+            produtoId: produtoId,
+            nome: nome,
+            detalhe: _detalheProduto(produtoId),
+            quantidade: 0,
+          ),
+        );
+        mapa[produtoId]!.quantidade += quantidadeNum;
+      }
+    }
+
+    final lista = mapa.values.toList()
+      ..sort((a, b) => a.nome.toLowerCase().compareTo(b.nome.toLowerCase()));
+    return lista;
+  }
 
   Future<void> _consultar() async {
     FocusScope.of(context).unfocus();
@@ -380,6 +444,8 @@ class _ConsultaMapaProducaoScreenState extends State<ConsultaMapaProducaoScreen>
             children: [
               _buildFormArea(),
               const SizedBox(height: 24),
+              _buildObjetoResumoSection(),
+              const SizedBox(height: 24),
               Expanded(child: _buildResultsArea()),
             ],
           ),
@@ -472,6 +538,109 @@ class _ConsultaMapaProducaoScreenState extends State<ConsultaMapaProducaoScreen>
         // O _MapaCard já realiza o filtro interno
         return _MapaCard(resultado: resultado);
       },
+    );
+  }
+
+  Widget _buildObjetoResumoSection() {
+    final objetos = _agruparObjetos();
+    if (objetos.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final filtro = _objetoFiltro;
+    final objetosFiltrados = filtro.isEmpty
+        ? objetos
+        : objetos.where((o) {
+            final nomeLower = o.nome.toLowerCase();
+            return nomeLower.contains(filtro) ||
+                o.produtoId.toString().contains(filtro);
+          }).toList();
+
+    final totalGeral = objetosFiltrados.fold<double>(
+      0,
+      (sum, obj) => sum + obj.quantidade,
+    );
+
+    final formatter = NumberFormat('#,##0.00', 'pt_BR');
+
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.search, color: AppConstants.primaryColor),
+                const SizedBox(width: 8),
+                Text(
+                  'Pesquisar por Objeto',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    color: AppConstants.primaryColor,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _objetoFiltroController,
+              decoration: InputDecoration(
+                hintText: 'Digite o nome ou código do objeto',
+                prefixIcon: const Icon(Icons.search),
+                filled: true,
+                fillColor: Colors.grey.shade100,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Total geral: ${formatter.format(totalGeral)} metros',
+              style: const TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 14,
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 220,
+              child: objetosFiltrados.isEmpty
+                  ? Center(
+                      child: Text(
+                        'Nenhum objeto encontrado.',
+                        style: TextStyle(color: AppConstants.secondaryColor),
+                      ),
+                    )
+                  : ListView.separated(
+                      itemCount: objetosFiltrados.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (_, index) {
+                        final item = objetosFiltrados[index];
+                        return ListTile(
+                          title: Text(item.nome),
+                          subtitle: Text(
+                            'ID: ${item.produtoId} • Lote: ${item.detalhe}',
+                          ),
+                          trailing: Text(
+                            formatter.format(item.quantidade),
+                            style: TextStyle(
+                              color: AppConstants.primaryColor,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

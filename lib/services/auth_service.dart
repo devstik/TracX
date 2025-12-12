@@ -19,7 +19,12 @@ class AuthService {
   static const String _tokenKey = 'token'; // Chave usada para salvar o token
   static const String _expiryKey =
       'tokenExpiry'; // Chave para salvar a data de expiração
-  static const int _defaultTokenValiditySeconds = 3600; // 60 minutos
+  static const int _defaultTokenValiditySeconds = 3600; // 60 minutos (usado apenas para login offline)
+  static const String _wmsAuthUrl =
+      'https://visions.topmanager.com.br/auth/api/usuarios/entrar?identificadorDaAplicacao=LogTech_WMS&chaveDaAplicacaoExterna=uvkmv%2BQHum%2FXhF8grWeW4nKmzKFRk4UwJk74x7FnZbGC6ECvl4nbxUf3h7L%2BCGk25qSA8QOJoovrJtUJlXlsWQ%3D%3D&enderecoDeRetorno=http://qualquer';
+  static const String _wmsEmail = 'suporte.wms';
+  static const String _wmsPassword = '123456';
+  static const String _wmsUsuarioId = '21578';
 
   // ✅ NOVO MÉTODO (FALTANDO ANTERIORMENTE)
   // --- NOVO: Função para checar se está em modo Offline ---
@@ -101,59 +106,29 @@ class AuthService {
   }
 
   // --- Lógica de Verificação de Expiração (AJUSTADA) ---
-  static Future<bool> _isTokenExpirado() async {
-    final prefs = await SharedPreferences.getInstance();
-    final expiryString = prefs.getString(_expiryKey);
-    final savedToken = prefs.getString(_tokenKey);
-
-    // Se o token salvo for o token offline (PÚBLICO), ele NUNCA expira.
-    if (savedToken == offlineAdminToken) {
-      debugPrint('[AUTH] Token offline detectado. Não expirável.');
-      return false;
-    }
-
-    if (expiryString == null) {
-      debugPrint(
-        '[AUTH] Data de expiração ausente. Token é considerado expirado.',
-      );
-      return true; // Sem data de expiração, precisa renovar.
-    }
-
-    try {
-      final expiryTime = DateTime.parse(expiryString);
-      final isExpired = DateTime.now().isAfter(
-        expiryTime.subtract(const Duration(minutes: 5)),
-      ); // Tolerância de 5 minutos
-
-      if (isExpired) {
-        debugPrint(
-          '[AUTH] Token expirou ou está prestes a expirar. Hora: $expiryString',
-        );
-      } else {
-        debugPrint('[AUTH] Token válido até: $expiryString');
-      }
-      return isExpired;
-    } catch (e) {
-      debugPrint(
-        '[AUTH] Erro ao parsear data de expiração. Gerando novo token. Erro: $e',
-      );
-      return true;
-    }
-  }
-
   // --- Função Principal de Obtenção de Token ---
   static Future<String?> obterTokenAplicacao() async {
     final prefs = await SharedPreferences.getInstance();
     final savedToken = prefs.getString(_tokenKey);
 
-    // Se não há token OU o token existe mas está expirado, solicita um novo.
-    if (savedToken == null || savedToken.isEmpty || await _isTokenExpirado()) {
-      debugPrint('[AUTH] Token ausente/expirado. Solicitando novo token...');
-      return await _solicitarNovoToken();
+    if (savedToken == offlineAdminToken) {
+      debugPrint('[AUTH] Token offline detectado. Retornando modo offline.');
+      return savedToken;
     }
 
-    debugPrint('[AUTH] Token válido encontrado e retornado.');
-    return savedToken;
+    final token = await _solicitarNovoToken();
+    if (token != null) {
+      debugPrint('[AUTH] Token Força obtido: $token');
+    }
+    return token;
+  }
+
+  static Future<String?> obterTokenLogtech() async {
+    final token = await _solicitarNovoTokenWms();
+    if (token != null) {
+      debugPrint('[AUTH WMS] Token recém-obtido: $token');
+    }
+    return token;
   }
 
   // --- Função de Solicitação de Token (API) ---
@@ -176,19 +151,6 @@ class AuthService {
 
       if (response.statusCode == 200) {
         final String newToken = extrairToken(response.body);
-        final prefs = await SharedPreferences.getInstance();
-
-        // 1. Salva o novo token
-        await prefs.setString(_tokenKey, newToken);
-
-        // 2. Calcula e salva a data de expiração
-        final expiryTime = DateTime.now()
-            .add(const Duration(seconds: _defaultTokenValiditySeconds))
-            .toIso8601String();
-
-        await prefs.setString(_expiryKey, expiryTime);
-
-        debugPrint('[AUTH] Novo token salvo com validade até: $expiryTime');
         return newToken;
       } else {
         debugPrint(
@@ -199,6 +161,34 @@ class AuthService {
       }
     } catch (e) {
       debugPrint('ERRO DE REDE: Exceção ao tentar obter novo token: $e');
+      return null;
+    }
+  }
+
+  static Future<String?> _solicitarNovoTokenWms() async {
+    try {
+      final response = await http.post(
+        Uri.parse(_wmsAuthUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          "email": _wmsEmail,
+          "senha": _wmsPassword,
+          "usuarioID": _wmsUsuarioId,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final String newToken = extrairToken(response.body);
+        return newToken;
+      } else {
+        debugPrint(
+          '[AUTH WMS] Falha ao gerar novo token. Status: ${response.statusCode}',
+        );
+        debugPrint(response.body);
+        return null;
+      }
+    } catch (e) {
+      debugPrint('[AUTH WMS] ERRO DE REDE: Exceção ao tentar obter novo token: $e');
       return null;
     }
   }
