@@ -12,9 +12,10 @@ class AuthService {
       'OFFLINE_ADMIN_TOKEN_VALIDO'; // Token "falso" para modo offline
 
   // --- Chaves e Validade ---
-  static const String _tokenKey = 'token'; // Chave usada para salvar o token
-  static const String _expiryKey =
-      'tokenExpiry'; // Chave para salvar a data de expiração
+  static const String _tokenKeyAplicacao = 'tokenAplicacao';
+  static const String _expiryKeyAplicacao = 'tokenAplicacaoExpiry';
+  static const String _tokenKeyWms = 'tokenWms';
+  static const String _expiryKeyWms = 'tokenWmsExpiry';
   static const int _defaultTokenValiditySeconds = 3600; // 60 minutos
 
   // --- Constantes WMS/LogTech ---
@@ -36,16 +37,18 @@ class AuthService {
   /// Salva o token e define a data de expiração local (padrão 1 hora).
   static Future<void> _salvarToken(
     String token, {
+    required String tokenKey,
+    required String expiryKey,
     int validitySeconds = _defaultTokenValiditySeconds,
   }) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_tokenKey, token);
+    await prefs.setString(tokenKey, token);
 
     final expiryTime = DateTime.now()
         .add(Duration(seconds: validitySeconds))
         .toIso8601String();
 
-    await prefs.setString(_expiryKey, expiryTime);
+    await prefs.setString(expiryKey, expiryTime);
     debugPrint(
       '[AUTH] Token salvo localmente com validade de $validitySeconds segundos.',
     );
@@ -76,14 +79,19 @@ class AuthService {
 
   static Future<bool> isOfflineModeActive() async {
     final prefs = await SharedPreferences.getInstance();
-    final savedToken = prefs.getString(_tokenKey);
-    return savedToken == offlineAdminToken;
+    final tokens = [
+      prefs.getString(_tokenKeyAplicacao),
+      prefs.getString(_tokenKeyWms),
+    ];
+    return tokens.any((token) => token == offlineAdminToken);
   }
 
   static Future<void> clearToken() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_tokenKey);
-    await prefs.remove(_expiryKey);
+    await prefs.remove(_tokenKeyAplicacao);
+    await prefs.remove(_expiryKeyAplicacao);
+    await prefs.remove(_tokenKeyWms);
+    await prefs.remove(_expiryKeyWms);
     debugPrint('[AUTH] Token local e data de expiração LIMPOS.');
   }
 
@@ -94,7 +102,18 @@ class AuthService {
     if (username.toLowerCase() == _adminUsername &&
         password == _adminPassword) {
       // Define uma expiração de 10 anos
-      await _salvarToken(offlineAdminToken, validitySeconds: 3650 * 24 * 3600);
+      await _salvarToken(
+        offlineAdminToken,
+        tokenKey: _tokenKeyAplicacao,
+        expiryKey: _expiryKeyAplicacao,
+        validitySeconds: 3650 * 24 * 3600,
+      );
+      await _salvarToken(
+        offlineAdminToken,
+        tokenKey: _tokenKeyWms,
+        expiryKey: _expiryKeyWms,
+        validitySeconds: 3650 * 24 * 3600,
+      );
       debugPrint(
         '[AUTH] Login Admin Offline bem-sucedido. Token: $offlineAdminToken',
       );
@@ -134,11 +153,13 @@ class AuthService {
 
   /// Lógica centralizada para obter e gerenciar o ciclo de vida do token.
   static Future<String?> _obterTokenBase(
-    Future<String?> Function() tokenRequester,
-  ) async {
+    Future<String?> Function() tokenRequester, {
+    required String tokenKey,
+    required String expiryKey,
+  }) async {
     final prefs = await SharedPreferences.getInstance();
-    final savedToken = prefs.getString(_tokenKey);
-    final expiryString = prefs.getString(_expiryKey);
+    final savedToken = prefs.getString(tokenKey);
+    final expiryString = prefs.getString(expiryKey);
 
     if (savedToken == offlineAdminToken) {
       debugPrint('[AUTH] Token offline detectado. Retornando modo offline.');
@@ -159,7 +180,11 @@ class AuthService {
 
     if (token != null) {
       // Salva o novo token com a validade padrão (1h)
-      await _salvarToken(token);
+      await _salvarToken(
+        token,
+        tokenKey: tokenKey,
+        expiryKey: expiryKey,
+      );
     }
     return token;
   }
@@ -168,12 +193,20 @@ class AuthService {
 
   /// Obtém ou renova o token para a API Força de Vendas.
   static Future<String?> obterTokenAplicacao() async {
-    return _obterTokenBase(_solicitarNovoTokenForcaDeVendas);
+    return _obterTokenBase(
+      _solicitarNovoTokenForcaDeVendas,
+      tokenKey: _tokenKeyAplicacao,
+      expiryKey: _expiryKeyAplicacao,
+    );
   }
 
   /// Obtém ou renova o token para a API Logtech (WMS).
   static Future<String?> obterTokenLogtech() async {
-    return _obterTokenBase(_solicitarNovoTokenWms);
+    return _obterTokenBase(
+      _solicitarNovoTokenWms,
+      tokenKey: _tokenKeyWms,
+      expiryKey: _expiryKeyWms,
+    );
   }
 
   // --- Funções de Solicitação de Token (Requisição Pura) ---

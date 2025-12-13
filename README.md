@@ -1,4 +1,4 @@
-# tracx
+# TracX
 
 A new Flutter project.
 

@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "com.example" "\0"
-            VALUE "FileDescription", "tracx" "\0"
+            VALUE "FileDescription", "TracX" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "tracx" "\0"
+            VALUE "InternalName", "TracX" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2025 com.example. All rights reserved." "\0"
-            VALUE "OriginalFilename", "tracx.exe" "\0"
-            VALUE "ProductName", "tracx" "\0"
+            VALUE "OriginalFilename", "TracX.exe" "\0"
+            VALUE "ProductName", "TracX" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

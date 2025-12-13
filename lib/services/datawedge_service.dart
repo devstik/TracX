@@ -38,7 +38,7 @@ class DataWedgeService {
 
     try {
       await _channel.invokeMethod('configureProfile', {
-        'profileName': 'TracxFlutterProfile',
+        'profileName': 'TracXFlutterProfile',
         'intentAction': 'com.example.tracx.SCAN',
       });
       if (kDebugMode) {

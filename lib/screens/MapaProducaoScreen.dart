@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
@@ -40,10 +41,13 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
   final String _baseUrl = 'visions.topmanager.com.br';
   final String _mapaPath =
       '/Servidor_2.7.0_api/logtechwms/itemdemapadeproducao/incluir';
+  final String _ordensFabricacaoPath =
+      '/Servidor_2.8.0_api/logtechwms/itemdemapadeproducao/ordensdefabricacao';
 
   // ✅ FLAG DE CONTROLE
   bool _isProcessingScan = false;
   bool _loading = false;
+  bool _buscandoOrdemProducao = false;
 
   // --- CONTROLLERS ---
   final TextEditingController _dataController = TextEditingController();
@@ -279,7 +283,7 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
       );
 
       if (itemLocalDetalhe != null) {
-        _preencherCamposComDetalhe(itemLocalDetalhe, 'Cache Local');
+        await _preencherCamposComDetalhe(itemLocalDetalhe, 'Cache Local');
         if (mounted) {
           _showSnackBar(
             'Detalhes do objeto e lote carregados via Cache Local (Rápido).',
@@ -297,14 +301,14 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
       );
 
       if (itemDaApi != null) {
-        _preencherCamposComDetalhe(itemDaApi, 'API (Fallback)');
+        await _preencherCamposComDetalhe(itemDaApi, 'API (Fallback)');
         if (mounted)
           _showSnackBar('Detalhes do objeto e lote carregados via API.');
       } else {
         _limparDetalheComErro(objetoID, detalheQrCode);
       }
     } else {
-      _preencherCamposComDetalhe(itemObjeto!, 'Cache (Objeto Padrão)');
+      await _preencherCamposComDetalhe(itemObjeto!, 'Cache (Objeto Padrão)');
       if (mounted)
         _showSnackBar(
           'Detalhes do objeto carregados (Sem Detalhe no QR Code).',
@@ -331,24 +335,34 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
         (e) => e.objeto.toLowerCase().contains(codigoDigitado.toLowerCase()),
       );
       if (item != null) {
-        _preencherCamposComDetalhe(item, 'Pesquisa Manual');
+        await _preencherCamposComDetalhe(item, 'Pesquisa Manual');
       } else {
         _showSnackBar('Objeto não encontrado no cache.', isError: true);
       }
     }
   }
 
-  void _preencherCamposComDetalhe(EstoqueItem item, String source) {
-    if (!mounted) return;
-    setState(() {
+  Future<void> _preencherCamposComDetalhe(
+    EstoqueItem item,
+    String source,
+  ) async {
+    if (mounted) {
+      setState(() {
+        _objetoID = item.objetoID;
+        _produtoController.text = item.objeto;
+        _detalheID = item.detalheID;
+        _loteController.text = item.detalhe;
+      });
+    } else {
       _objetoID = item.objetoID;
-      _produtoController.text = item.objeto; // Preenche Objeto
+      _produtoController.text = item.objeto;
       _detalheID = item.detalheID;
-      _loteController.text = item.detalhe; // Preenche Detalhe
-    });
+      _loteController.text = item.detalhe;
+    }
     print(
       '[PREENCHIMENTO] Detalhe/Lote VALIDADO por $source - ID: ${item.detalheID}, Texto: ${item.detalhe}',
     );
+    await _buscarOrdemProducaoParaObjeto(item.objetoID);
   }
 
   void _limparDetalheComErro(int objetoID, String detalheQrCode) {
@@ -373,7 +387,179 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
       _detalheID = null;
       _produtoController.clear();
       _loteController.clear();
+      _ordemProducaoController.clear();
     });
+  }
+
+  Future<void> _buscarOrdemProducaoParaObjeto(int objetoID) async {
+    final bool isOffline = await AuthService.isOfflineModeActive();
+    if (isOffline) {
+      if (mounted) {
+        _showSnackBar(
+          'Modo offline ativo. Não foi possível consultar a Ordem de Produção.',
+          isError: true,
+        );
+      }
+      return;
+    }
+
+    final token = await AuthService.obterTokenLogtech();
+    if (token == null) {
+      if (mounted) {
+        _showSnackBar(
+          'Falha na autenticação ao consultar Ordens de Produção.',
+          isError: true,
+        );
+      }
+      return;
+    }
+
+    final queryParams = {
+      'empresaID': _empresaId,
+      'objetoID': objetoID.toString(),
+      'dataInicial': _obterPrimeiroDiaDoMesIso(),
+    };
+
+    if (mounted) {
+      setState(() => _buscandoOrdemProducao = true);
+    } else {
+      _buscandoOrdemProducao = true;
+    }
+
+    try {
+      final uri = Uri.https(_baseUrl, _ordensFabricacaoPath, queryParams);
+      final response = await http.get(
+        uri,
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception('HTTP ${response.statusCode}: ${response.body}');
+      }
+
+      final dynamic decoded = response.body.isNotEmpty
+          ? jsonDecode(response.body)
+          : null;
+      final List<dynamic> ordens = _normalizarRespostaOrdens(decoded);
+      final Iterable<int?> ordensExtraidas =
+          ordens.map<int?>((o) => _extrairIdOrdem(o));
+      final int? ordemSelecionada = ordensExtraidas.firstWhere(
+        (value) => value != null,
+        orElse: () => null,
+      );
+
+      if (ordemSelecionada != null) {
+        _ordemProducaoController.text = ordemSelecionada.toString();
+        print(
+          '[ORDEM] Ordem de Produção preenchida automaticamente: $ordemSelecionada',
+        );
+      } else {
+        _ordemProducaoController.clear();
+        if (mounted) {
+          _showSnackBar(
+            'Nenhuma Ordem de Produção foi retornada para este objeto.',
+            isError: true,
+          );
+        }
+      }
+    } catch (e) {
+      print('[ERRO_ORDEM] Falha ao buscar ordens de produção: $e');
+      if (mounted) {
+        _showSnackBar(
+          'Erro ao consultar Ordens de Produção. Informe o valor manualmente.',
+          isError: true,
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _buscandoOrdemProducao = false);
+      } else {
+        _buscandoOrdemProducao = false;
+      }
+    }
+  }
+
+  String _obterPrimeiroDiaDoMesIso() {
+    DateTime referencia = DateTime.now();
+    final textoData = _dataController.text.trim();
+    if (textoData.isNotEmpty) {
+      try {
+        referencia = DateFormat('dd/MM/yyyy').parseStrict(textoData);
+      } catch (_) {
+        // mantém data atual caso parse falhe
+      }
+    }
+    final primeiroDia = DateTime(referencia.year, referencia.month, 1);
+    return DateFormat("yyyy-MM-dd'T'00:00:00").format(primeiroDia);
+  }
+
+  List<dynamic> _normalizarRespostaOrdens(dynamic decoded) {
+    if (decoded == null) return const [];
+    if (decoded is List) return decoded;
+    if (decoded is Map<String, dynamic>) {
+      const possiveisChaves = [
+        'data',
+        'dados',
+        'resultado',
+        'result',
+        'ordens',
+        'items',
+        'values',
+      ];
+      for (final chave in possiveisChaves) {
+        final valor = decoded[chave];
+        if (valor is List) {
+          return valor;
+        }
+      }
+      for (final valor in decoded.values) {
+        if (valor is List) return valor;
+      }
+    }
+    return const [];
+  }
+
+  int? _extrairIdOrdem(dynamic item) {
+    if (item is int) return item;
+    if (item is String) {
+      return int.tryParse(item.trim());
+    }
+
+    if (item is Map<String, dynamic>) {
+      const possiveisChaves = [
+        'ID',
+        'Id',
+        'id',
+        'OrdemProducaoID',
+        'ordemProducaoID',
+        'OrdemFabricacaoID',
+        'ordemFabricacaoID',
+        'OrdemFabricacaoId',
+        'ordemFabricacaoId',
+        'NrOrdem',
+        'nrOrdem',
+        'Ordem',
+        'ordem',
+        'Numero',
+        'numero',
+        'NumeroOrdem',
+        'numeroOrdem',
+      ];
+
+      for (final chave in possiveisChaves) {
+        final dynamic valor = item[chave];
+        if (valor == null) continue;
+        if (valor is int) return valor;
+        if (valor is String) {
+          final parsed = int.tryParse(valor.trim());
+          if (parsed != null) return parsed;
+        }
+      }
+    }
+    return null;
   }
 
   Future<EstoqueItem?> _consultarDetalheNaApi(
@@ -645,10 +831,17 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
     }
 
     final String turnoNome = _turnoController.text.trim();
-    final String? turnoId = _turnoNomeParaIdMap[turnoNome];
+    final String? turnoIdStr = _turnoNomeParaIdMap[turnoNome];
+
+    if (_ordemProducaoController.text.isEmpty) {
+      _showSnackBar(
+        'É necessário abrir uma Ordem de Fabricação antes de salvar.',
+        isError: true,
+      );
+      return;
+    }
 
     if (_dataController.text.isEmpty ||
-        _ordemProducaoController.text.isEmpty ||
         _quantidadeController.text.isEmpty ||
         _produtoController.text.isEmpty ||
         _loteController.text.isEmpty ||
@@ -660,7 +853,15 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
       return;
     }
 
-    if (turnoId == null) {
+    if (turnoIdStr == '6') {
+      _showSnackBar(
+        'Antes de salvar, verifique se existe um mapa de produção aberto com turno Noite.',
+        isError: true,
+      );
+      return;
+    }
+
+    if (turnoIdStr == null) {
       _showSnackBar('O Turno preenchido é inválido para envio.', isError: true);
       return;
     }
@@ -717,7 +918,6 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
       return;
     }
 
-    final String? turnoIdStr = _turnoNomeParaIdMap[turnoNome];
     final int? turnoIdInt = turnoIdStr != null
         ? int.tryParse(turnoIdStr)
         : null;
@@ -877,22 +1077,14 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
                     ),
                   ),
 
-                  // UI Principal
-                  const Text(
-                    'Informações do Documento',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 16),
-                  Wrap(
-                    spacing: 16,
-                    runSpacing: 16,
+                  _buildFormSection(
+                    title: 'Informações do Documento',
                     children: [
                       _buildField(
                         label: 'Data (dd/MM/yyyy)',
                         controller: _dataController,
                         hint: '24/11/2025',
                         keyboardType: TextInputType.datetime,
-                        readOnly: false,
                       ),
                       _buildField(
                         label: 'Turno',
@@ -901,156 +1093,20 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 24),
-                  const Text(
-                    'Identificação da Produção',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 16),
-                  Wrap(
-                    spacing: 16,
-                    runSpacing: 16,
+                  _buildFormSection(
+                    title: 'Identificação da Produção',
                     children: [
                       _buildField(
                         label: 'Ordem de Produção',
                         controller: _ordemProducaoController,
                         keyboardType: TextInputType.number,
-                        readOnly: false,
+                        readOnly: true,
+                        suffixIcon: _buildOrdemProducaoSuffix(),
                       ),
-
-                      // --- CORREÇÃO: Usando RawAutocomplete ---
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(
-                          minWidth: 280,
-                          maxWidth: 380,
-                        ),
-                        child: RawAutocomplete<EstoqueItem>(
-                          // 1. Passamos o controller EXPLICITAMENTE
-                          textEditingController: _produtoController,
-                          // 2. Passamos o focusNode EXPLICITAMENTE
-                          focusNode: _produtoFocusNode,
-
-                          optionsBuilder: (TextEditingValue textEditingValue) {
-                            if (textEditingValue.text.isEmpty) {
-                              return const Iterable<EstoqueItem>.empty();
-                            }
-                            return _estoqueCache.where((EstoqueItem option) {
-                              final String input = textEditingValue.text
-                                  .toLowerCase();
-                              // Busca por Objeto ou Detalhe
-                              return option.objeto.toLowerCase().contains(
-                                    input,
-                                  ) ||
-                                  option.detalhe.toLowerCase().contains(input);
-                            });
-                          },
-                          // Garante que apenas o nome do objeto seja preenchido no input
-                          displayStringForOption: (EstoqueItem option) =>
-                              option.objeto,
-                          onSelected: (EstoqueItem selection) {
-                            print(
-                              'Item selecionado: ${selection.objeto} - Detalhe: ${selection.detalhe}',
-                            );
-                            _preencherCamposComDetalhe(
-                              selection,
-                              'Autocomplete',
-                            );
-                          },
-                          // 3. Renderizamos o campo de input (TextFormField)
-                          fieldViewBuilder:
-                              (
-                                BuildContext context,
-                                TextEditingController controller,
-                                FocusNode focusNode,
-                                VoidCallback onFieldSubmitted,
-                              ) {
-                                return TextFormField(
-                                  controller:
-                                      controller, // Usando o _produtoController
-                                  focusNode: focusNode,
-                                  decoration: InputDecoration(
-                                    labelText: 'Objeto',
-                                    hintText: 'Digite código ou nome',
-                                    filled: true,
-                                    fillColor: Colors.white,
-                                    border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      borderSide: BorderSide.none,
-                                    ),
-                                    contentPadding: const EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                      vertical: 14,
-                                    ),
-                                    suffixIcon: IconButton(
-                                      icon: const Icon(Icons.search),
-                                      onPressed: _pesquisarObjetoDigitado,
-                                    ),
-                                  ),
-                                  validator: (value) {
-                                    return value == null || value.isEmpty
-                                        ? 'Campo obrigatório'
-                                        : null;
-                                  },
-                                  onFieldSubmitted: (value) {
-                                    // Submissão manual (Enter) tenta pesquisar/validar o item digitado
-                                    _pesquisarObjetoDigitado();
-                                  },
-                                );
-                              },
-                          // 4. Renderizamos a lista de opções (Dropdown)
-                          optionsViewBuilder:
-                              (
-                                BuildContext context,
-                                AutocompleteOnSelected<EstoqueItem> onSelected,
-                                Iterable<EstoqueItem> options,
-                              ) {
-                                return Align(
-                                  alignment: Alignment.topLeft,
-                                  child: Material(
-                                    elevation: 4.0,
-                                    borderRadius: BorderRadius.circular(12),
-                                    child: SizedBox(
-                                      width:
-                                          380, // Mesma largura máxima do input
-                                      height: 250,
-                                      child: ListView.builder(
-                                        padding: const EdgeInsets.all(8.0),
-                                        itemCount: options.length,
-                                        itemBuilder:
-                                            (BuildContext context, int index) {
-                                              final EstoqueItem option = options
-                                                  .elementAt(index);
-                                              return ListTile(
-                                                title: Text(
-                                                  option.objeto,
-                                                  style: const TextStyle(
-                                                    fontWeight: FontWeight.bold,
-                                                  ),
-                                                ),
-                                                subtitle: Text(
-                                                  'Detalhe/Lote: ${option.detalhe}',
-                                                  style: TextStyle(
-                                                    color: Colors.grey.shade600,
-                                                  ),
-                                                ),
-                                                onTap: () {
-                                                  onSelected(option);
-                                                },
-                                              );
-                                            },
-                                      ),
-                                    ),
-                                  ),
-                                );
-                              },
-                        ),
-                      ),
-
-                      // --- FIM CORREÇÃO AUTOCOMPLETE ---
+                      _buildObjetoAutocompleteField(),
                       _buildField(
                         label: 'Detalhe',
                         controller: _loteController,
-                        readOnly: false,
                       ),
                       _buildField(
                         label: 'Quantidade',
@@ -1058,17 +1114,15 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
                         keyboardType: const TextInputType.numberWithOptions(
                           decimal: true,
                         ),
-                        readOnly: false,
                       ),
                       _buildField(
                         label: 'Pallet',
                         controller: _palletController,
                         keyboardType: TextInputType.number,
-                        readOnly: false,
                       ),
                     ],
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 8),
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
@@ -1097,13 +1151,189 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
                         foregroundColor: Colors.white,
                       ),
                     ),
-                  ),
-                ],
+                    ),
+                ]
+        ),),),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFormSection({
+    required String title,
+    required List<Widget> children,
+  }) {
+    return Card(
+      elevation: 2,
+      margin: const EdgeInsets.only(bottom: 24),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 20),
+            _buildResponsiveFieldGroup(children),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildResponsiveFieldGroup(List<Widget> fields) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final double availableWidth = constraints.maxWidth;
+        final int columns = _resolveColumnCount(availableWidth);
+        final double spacing = columns == 1 ? 0 : 16;
+        final double targetWidth = columns == 1
+            ? availableWidth
+            : math.min(
+                math.max(
+                  (availableWidth - spacing * (columns - 1)) / columns,
+                  260,
+                ),
+                420,
+              );
+
+        return Wrap(
+          spacing: spacing,
+          runSpacing: 16,
+          children: fields
+              .map(
+                (field) => SizedBox(
+                  width: targetWidth,
+                  child: field,
+                ),
+              )
+              .toList(),
+        );
+      },
+    );
+  }
+
+  int _resolveColumnCount(double width) {
+    if (width >= 1100) return 3;
+    if (width >= 720) return 2;
+    return 1;
+  }
+
+  Widget? _buildOrdemProducaoSuffix() {
+    if (_buscandoOrdemProducao) {
+      return const Padding(
+        padding: EdgeInsets.all(12),
+        child: SizedBox(
+          width: 20,
+          height: 20,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+          ),
+        ),
+      );
+    }
+    return IconButton(
+      icon: const Icon(Icons.refresh),
+      tooltip: 'Reconsultar Ordens de Produção',
+      onPressed:
+          (_objetoID == null) ? null : () => _buscarOrdemProducaoParaObjeto(_objetoID!),
+    );
+  }
+
+  Widget _buildObjetoAutocompleteField() {
+    return RawAutocomplete<EstoqueItem>(
+      textEditingController: _produtoController,
+      focusNode: _produtoFocusNode,
+      optionsBuilder: (TextEditingValue textEditingValue) {
+        if (textEditingValue.text.isEmpty) {
+          return const Iterable<EstoqueItem>.empty();
+        }
+        return _estoqueCache.where((EstoqueItem option) {
+          final String input = textEditingValue.text.toLowerCase();
+          return option.objeto.toLowerCase().contains(input) ||
+              option.detalhe.toLowerCase().contains(input);
+        });
+      },
+      displayStringForOption: (EstoqueItem option) => option.objeto,
+      onSelected: (EstoqueItem selection) async {
+        await _preencherCamposComDetalhe(selection, 'Autocomplete');
+      },
+      fieldViewBuilder: (
+        BuildContext context,
+        TextEditingController controller,
+        FocusNode focusNode,
+        VoidCallback onFieldSubmitted,
+      ) {
+        return TextFormField(
+          controller: controller,
+          focusNode: focusNode,
+          decoration: InputDecoration(
+            labelText: 'Objeto',
+            hintText: 'Digite código ou nome',
+            filled: true,
+            fillColor: Colors.white,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none,
+            ),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 14,
+            ),
+            suffixIcon: IconButton(
+              icon: const Icon(Icons.search),
+              onPressed: _pesquisarObjetoDigitado,
+            ),
+          ),
+          validator: (value) {
+            return value == null || value.isEmpty ? 'Campo obrigatório' : null;
+          },
+          onFieldSubmitted: (_) => _pesquisarObjetoDigitado(),
+        );
+      },
+      optionsViewBuilder: (
+        BuildContext context,
+        AutocompleteOnSelected<EstoqueItem> onSelected,
+        Iterable<EstoqueItem> options,
+      ) {
+        return Align(
+          alignment: Alignment.topLeft,
+          child: Material(
+            elevation: 4.0,
+            borderRadius: BorderRadius.circular(12),
+            child: SizedBox(
+              width: 380,
+              height: 250,
+              child: ListView.builder(
+                padding: const EdgeInsets.all(8.0),
+                itemCount: options.length,
+                itemBuilder: (BuildContext context, int index) {
+                  final EstoqueItem option = options.elementAt(index);
+                  return ListTile(
+                    title: Text(
+                      option.objeto,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    subtitle: Text(
+                      'Detalhe/Lote: ${option.detalhe}',
+                      style: TextStyle(color: Colors.grey.shade600),
+                    ),
+                    onTap: () => onSelected(option),
+                  );
+                },
               ),
             ),
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -1117,41 +1347,38 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
     void Function(String value)? onFieldSubmitted,
     Widget? suffixIcon,
   }) {
-    return ConstrainedBox(
-      constraints: const BoxConstraints(minWidth: 280, maxWidth: 380),
-      child: TextFormField(
-        controller: controller,
-        keyboardType: keyboardType,
-        readOnly: readOnly,
-        textInputAction: textInputAction,
-        onFieldSubmitted: onFieldSubmitted,
-        decoration: InputDecoration(
-          labelText: label,
-          hintText: hint,
-          filled: true,
-          fillColor: Colors.white,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide.none,
-          ),
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 14,
-          ),
-          suffixIcon: suffixIcon,
+    return TextFormField(
+      controller: controller,
+      keyboardType: keyboardType,
+      readOnly: readOnly,
+      textInputAction: textInputAction,
+      onFieldSubmitted: onFieldSubmitted,
+      decoration: InputDecoration(
+        labelText: label,
+        hintText: hint,
+        filled: true,
+        fillColor: Colors.white,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide.none,
         ),
-        validator: (value) {
-          if (controller == _produtoController ||
-              controller == _loteController ||
-              controller == _dataController ||
-              controller == _ordemProducaoController ||
-              controller == _quantidadeController ||
-              controller == _palletController) {
-            return value == null || value.isEmpty ? 'Campo obrigatório' : null;
-          }
-          return null;
-        },
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 14,
+        ),
+        suffixIcon: suffixIcon,
       ),
+      validator: (value) {
+        if (controller == _produtoController ||
+            controller == _loteController ||
+            controller == _dataController ||
+            controller == _ordemProducaoController ||
+            controller == _quantidadeController ||
+            controller == _palletController) {
+          return value == null || value.isEmpty ? 'Campo obrigatório' : null;
+        }
+        return null;
+      },
     );
   }
 }

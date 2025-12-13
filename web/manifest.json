@@ -1,6 +1,6 @@
 {
-    "name": "tracx",
-    "short_name": "tracx",
+    "name": "TracX",
+    "short_name": "TracX",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
