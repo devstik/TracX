@@ -27,6 +27,7 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
 
   final EstoqueDbHelper _dbHelper = EstoqueDbHelper();
   List<EstoqueItem> _estoqueCache = [];
+  List<EstoqueItem> _detalhesDisponiveis = [];
 
   static const Map<String, String> _turnoNomeParaIdMap = {
     'Manhã': '3',
@@ -250,12 +251,24 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
 
     if (itemObjeto == null) {
       print(
-        '[CONSULTA] Item ObjetoID=$objetoID NÃO encontrado no cache local/sqlite.',
+        '[CONSULTA] Item ObjetoID=$objetoID não está no cache/SQLite. Consultando API de estoque ($_consultaEstoquePath)...',
+      );
+      final List<EstoqueItem> itensApi =
+          await _consultarItensNaApi(objetoID, detalheLote: detalheQrCode);
+      if (itensApi.isNotEmpty) {
+        _atualizarCacheComItensApi(objetoID, itensApi);
+        itemObjeto = itensApi.first;
+      }
+    }
+
+    if (itemObjeto == null) {
+      print(
+        '[CONSULTA] Item ObjetoID=$objetoID NÃO encontrado nem mesmo na API de estoque.',
       );
       _limparCamposObjeto();
       if (mounted) {
         _showSnackBar(
-          'Objeto $cdObj não encontrado no estoque local. Verifique se o item existe e se o cache foi atualizado.',
+          'Objeto $cdObj não encontrado. Consulte o estoque no servidor.',
           isError: true,
         );
       }
@@ -293,22 +306,40 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
       }
 
       print(
-        '[FALLBACK] Detalhe não encontrado no cache. Tentando consultar API...',
+        '[FALLBACK] Detalhe não encontrado no cache. Consultando API de estoque ($_consultaEstoquePath)...',
       );
-      final EstoqueItem? itemDaApi = await _consultarDetalheNaApi(
+      final List<EstoqueItem> itensDaApi = await _consultarItensNaApi(
         objetoID,
-        detalheQrCode,
+        detalheLote: detalheQrCode,
       );
 
-      if (itemDaApi != null) {
-        await _preencherCamposComDetalhe(itemDaApi, 'API (Fallback)');
-        if (mounted)
-          _showSnackBar('Detalhes do objeto e lote carregados via API.');
+      if (itensDaApi.isNotEmpty) {
+        _atualizarCacheComItensApi(objetoID, itensDaApi);
+        final EstoqueItem? itemDaApi = itensDaApi.firstWhereOrNull(
+          (element) {
+            final detalhe = detalheQrCode.trim().toUpperCase();
+            final textoItem = element.detalhe.trim().toUpperCase();
+            final int? detalheIdQr = int.tryParse(detalheQrCode);
+            return (detalheIdQr != null && element.detalheID == detalheIdQr) ||
+                textoItem == detalhe;
+          },
+        );
+        if (itemDaApi != null) {
+          await _preencherCamposComDetalhe(itemDaApi, 'API (Fallback)');
+          if (mounted)
+            _showSnackBar('Detalhes do objeto e lote carregados via API.');
+        } else {
+          _limparDetalheComErro(objetoID, detalheQrCode);
+        }
       } else {
         _limparDetalheComErro(objetoID, detalheQrCode);
       }
     } else {
-      await _preencherCamposComDetalhe(itemObjeto!, 'Cache (Objeto Padrão)');
+      await _preencherCamposComDetalhe(
+        itemObjeto!,
+        'Cache (Objeto Padrão)',
+        preencherDetalheAutomatico: false,
+      );
       if (mounted)
         _showSnackBar(
           'Detalhes do objeto carregados (Sem Detalhe no QR Code).',
@@ -335,7 +366,11 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
         (e) => e.objeto.toLowerCase().contains(codigoDigitado.toLowerCase()),
       );
       if (item != null) {
-        await _preencherCamposComDetalhe(item, 'Pesquisa Manual');
+        await _preencherCamposComDetalhe(
+          item,
+          'Pesquisa Manual',
+          preencherDetalheAutomatico: false,
+        );
       } else {
         _showSnackBar('Objeto não encontrado no cache.', isError: true);
       }
@@ -344,24 +379,48 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
 
   Future<void> _preencherCamposComDetalhe(
     EstoqueItem item,
-    String source,
-  ) async {
-    if (mounted) {
-      setState(() {
-        _objetoID = item.objetoID;
-        _produtoController.text = item.objeto;
-        _detalheID = item.detalheID;
-        _loteController.text = item.detalhe;
-      });
-    } else {
+    String source, {
+    bool preencherDetalheAutomatico = true,
+  }) async {
+    final List<EstoqueItem> detalhesDoObjeto = _listarDetalhesDoObjeto(
+      item.objetoID,
+      fallback: item,
+    );
+
+    void aplicarEstado() {
       _objetoID = item.objetoID;
       _produtoController.text = item.objeto;
-      _detalheID = item.detalheID;
-      _loteController.text = item.detalhe;
+      _detalhesDisponiveis = detalhesDoObjeto;
+
+      if (preencherDetalheAutomatico && detalhesDoObjeto.isNotEmpty) {
+        final EstoqueItem? detalheEncontrado = detalhesDoObjeto
+            .firstWhereOrNull((element) => element.detalheID == item.detalheID);
+        final EstoqueItem detalheParaAplicar =
+            detalheEncontrado ?? detalhesDoObjeto.first;
+        _detalheID = detalheParaAplicar.detalheID;
+        _loteController.text = detalheParaAplicar.detalhe;
+      } else {
+        _detalheID = null;
+        _loteController.clear();
+      }
     }
-    print(
-      '[PREENCHIMENTO] Detalhe/Lote VALIDADO por $source - ID: ${item.detalheID}, Texto: ${item.detalhe}',
-    );
+
+    if (mounted) {
+      setState(aplicarEstado);
+    } else {
+      aplicarEstado();
+    }
+
+    if (_detalheID != null) {
+      print(
+        '[PREENCHIMENTO] Detalhe/Lote VALIDADO por $source - ID: $_detalheID, Texto: ${_loteController.text}',
+      );
+    } else {
+      print(
+        '[PREENCHIMENTO] Objeto definido por $source - aguardando seleção manual do detalhe.',
+      );
+    }
+
     await _buscarOrdemProducaoParaObjeto(item.objetoID);
   }
 
@@ -385,13 +444,17 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
     setState(() {
       _objetoID = null;
       _detalheID = null;
+      _detalhesDisponiveis = [];
       _produtoController.clear();
       _loteController.clear();
       _ordemProducaoController.clear();
     });
   }
 
-  Future<void> _buscarOrdemProducaoParaObjeto(int objetoID) async {
+  Future<void> _buscarOrdemProducaoParaObjeto(
+    int objetoID, {
+    bool isRetry = false,
+  }) async {
     final bool isOffline = await AuthService.isOfflineModeActive();
     if (isOffline) {
       if (mounted) {
@@ -417,7 +480,7 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
     final queryParams = {
       'empresaID': _empresaId,
       'objetoID': objetoID.toString(),
-      'dataInicial': _obterPrimeiroDiaDoMesIso(),
+      'dataInicial': _obterDataInicialOrdens(),
     };
 
     if (mounted) {
@@ -428,6 +491,9 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
 
     try {
       final uri = Uri.https(_baseUrl, _ordensFabricacaoPath, queryParams);
+      print(
+        '[ORDEM] Consultando endpoint: ${uri.toString()}',
+      );
       final response = await http.get(
         uri,
         headers: {
@@ -435,6 +501,12 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
           'Content-Type': 'application/json',
         },
       );
+
+      if (response.statusCode == 401 && !isRetry) {
+        await AuthService.clearToken();
+        await _buscarOrdemProducaoParaObjeto(objetoID, isRetry: true);
+        return;
+      }
 
       if (response.statusCode != 200) {
         throw Exception('HTTP ${response.statusCode}: ${response.body}');
@@ -482,18 +554,11 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
     }
   }
 
-  String _obterPrimeiroDiaDoMesIso() {
-    DateTime referencia = DateTime.now();
+  String _obterDataInicialOrdens() {
     final textoData = _dataController.text.trim();
-    if (textoData.isNotEmpty) {
-      try {
-        referencia = DateFormat('dd/MM/yyyy').parseStrict(textoData);
-      } catch (_) {
-        // mantém data atual caso parse falhe
-      }
-    }
-    final primeiroDia = DateTime(referencia.year, referencia.month, 1);
-    return DateFormat("yyyy-MM-dd'T'00:00:00").format(primeiroDia);
+    final DateTime referencia =
+        _tentarLerDataBr(textoData) ?? DateTime.now();
+    return DateFormat("yyyy-MM-dd'T'00:00:00").format(referencia);
   }
 
   List<dynamic> _normalizarRespostaOrdens(dynamic decoded) {
@@ -562,30 +627,67 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
     return null;
   }
 
-  Future<EstoqueItem?> _consultarDetalheNaApi(
+  List<EstoqueItem> _listarDetalhesDoObjeto(
+    int objetoID, {
+    EstoqueItem? fallback,
+  }) {
+    final Map<int, EstoqueItem> detalhesMap = {};
+    for (final item in _estoqueCache) {
+      if (item.objetoID == objetoID) {
+        detalhesMap[item.detalheID] = item;
+      }
+    }
+    if (fallback != null) {
+      detalhesMap.putIfAbsent(fallback.detalheID, () => fallback);
+    }
+    return detalhesMap.values.toList();
+  }
+
+  void _atualizarCacheComItensApi(
     int objetoID,
-    String detalheLote,
-  ) async {
+    List<EstoqueItem> itensApi,
+  ) {
+    if (itensApi.isEmpty) return;
+
+    void atualizar() {
+      _estoqueCache.removeWhere((item) => item.objetoID == objetoID);
+      _estoqueCache.addAll(itensApi);
+    }
+
+    if (mounted) {
+      setState(atualizar);
+    } else {
+      atualizar();
+    }
+  }
+
+  Future<List<EstoqueItem>> _consultarItensNaApi(
+    int objetoID, {
+    String? detalheLote,
+  }) async {
     final token = await AuthService.obterTokenAplicacao();
 
     if (token == null || await AuthService.isOfflineModeActive()) {
       print(
-        '[ERRO_TOKEN] Falha na autenticação ou modo offline ativo. Não consulta API.',
+        '[ERRO_TOKEN] Falha na autenticação ou modo offline ativo. Não consulta API de estoque.',
       );
-      return null;
+      return const [];
     }
 
-    final int? detalheIDQrCode = int.tryParse(detalheLote);
+    final Map<String, String> queryParams = {
+      'empresaID': _empresaId,
+      'objetoID': objetoID.toString(),
+    };
+    final String? detalheNormalizado = detalheLote?.trim();
+    if (detalheNormalizado != null && detalheNormalizado.isNotEmpty) {
+      queryParams['detalhe'] = detalheNormalizado;
+    }
 
     try {
-      final uri = Uri.https(_baseUrl, _consultaEstoquePath, {
-        'empresaID': _empresaId,
-        'objetoID': objetoID.toString(),
-        'detalhe': detalheLote,
-      });
+      final uri = Uri.https(_baseUrl, _consultaEstoquePath, queryParams);
 
       print(
-        '[API] Consultando Detalhe na API (FALLBACK): ObjetoID=$objetoID, Detalhe=$detalheLote',
+        '[API] Consultando estoque ($_consultaEstoquePath) para ObjetoID=$objetoID Detalhe=${detalheNormalizado ?? '-'}',
       );
       final response = await http.get(
         uri,
@@ -595,57 +697,37 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
         },
       );
 
-      if (response.statusCode == 200) {
-        final decoded = jsonDecode(response.body);
-        List<dynamic> itensJson = [];
-
-        if (decoded is List && decoded.isNotEmpty) {
-          itensJson = decoded;
-        } else if (decoded is Map<String, dynamic>) {
-          itensJson = [decoded];
-        }
-
-        if (itensJson.isNotEmpty) {
-          for (final itemJson in itensJson) {
-            if (itemJson is Map<String, dynamic>) {
-              if (itemJson['objetoID'] != objetoID) {
-                continue;
-              }
-
-              final int? apiDetalheID = itemJson['detalheID'] is int
-                  ? itemJson['detalheID']
-                  : int.tryParse(itemJson['detalheID']?.toString() ?? '');
-              final String apiDetalheText =
-                  (itemJson['detalhe']?.toString() ?? '').trim().toUpperCase();
-              final String qrDetalheText = detalheLote.trim().toUpperCase();
-
-              bool isMatch = false;
-
-              if (detalheIDQrCode != null && apiDetalheID == detalheIDQrCode) {
-                isMatch = true;
-              } else if (apiDetalheText == qrDetalheText) {
-                isMatch = true;
-              }
-
-              if (isMatch && itemJson['detalheID'] != null) {
-                return EstoqueItem.fromMap(itemJson);
-              }
-            }
-          }
-        }
+      if (response.statusCode != 200) {
         print(
-          '[API] Nenhum Detalhe correspondente encontrado na API (Fallback).',
+          '[ERRO_HTTP_DETALHE] HTTP ${response.statusCode}: Falha ao buscar estoque. ${response.body}',
         );
-        return null;
-      } else {
-        print(
-          '[ERRO_HTTP_DETALHE] HTTP ${response.statusCode}: Falha ao buscar detalhe específico (API). ${response.body}',
-        );
-        return null;
+        return const [];
       }
+
+      final dynamic decoded =
+          response.body.isNotEmpty ? jsonDecode(response.body) : null;
+      List<dynamic> itensJson = [];
+
+      if (decoded is List && decoded.isNotEmpty) {
+        itensJson = decoded;
+      } else if (decoded is Map<String, dynamic>) {
+        itensJson = [decoded];
+      }
+
+      final List<EstoqueItem> itens = itensJson
+          .whereType<Map<String, dynamic>>()
+          .where((mapa) => mapa['objetoID'] != null)
+          .map((mapa) => EstoqueItem.fromMap(mapa))
+          .where((item) => item.objetoID == objetoID)
+          .toList();
+
+      if (itens.isEmpty) {
+        print('[API] Nenhum item retornado para ObjetoID=$objetoID.');
+      }
+      return itens;
     } catch (e) {
-      print('[ERRO_REDE_DETALHE] Falha de rede ao buscar detalhe (API): $e');
-      return null;
+      print('[ERRO_REDE_DETALHE] Falha de rede ao buscar estoque: $e');
+      return const [];
     }
   }
 
@@ -844,7 +926,7 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
     if (_dataController.text.isEmpty ||
         _quantidadeController.text.isEmpty ||
         _produtoController.text.isEmpty ||
-        _loteController.text.isEmpty ||
+        _detalheID == null ||
         _palletController.text.isEmpty) {
       _showSnackBar(
         'Por favor, preencha todos os campos obrigatórios.',
@@ -978,6 +1060,7 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
           _palletController.clear();
           _objetoID = null;
           _detalheID = null;
+          _detalhesDisponiveis = [];
           _reFocarScanner();
         }
         print('[SALVAR] Sucesso: Documento salvo.');
@@ -1032,12 +1115,26 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
   }
 
   String? _parseDataBrToIso(String dataBr) {
-    try {
-      final parsed = DateFormat('dd/MM/yyyy').parseStrict(dataBr);
-      return DateFormat("yyyy-MM-dd'T'00:00:00").format(parsed);
-    } catch (_) {
+    final parsed = _tentarLerDataBr(dataBr);
+    if (parsed == null) {
       return null;
     }
+    return DateFormat("yyyy-MM-dd'T'00:00:00").format(parsed);
+  }
+
+  DateTime? _tentarLerDataBr(String texto) {
+    final candidatos = [
+      DateFormat('dd/MM/yyyy'),
+      DateFormat('dd/MM/yy'),
+    ];
+    for (final formato in candidatos) {
+      try {
+        return formato.parseStrict(texto);
+      } catch (_) {
+        continue;
+      }
+    }
+    return null;
   }
 
   // --- WIDGETS DE UI ---
@@ -1110,10 +1207,7 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
                         suffixIcon: _buildOrdemProducaoSuffix(),
                       ),
                       _buildObjetoAutocompleteField(),
-                      _buildField(
-                        label: 'Detalhe',
-                        controller: _loteController,
-                      ),
+                      _buildDetalheDropdown(),
                       _buildField(
                         label: 'Quantidade',
                         controller: _quantidadeController,
@@ -1270,7 +1364,11 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
       },
       displayStringForOption: (EstoqueItem option) => option.objeto,
       onSelected: (EstoqueItem selection) async {
-        await _preencherCamposComDetalhe(selection, 'Autocomplete');
+        await _preencherCamposComDetalhe(
+          selection,
+          'Autocomplete',
+          preencherDetalheAutomatico: false,
+        );
       },
       fieldViewBuilder: (
         BuildContext context,
@@ -1343,6 +1441,77 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
     );
   }
 
+  Widget _buildDetalheDropdown() {
+    final bool possuiOpcoes = _detalhesDisponiveis.isNotEmpty;
+    final bool valorDisponivel = possuiOpcoes &&
+        _detalhesDisponiveis.any((item) => item.detalheID == _detalheID);
+    final int? valorAtual = valorDisponivel ? _detalheID : null;
+
+    return FormField<int>(
+      key: ValueKey('${_objetoID ?? 'sem-objeto'}_${_detalhesDisponiveis.length}'),
+      validator: (_) {
+        if (_objetoID == null) {
+          return 'Selecione um objeto antes do detalhe.';
+        }
+        if (!possuiOpcoes) {
+          return 'Nenhum detalhe disponível.';
+        }
+        return valorAtual == null ? 'Selecione um detalhe.' : null;
+      },
+      builder: (fieldState) {
+        return InputDecorator(
+          decoration: InputDecoration(
+            labelText: 'Detalhe',
+            filled: true,
+            fillColor: Colors.white,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none,
+            ),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 14,
+            ),
+            errorText: fieldState.errorText,
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<int>(
+              isExpanded: true,
+              hint: const Text('Selecione o detalhe'),
+              value: valorAtual,
+              items: _detalhesDisponiveis
+                  .map(
+                    (item) => DropdownMenuItem<int>(
+                      value: item.detalheID,
+                      child: Text(item.detalhe),
+                    ),
+                  )
+                  .toList(),
+              onChanged: possuiOpcoes
+                  ? (value) {
+                      if (value == null) return;
+                      setState(() {
+                        _detalheID = value;
+                        final selecionado = _detalhesDisponiveis.firstWhereOrNull(
+                          (element) => element.detalheID == value,
+                        );
+                        _loteController.text = selecionado?.detalhe ?? '';
+                      });
+                      fieldState.didChange(value);
+                    }
+                  : null,
+              disabledHint: Text(
+                _objetoID == null
+                    ? 'Selecione um objeto primeiro'
+                    : 'Nenhum detalhe disponível',
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildField({
     required String label,
     required TextEditingController controller,
@@ -1376,7 +1545,6 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
       ),
       validator: (value) {
         if (controller == _produtoController ||
-            controller == _loteController ||
             controller == _dataController ||
             controller == _ordemProducaoController ||
             controller == _quantidadeController ||
