@@ -189,41 +189,6 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
     }
   }
 
-  EstoqueItem? _consultarDetalheNoCache(int objetoID, String detalheLote) {
-    if (_estoqueCache.isEmpty) {
-      print('[CACHE] Cache em memória vazio. Tentando consultar DB...');
-      return null;
-    }
-
-    final int? detalheIDQrCode = int.tryParse(detalheLote);
-
-    for (final item in _estoqueCache) {
-      if (item.objetoID != objetoID) {
-        continue;
-      }
-
-      final String itemDetalheText = item.detalhe.trim().toUpperCase();
-      final String qrDetalheText = detalheLote.trim().toUpperCase();
-
-      bool isMatch = false;
-
-      if (detalheIDQrCode != null && item.detalheID == detalheIDQrCode) {
-        isMatch = true;
-      } else if (itemDetalheText == qrDetalheText) {
-        isMatch = true;
-      }
-
-      if (isMatch) {
-        print('[CACHE] Detalhe/Lote encontrado no cache local.');
-        return item;
-      }
-    }
-    print(
-      '[CACHE] Detalhe/Lote não encontrado no cache local para ObjetoID=$objetoID.',
-    );
-    return null;
-  }
-
   Future<void> _consultarDetalheDoObjeto(
     String cdObj, {
     String? detalheQrCode,
@@ -286,86 +251,28 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
     }
 
     final EstoqueItem objetoBase = itemObjeto!;
+    await _buscarOrdemProducaoParaObjeto(objetoBase.objetoID);
 
     if (detalheQrCode != null && detalheQrCode.isNotEmpty) {
       print(
-        '[CONSULTA] Detalhe no QR Code: "$detalheQrCode". Buscando no Cache...',
+        '[CONSULTA] Etiqueta possui detalhe "$detalheQrCode", porém será utilizada apenas a informação do CdObj.',
       );
+    }
 
-      final EstoqueItem? itemLocalDetalhe = _consultarDetalheNoCache(
-        objetoID,
-        detalheQrCode,
+    await _carregarDetalhesDoObjetoNoCache(objetoID);
+
+    await _preencherCamposComDetalhe(
+      objetoBase,
+      detalheQrCode == null || detalheQrCode.isEmpty
+          ? 'Cache/API (Objeto sem Detalhe)'
+          : 'Leitura QR (CdObj)',
+      preencherDetalheAutomatico: false,
+    );
+
+    if (mounted) {
+      _showSnackBar(
+        'Selecione o detalhe manualmente na lista.',
       );
-
-      if (itemLocalDetalhe != null) {
-        await _preencherCamposComDetalhe(itemLocalDetalhe, 'Cache Local');
-        if (mounted) {
-          _showSnackBar(
-            'Detalhes do objeto e lote carregados via Cache Local (Rápido).',
-          );
-        }
-        return;
-      }
-
-      print(
-        '[FALLBACK] Detalhe não encontrado no cache. Consultando API de estoque ($_consultaEstoquePath)...',
-      );
-      List<EstoqueItem> itensDaApi = await _consultarItensNaApi(
-        objetoID,
-        detalheLote: detalheQrCode,
-      );
-
-      if (itensDaApi.isEmpty) {
-        // Busca geral para preencher o dropdown e permitir seleção manual
-        itensDaApi = await _consultarItensNaApi(objetoID);
-      }
-
-      if (itensDaApi.isNotEmpty) {
-        _atualizarCacheComItensApi(objetoID, itensDaApi);
-        final EstoqueItem? itemDaApi = itensDaApi.firstWhereOrNull(
-          (element) {
-            final detalhe = detalheQrCode.trim().toUpperCase();
-            final textoItem = element.detalhe.trim().toUpperCase();
-            final int? detalheIdQr = int.tryParse(detalheQrCode);
-            return (detalheIdQr != null && element.detalheID == detalheIdQr) ||
-                textoItem == detalhe;
-          },
-        );
-        if (itemDaApi != null) {
-          await _preencherCamposComDetalhe(itemDaApi, 'API (Fallback)');
-          if (mounted)
-            _showSnackBar('Detalhes do objeto e lote carregados via API.');
-        } else {
-          _limparDetalheComErro(objetoID, detalheQrCode);
-          await _preencherCamposComDetalhe(
-            objetoBase,
-            'API (Sem Detalhe no QR Code)',
-            preencherDetalheAutomatico: false,
-          );
-        }
-      } else {
-        _limparDetalheComErro(objetoID, detalheQrCode);
-        await _preencherCamposComDetalhe(
-          objetoBase,
-          'API (Sem Detalhe no QR Code)',
-          preencherDetalheAutomatico: false,
-        );
-      }
-    } else {
-      // Carrega os detalhes da API para garantir a lista suspensa atualizada
-      final List<EstoqueItem> itensDaApi = await _consultarItensNaApi(objetoID);
-      if (itensDaApi.isNotEmpty) {
-        _atualizarCacheComItensApi(objetoID, itensDaApi);
-      }
-      await _preencherCamposComDetalhe(
-        objetoBase,
-        'Cache/API (Objeto sem Detalhe)',
-        preencherDetalheAutomatico: false,
-      );
-      if (mounted)
-        _showSnackBar(
-          'Detalhes do objeto carregados (Sem Detalhe no QR Code).',
-        );
     }
 
     print('[PREENCHIMENTO FINAL] ObjetoID=$_objetoID, DetalheID=$_detalheID');
@@ -393,6 +300,7 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
           'Pesquisa Manual',
           preencherDetalheAutomatico: false,
         );
+        await _buscarOrdemProducaoParaObjeto(item.objetoID);
       } else {
         _showSnackBar('Objeto não encontrado no cache.', isError: true);
       }
@@ -443,21 +351,6 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
       );
     }
 
-    await _buscarOrdemProducaoParaObjeto(item.objetoID);
-  }
-
-  void _limparDetalheComErro(int objetoID, String detalheQrCode) {
-    if (!mounted) return;
-    setState(() {
-      _detalheID = null;
-      _loteController.clear();
-    });
-    print(
-      '[ERRO] Detalhe/Lote "$detalheQrCode" não encontrado para ObjetoID=$objetoID (Local e API).',
-    );
-    _showSnackBar(
-      'Detalhe não localizado. Selecione manualmente na lista.',
-    );
   }
 
   void _limparCamposObjeto() {
@@ -679,6 +572,13 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
       setState(atualizar);
     } else {
       atualizar();
+    }
+  }
+
+  Future<void> _carregarDetalhesDoObjetoNoCache(int objetoID) async {
+    final List<EstoqueItem> itensDaApi = await _consultarItensNaApi(objetoID);
+    if (itensDaApi.isNotEmpty) {
+      _atualizarCacheComItensApi(objetoID, itensDaApi);
     }
   }
 
@@ -1399,6 +1299,7 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
           'Autocomplete',
           preencherDetalheAutomatico: false,
         );
+        await _buscarOrdemProducaoParaObjeto(selection.objetoID);
       },
       fieldViewBuilder: (
         BuildContext context,
