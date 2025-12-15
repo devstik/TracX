@@ -276,17 +276,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   ],
                 ),
               ),
-              const SizedBox(height: 8),
-              Text(
-                'Gestão Logística Inteligente',
-                style: TextStyle(
-                  color: Colors.grey[500],
-                  fontSize: 14,
-                  letterSpacing: 1.2,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-
               const SizedBox(height: 48),
 
               // 2. CARD DE LOGIN (Container principal)

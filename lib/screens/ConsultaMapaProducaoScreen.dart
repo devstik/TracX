@@ -438,17 +438,52 @@ class _ConsultaMapaProducaoScreenState extends State<ConsultaMapaProducaoScreen>
         centerTitle: true,
       ),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            children: [
-              _buildFormArea(),
-              const SizedBox(height: 24),
-              _buildObjetoResumoSection(),
-              const SizedBox(height: 24),
-              Expanded(child: _buildResultsArea()),
-            ],
-          ),
+        child: CustomScrollView(
+          slivers: [
+            SliverPadding(
+              padding: const EdgeInsets.all(24),
+              sliver: SliverList(
+                delegate: SliverChildListDelegate(
+                  [
+                    _buildFormArea(),
+                    const SizedBox(height: 24),
+                    _buildObjetoResumoSection(),
+                    const SizedBox(height: 24),
+                  ],
+                ),
+              ),
+            ),
+            if (_loading)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: _LoadingFeedback(
+                  diasTotais: _diasTotais,
+                  diasProcessados: _diasProcessados,
+                ),
+              )
+            else if (_resultados.isEmpty)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: Center(
+                  child: Text(
+                    'Nenhum mapa encontrado no período.',
+                    style: TextStyle(color: AppConstants.secondaryColor),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              )
+            else
+              SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) =>
+                        _MapaCard(resultado: _resultados[index]),
+                    childCount: _resultados.length,
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );
@@ -510,34 +545,6 @@ class _ConsultaMapaProducaoScreenState extends State<ConsultaMapaProducaoScreen>
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildResultsArea() {
-    if (_loading) {
-      return _LoadingFeedback(
-        diasTotais: _diasTotais,
-        diasProcessados: _diasProcessados,
-      );
-    }
-
-    if (_resultados.isEmpty) {
-      return Center(
-        child: Text(
-          'Nenhum mapa encontrado no período.',
-          style: TextStyle(color: AppConstants.secondaryColor),
-          textAlign: TextAlign.center,
-        ),
-      );
-    }
-
-    return ListView.builder(
-      itemCount: _resultados.length,
-      itemBuilder: (_, index) {
-        final resultado = _resultados[index];
-        // O _MapaCard já realiza o filtro interno
-        return _MapaCard(resultado: resultado);
-      },
     );
   }
 
@@ -851,9 +858,6 @@ class _MapaCardState extends State<_MapaCard> {
     final totalRegistros = filteredRegistros.length;
     final subtitleText = '$totalQuantidadeFormatada metros';
 
-    // Altura calculada: Altura mínima por item (95.0) para lista aninhada.
-    final double contentHeight = totalRegistros * 95.0;
-
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -883,81 +887,102 @@ class _MapaCardState extends State<_MapaCard> {
           style: TextStyle(color: AppConstants.secondaryColor, fontSize: 14),
         ),
         children: [
-          // Usa SizedBox com altura fixa e NeverScrollableScrollPhysics para evitar problemas de aninhamento
-          SizedBox(
-            height: contentHeight,
-            child: ListView.builder(
-              physics: const NeverScrollableScrollPhysics(),
-              padding: EdgeInsets.zero,
-              itemCount: totalRegistros,
-              itemBuilder: (context, index) {
-                final registro = filteredRegistros[index];
-                final produtoId = registro['produtoId'] as int?;
-                final quantidade = registro['quantidade'];
+          ListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            padding: EdgeInsets.zero,
+            itemCount: totalRegistros,
+            itemBuilder: (context, index) {
+              final registro = filteredRegistros[index];
+              final produtoId = registro['produtoId'] as int?;
+              final quantidade = registro['quantidade'];
 
-                final nomeProduto = _getProductName(produtoId)!;
-                final detalheProduto = _getProductDetail(produtoId);
+              final nomeProduto = _getProductName(produtoId)!;
+              final detalheProduto = _getProductDetail(produtoId);
 
-                final quantidadeFormatada = quantidade != null
-                    ? _quantityFormat.format(quantidade)
-                    : '??';
+              final quantidadeFormatada = quantidade != null
+                  ? _quantityFormat.format(quantidade)
+                  : '??';
 
-                return Padding(
-                  padding: const EdgeInsets.only(
-                    left: 20,
-                    right: 20,
-                    bottom: 8,
+              return Padding(
+                padding: const EdgeInsets.only(
+                  left: 20,
+                  right: 20,
+                  bottom: 8,
+                ),
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppConstants.backgroundColor,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.grey.shade200),
                   ),
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: AppConstants.backgroundColor,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.grey.shade200),
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                nomeProduto,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 15,
-                                  color: Colors.black87,
-                                ),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              nomeProduto,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 15,
+                                color: Colors.black87,
                               ),
-                              const SizedBox(height: 4),
-                              Text(
-                                detalheProduto,
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w500,
-                                  fontSize: 13,
-                                  color: AppConstants.secondaryColor,
-                                ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              detalheProduto,
+                              style: TextStyle(
+                                fontWeight: FontWeight.w500,
+                                fontSize: 13,
+                                color: AppConstants.secondaryColor,
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(width: 8),
-                        Text(
-                          '$quantidadeFormatada', //
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 15,
-                            color: AppConstants.primaryColor,
-                          ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        '$quantidadeFormatada', //
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                          color: AppConstants.primaryColor,
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                );
-              },
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 8),
+          Padding(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 24.0, vertical: 8.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Total do dia',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: AppConstants.secondaryColor,
+                  ),
+                ),
+                Text(
+                  '$totalQuantidadeFormatada metros',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: AppConstants.primaryColor,
+                  ),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 8),
