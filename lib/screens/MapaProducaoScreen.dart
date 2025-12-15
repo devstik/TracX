@@ -987,8 +987,14 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
         if (response.body.isNotEmpty) {
           try {
             final decoded = jsonDecode(response.body);
-            if (decoded is Map && decoded['Message'] != null) {
-              extraMensagem = ' ${decoded['Message']}';
+            if (decoded is Map<String, dynamic>) {
+              final erroId = decoded['erro']?.toString() ?? '';
+              if (erroId.contains('TbMppFachada_ValorInvalidoExcecao005')) {
+                extraMensagem =
+                    ' Verifique se existe mapa de produção para esta data.';
+              } else if (decoded['Message'] != null) {
+                extraMensagem = ' ${decoded['Message']}';
+              }
             }
           } catch (_) {
             // Ignora erros de parsing e mantém mensagem extra vazia
