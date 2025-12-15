@@ -285,6 +285,8 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
       });
     }
 
+    final EstoqueItem objetoBase = itemObjeto!;
+
     if (detalheQrCode != null && detalheQrCode.isNotEmpty) {
       print(
         '[CONSULTA] Detalhe no QR Code: "$detalheQrCode". Buscando no Cache...',
@@ -308,10 +310,15 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
       print(
         '[FALLBACK] Detalhe não encontrado no cache. Consultando API de estoque ($_consultaEstoquePath)...',
       );
-      final List<EstoqueItem> itensDaApi = await _consultarItensNaApi(
+      List<EstoqueItem> itensDaApi = await _consultarItensNaApi(
         objetoID,
         detalheLote: detalheQrCode,
       );
+
+      if (itensDaApi.isEmpty) {
+        // Busca geral para preencher o dropdown e permitir seleção manual
+        itensDaApi = await _consultarItensNaApi(objetoID);
+      }
 
       if (itensDaApi.isNotEmpty) {
         _atualizarCacheComItensApi(objetoID, itensDaApi);
@@ -330,14 +337,29 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
             _showSnackBar('Detalhes do objeto e lote carregados via API.');
         } else {
           _limparDetalheComErro(objetoID, detalheQrCode);
+          await _preencherCamposComDetalhe(
+            objetoBase,
+            'API (Sem Detalhe no QR Code)',
+            preencherDetalheAutomatico: false,
+          );
         }
       } else {
         _limparDetalheComErro(objetoID, detalheQrCode);
+        await _preencherCamposComDetalhe(
+          objetoBase,
+          'API (Sem Detalhe no QR Code)',
+          preencherDetalheAutomatico: false,
+        );
       }
     } else {
+      // Carrega os detalhes da API para garantir a lista suspensa atualizada
+      final List<EstoqueItem> itensDaApi = await _consultarItensNaApi(objetoID);
+      if (itensDaApi.isNotEmpty) {
+        _atualizarCacheComItensApi(objetoID, itensDaApi);
+      }
       await _preencherCamposComDetalhe(
-        itemObjeto!,
-        'Cache (Objeto Padrão)',
+        objetoBase,
+        'Cache/API (Objeto sem Detalhe)',
         preencherDetalheAutomatico: false,
       );
       if (mounted)
@@ -434,8 +456,7 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
       '[ERRO] Detalhe/Lote "$detalheQrCode" não encontrado para ObjetoID=$objetoID (Local e API).',
     );
     _showSnackBar(
-      'Não foi encontrado o detalhe/lote desse artigo. Campo "Detalhe" limpo.',
-      isError: true,
+      'Detalhe não localizado. Selecione manualmente na lista.',
     );
   }
 
@@ -891,19 +912,28 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
         print('[PARSER] JSON válido encontrado e pronto para consulta.');
         return decoded;
       }
-      _showSnackBar(
-        'QR Code lido não contém o formato JSON esperado (Falta CdObj).',
-        isError: true,
+      print(
+        '[PARSER] JSON não possui CdObj. Conteúdo: $decoded',
       );
-      return null;
     } catch (e) {
-      print('[PARSER_ERRO] Falha ao decodificar JSON: $e');
-      _showSnackBar(
-        'QR Code lido não é um JSON válido. Verifique o formato.',
-        isError: true,
-      );
-      return null;
+      print('[PARSER_AVISO] Falha ao decodificar JSON: $e');
     }
+
+    // Fallback: trata o código inteiro como CdObj simples
+    if (cleanedQrCode.isNotEmpty) {
+      print(
+        '[PARSER] Interpretando leitura direta como CdObj=${cleanedQrCode.trim()}',
+      );
+      return {
+        'CdObj': cleanedQrCode.trim(),
+      };
+    }
+
+    _showSnackBar(
+      'QR Code lido não contém CdObj válido.',
+      isError: true,
+    );
+    return null;
   }
 
   // FUNÇÃO DE SALVAR (Mantida)
