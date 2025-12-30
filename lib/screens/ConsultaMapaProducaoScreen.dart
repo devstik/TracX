@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
+import '../services/estoque_db_helper.dart';
 
 // **********************************************
 // 1. CONFIGURAÇÃO E MODELO DE DADOS
@@ -78,8 +79,6 @@ class _ObjetoResumo {
     required this.quantidade,
   });
 }
-
-
 
 /// Exceção customizada para erros de API.
 class ApiException implements Exception {
@@ -261,10 +260,21 @@ class _ConsultaMapaProducaoScreenState extends State<ConsultaMapaProducaoScreen>
   @override
   void initState() {
     super.initState();
+    _carregarCatalogoLocal(); // Carrega dados do banco para a memória
     _objetoFiltroController.addListener(() {
       setState(() {
         _objetoFiltro = _objetoFiltroController.text.trim().toLowerCase();
       });
+    });
+  }
+
+  Future<void> _carregarCatalogoLocal() async {
+    final dbHelper = EstoqueDbHelper();
+    final catalogo = await dbHelper.getCatalogoMap();
+
+    catalogo.forEach((id, info) {
+      CacheManager.produtosNomeCache[id] = info['nome']!;
+      CacheManager.produtosDetalheCache[id] = info['detalhe']!;
     });
   }
 
@@ -329,99 +339,143 @@ class _ConsultaMapaProducaoScreenState extends State<ConsultaMapaProducaoScreen>
       return;
     }
 
-    final diasTotais = dataFinal.difference(dataInicial).inDays + 1;
-
-    setState(() {
-      _loading = true;
-      _resultados = [];
-      _diasTotais = diasTotais;
-      _diasProcessados = 0;
-      CacheManager.clear(); // Limpa todo o cache
-    });
-
-    final startTime = DateTime.now();
+    final List<String> datasDesejadasIso = [];
+    for (
+      DateTime d = dataInicial;
+      !d.isAfter(dataFinal);
+      d = d.add(const Duration(days: 1))
+    ) {
+      datasDesejadasIso.add(DateFormat("yyyy-MM-dd'T'00:00:00").format(d));
+    }
 
     try {
-      // 1. AUTENTICAÇÃO WMS (MAPAS)
-      final apiKeyWMS = await ApiService.authenticate(
-        endpoint: AppConstants.authEndpointWMS,
-        email: AppConstants.authEmailWMS,
-        senha: AppConstants.authSenhaWMS,
-        usuarioId: AppConstants.authUsuarioIdWMS,
+      final dbHelper = EstoqueDbHelper();
+      final String hojeIso = DateFormat(
+        "yyyy-MM-dd'T'00:00:00",
+      ).format(DateTime.now());
+
+      // 1. Busca no Banco
+      final db = await dbHelper.database;
+      final List<Map<String, dynamic>> registrosBrutos = await db.query(
+        'mapa_producao',
+        where: 'data_iso BETWEEN ? AND ?',
+        whereArgs: [datasDesejadasIso.first, datasDesejadasIso.last],
       );
 
-      final List<MapaResultado> novosResultados = [];
-      final Set<int> produtosIdsParaConsultar = {};
+      Map<String, List<Map<String, dynamic>>> mapaAgrupado = {};
+      for (var reg in registrosBrutos) {
+        final dIso = reg['data_iso'] as String;
+        mapaAgrupado
+            .putIfAbsent(dIso, () => [])
+            .add(Map<String, dynamic>.from(reg));
+      }
 
-      // 2. CONSULTA SEQUENCIAL DE MAPAS DE PRODUÇÃO POR DIA
-      for (
-        DateTime data = dataInicial;
-        !data.isAfter(dataFinal);
-        data = data.add(const Duration(days: 1))
-      ) {
-        final isoDate = DateFormat("yyyy-MM-dd'T'00:00:00").format(data);
+      final List<MapaResultado> listaLocal = mapaAgrupado.entries.map((e) {
+        return MapaResultado(data: DateTime.parse(e.key), registros: e.value);
+      }).toList();
+      listaLocal.sort((a, b) => b.data.compareTo(a.data));
 
-        // Atualiza o progresso para o dia atual (diasProcessados - 1)
+      // --- A LOGICA DE CORTE ---
+      // Se o banco retornou QUALQUER coisa para esse período, e não inclui hoje,
+      // nós assumimos que o banco já tem a "verdade" do período.
+      if (listaLocal.isNotEmpty && !datasDesejadasIso.contains(hojeIso)) {
         setState(() {
-          _diasProcessados = data.difference(dataInicial).inDays;
+          _resultados = listaLocal;
+          _loading = false; // MATA O LOADING NA HORA
         });
+        return;
+      }
 
-        final registrosFiltrados = await ApiService.fetchMapByDate(
-          apiKeyWMS: apiKeyWMS,
-          isoDate: isoDate,
-        );
+      // Se o banco está totalmente vazio para o período, aí sim ele busca uma única vez
+      setState(() {
+        _resultados = listaLocal;
+        _loading = true;
+        _diasTotais = datasDesejadasIso.length;
+        _diasProcessados = mapaAgrupado.length;
+      });
 
-        if (registrosFiltrados.isNotEmpty) {
-          novosResultados.add(
-            MapaResultado(data: data, registros: registrosFiltrados),
+      _sincronizarFaltantesEmBackground(
+        dataInicial,
+        dataFinal,
+        hojeIso,
+        mapaAgrupado.keys.toSet(),
+      );
+    } catch (e) {
+      setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _sincronizarFaltantesEmBackground(
+    DateTime inicio,
+    DateTime fim,
+    String hojeIso,
+    Set<String> diasNoBanco,
+  ) async {
+    String? token;
+    final dbHelper = EstoqueDbHelper();
+
+    try {
+      for (
+        DateTime d = inicio;
+        !d.isAfter(fim);
+        d = d.add(const Duration(days: 1))
+      ) {
+        final iso = DateFormat("yyyy-MM-dd'T'00:00:00").format(d);
+
+        if (!diasNoBanco.contains(iso) || iso == hojeIso) {
+          token ??= await ApiService.authenticate(
+            endpoint: AppConstants.authEndpointWMS,
+            email: AppConstants.authEmailWMS,
+            senha: AppConstants.authSenhaWMS,
+            usuarioId: AppConstants.authUsuarioIdWMS,
           );
-          // Coleta IDs de produtos únicos
-          for (final registro in registrosFiltrados) {
-            if (registro['produtoId'] is int) {
-              produtosIdsParaConsultar.add(registro['produtoId'] as int);
+
+          final novosDados = await ApiService.fetchMapByDate(
+            apiKeyWMS: token,
+            isoDate: iso,
+          );
+          if (novosDados.isNotEmpty) {
+            await dbHelper.insertMapas(novosDados, iso);
+            if (mounted) {
+              setState(() {
+                _resultados.removeWhere(
+                  (r) =>
+                      DateFormat("yyyy-MM-dd'T'00:00:00").format(r.data) == iso,
+                );
+                _resultados.add(MapaResultado(data: d, registros: novosDados));
+                _resultados.sort((a, b) => b.data.compareTo(a.data));
+              });
             }
           }
         }
-
-        // Atualiza progresso para o dia COMPLETO (diasProcessados + 1)
-        setState(
-          () => _diasProcessados = data.difference(dataInicial).inDays + 1,
-        );
+        if (mounted && _diasProcessados < _diasTotais) {
+          setState(() => _diasProcessados++);
+        }
       }
-
-      // 3. AUTENTICAÇÃO E CACHE DE DETALHES DE PRODUTOS
-      if (produtosIdsParaConsultar.isNotEmpty) {
-        CacheManager.prodApiKey = await ApiService.authenticate(
-          endpoint: AppConstants.authEndpointProd,
-          email: AppConstants.authEmailProd,
-          senha: AppConstants.authSenhaProd,
-          usuarioId: AppConstants.authUsuarioIdProd,
-        );
-
-        await ApiService.cacheProductDetails(produtosIdsParaConsultar);
-      }
-
-      // 4. FINALIZAÇÃO
-      final totalTime = DateTime.now().difference(startTime).inSeconds;
-
-      setState(() {
-        _resultados = novosResultados;
-        _diasProcessados = _diasTotais;
-      });
-
-      showSnackBar(
-        'Consulta finalizada. ${novosResultados.length} dia(s) com dados. Tempo: ${totalTime}s',
-      );
-    } on ApiException catch (e) {
-      showSnackBar('Erro na API: ${e.message}', isError: true);
-    } catch (e) {
-      showSnackBar('Erro inesperado: ${e.toString()}', isError: true);
+      await _buscarNomesDeProdutosFaltantes();
     } finally {
-      if (mounted) {
-        setState(() {
-          _loading = false;
-        });
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _buscarNomesDeProdutosFaltantes() async {
+    final Set<int> idsSemNome = {};
+    for (var res in _resultados) {
+      for (var reg in res.registros) {
+        final id = reg['produtoId'] as int?;
+        if (id != null && !CacheManager.produtosNomeCache.containsKey(id))
+          idsSemNome.add(id);
       }
+    }
+    if (idsSemNome.isNotEmpty) {
+      CacheManager.prodApiKey ??= await ApiService.authenticate(
+        endpoint: AppConstants.authEndpointProd,
+        email: AppConstants.authEmailProd,
+        senha: AppConstants.authSenhaProd,
+        usuarioId: AppConstants.authUsuarioIdProd,
+      );
+      await ApiService.cacheProductDetails(idsSemNome);
+      if (mounted) setState(() {});
     }
   }
 
@@ -431,48 +485,31 @@ class _ConsultaMapaProducaoScreenState extends State<ConsultaMapaProducaoScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppConstants.backgroundColor,
-      appBar: AppBar(
-        title: const Text('Consultar Mapas de Produção'),
-        backgroundColor: AppConstants.primaryColor,
-        foregroundColor: Colors.white,
-        centerTitle: true,
-      ),
+      appBar: AppBar(title: const Text('Consultar Mapas de Produção')),
       body: SafeArea(
         child: CustomScrollView(
           slivers: [
             SliverPadding(
               padding: const EdgeInsets.all(24),
               sliver: SliverList(
-                delegate: SliverChildListDelegate(
-                  [
-                    _buildFormArea(),
-                    const SizedBox(height: 24),
-                    _buildObjetoResumoSection(),
-                    const SizedBox(height: 24),
-                  ],
-                ),
+                delegate: SliverChildListDelegate([
+                  _buildFormArea(),
+                  const SizedBox(height: 24),
+                  _buildObjetoResumoSection(),
+
+                  // Só mostra o progresso se NÃO houver resultados na tela
+                  // ou se estiver carregando o dia de hoje.
+                  if (_loading && _resultados.isEmpty)
+                    _LoadingFeedback(
+                      diasTotais: _diasTotais,
+                      diasProcessados: _diasProcessados,
+                    ),
+                ]),
               ),
             ),
-            if (_loading)
-              SliverFillRemaining(
-                hasScrollBody: false,
-                child: _LoadingFeedback(
-                  diasTotais: _diasTotais,
-                  diasProcessados: _diasProcessados,
-                ),
-              )
-            else if (_resultados.isEmpty)
-              SliverFillRemaining(
-                hasScrollBody: false,
-                child: Center(
-                  child: Text(
-                    'Nenhum mapa encontrado no período.',
-                    style: TextStyle(color: AppConstants.secondaryColor),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-              )
-            else
+
+            // Se tiver resultados, mostra. Se não tiver nada e parou de carregar, avisa.
+            if (_resultados.isNotEmpty)
               SliverPadding(
                 padding: const EdgeInsets.symmetric(horizontal: 24),
                 sliver: SliverList(
@@ -481,6 +518,13 @@ class _ConsultaMapaProducaoScreenState extends State<ConsultaMapaProducaoScreen>
                         _MapaCard(resultado: _resultados[index]),
                     childCount: _resultados.length,
                   ),
+                ),
+              )
+            else if (!_loading)
+              const SliverFillRemaining(
+                hasScrollBody: false,
+                child: Center(
+                  child: Text('Nenhum mapa registrado para este período.'),
                 ),
               ),
           ],
@@ -609,10 +653,7 @@ class _ConsultaMapaProducaoScreenState extends State<ConsultaMapaProducaoScreen>
             const SizedBox(height: 12),
             Text(
               'Total geral: ${formatter.format(totalGeral)} metros',
-              style: const TextStyle(
-                fontWeight: FontWeight.w600,
-                fontSize: 14,
-              ),
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
             ),
             const SizedBox(height: 12),
             SizedBox(
@@ -905,11 +946,7 @@ class _MapaCardState extends State<_MapaCard> {
                   : '??';
 
               return Padding(
-                padding: const EdgeInsets.only(
-                  left: 20,
-                  right: 20,
-                  bottom: 8,
-                ),
+                padding: const EdgeInsets.only(left: 20, right: 20, bottom: 8),
                 child: Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
@@ -963,8 +1000,10 @@ class _MapaCardState extends State<_MapaCard> {
           ),
           const SizedBox(height: 8),
           Padding(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 24.0, vertical: 8.0),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 24.0,
+              vertical: 8.0,
+            ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [

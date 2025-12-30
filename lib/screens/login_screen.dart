@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'; // Para feedback tátil
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart'; // Importação para persistência
+import '../services/estoque_db_helper.dart';
 
 class LoginScreen extends StatefulWidget {
   @override
@@ -17,6 +18,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   bool _loading = false;
   bool _obscurePassword = true;
+  final _dbHelper = EstoqueDbHelper();
 
   // Chave para SharedPreferences
   static const String _lastLoggedInUserKey = 'lastLoggedInUser';
@@ -60,72 +62,86 @@ class _LoginScreenState extends State<LoginScreen> {
   void _login() async {
     if (_formKey.currentState!.validate()) {
       setState(() => _loading = true);
-      HapticFeedback.lightImpact(); // Feedback tátil ao iniciar o login
+      HapticFeedback.lightImpact();
 
       final username = _userController.text.trim();
-      String? apiKey;
 
       try {
-        apiKey = await _obterChaveApi();
+        // 1. Tenta obter a chave da API (Necessita Internet)
+        final apiKey = await _obterChaveApi();
 
-        final response = await http.get(
-          Uri.parse('http://168.190.90.2:5000/consulta/usuarios'),
-        );
+        // 2. Tenta validar usuário no servidor
+        final response = await http
+            .get(Uri.parse('http://168.190.90.2:5000/consulta/usuarios'))
+            .timeout(
+              const Duration(seconds: 5),
+            ); // Timeout curto para não travar o user
 
         if (response.statusCode == 200) {
           final data = jsonDecode(response.body);
-
-          bool usuarioEncontrado = false;
-          String? mensagemErro;
-
-          if (data is Map<String, dynamic>) {
-            if (data['usuarios'] is List) {
-              final usuarios = (data['usuarios'] as List).map(
-                (user) => user.toString().trim().toLowerCase(),
-              );
-              usuarioEncontrado = usuarios.contains(username.toLowerCase());
-            }
-
-            mensagemErro =
-                data['message']?.toString() ?? 'Usuário não encontrado.';
-          } else if (data is List) {
-            usuarioEncontrado = data
-                .map((user) => user.toString().trim().toLowerCase())
-                .contains(username.toLowerCase());
-            if (!usuarioEncontrado) {
-              mensagemErro = 'Usuário não encontrado.';
-            }
-          } else {
-            mensagemErro = 'Formato de resposta inválido do servidor.';
-          }
+          bool usuarioEncontrado = _verificarUsuarioNaLista(data, username);
 
           if (usuarioEncontrado) {
-            _salvarUltimoUsuario(username); // ⭐️ Chama o método para salvar
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(
-                builder: (_) =>
-                    HomeMenuScreen(conferente: username, apiKey: apiKey!),
-              ),
-            );
+            // SUCESSO ONLINE: Salva no SQLite para acessos futuros offline
+            await _dbHelper.salvarUsuarioLocal(username);
+            _salvarUltimoUsuario(username);
+
+            _navegarParaHome(username, apiKey);
           } else {
-            _showError(mensagemErro ?? 'Usuário não encontrado.');
+            _showError('Usuário não autorizado no servidor.');
           }
         } else {
-          _showError(
-            'Erro ao consultar usuários. Código: ${response.statusCode}',
-          );
+          throw Exception("Erro servidor");
         }
       } catch (e) {
-        // Logar o erro para debug, mas mostrar uma mensagem amigável ao usuário
-        print('Erro no login: $e');
-        _showError(
-          'Erro de conexão ou autenticação: Verifique sua rede e credenciais.',
+        // --- FLUXO OFFLINE ---
+        print('Tentando login offline devido a: $e');
+
+        bool autorizadoLocalmente = await _dbHelper.verificarUsuarioLocal(
+          username,
         );
+
+        if (autorizadoLocalmente) {
+          _salvarUltimoUsuario(username);
+          // Nota: Como estamos offline, passamos uma String vazia ou 'OFFLINE' como apiKey
+          _navegarParaHome(username, "OFFLINE_SESSION");
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("Modo Offline: Acesso concedido via cache local."),
+            ),
+          );
+        } else {
+          _showError(
+            'Sem conexão e usuário não encontrado localmente. Conecte-se à rede para o primeiro acesso.',
+          );
+        }
       } finally {
         if (mounted) setState(() => _loading = false);
       }
     }
+  }
+
+  bool _verificarUsuarioNaLista(dynamic data, String username) {
+    final userLower = username.toLowerCase();
+    if (data is Map && data['usuarios'] is List) {
+      return (data['usuarios'] as List).any(
+        (u) => u.toString().trim().toLowerCase() == userLower,
+      );
+    } else if (data is List) {
+      return data.any((u) => u.toString().trim().toLowerCase() == userLower);
+    }
+    return false;
+  }
+
+  // Auxiliar para navegação
+  void _navegarParaHome(String username, String key) {
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => HomeMenuScreen(conferente: username, apiKey: key),
+      ),
+    );
   }
 
   void _showError(String message) {

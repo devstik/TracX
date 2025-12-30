@@ -12,25 +12,40 @@ import 'package:tracx/screens/HistoricoMovimentacaoScreen.dart';
 import 'package:tracx/screens/RegistroPrincipalScreen.dart';
 import 'package:tracx/screens/MapaProducaoScreen.dart';
 import 'package:tracx/screens/ConsultaMapaProducaoScreen.dart';
+import 'package:tracx/services/estoque_db_helper.dart';
+import 'dart:math' as math;
+import 'dart:convert';
+import 'dart:async';
+import 'package:http/http.dart' as http;
 
 class HomeMenuScreen extends StatefulWidget {
   final String conferente;
   final String? apiKey;
+
   const HomeMenuScreen({super.key, required this.conferente, this.apiKey});
 
   @override
   State<HomeMenuScreen> createState() => _HomeMenuScreenState();
 }
 
+final EstoqueDbHelper _dbHelper = EstoqueDbHelper();
+
 class _HomeMenuScreenState extends State<HomeMenuScreen>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _fadeAnimation;
 
-  // A lista de admins é necessária para determinar a função
+  // Dados da produção
+  Map<String, dynamic>? _dadosProducao;
+  bool _isLoadingProducao = true;
+
+  Timer? _timerSincronizacao;
+  List<Map<String, dynamic>> _dadosGrafico = [];
+  bool _carregandoGrafico = false;
+  String _ultimaAtualizacao = "Carregando...";
+
   final List<String> _admins = const ['Joao', 'Leide', 'Lidinaldo'];
 
-  // NOVO: Determina se o usuário atual é administrador
   bool get _isAdmin => _admins.contains(widget.conferente);
 
   @override
@@ -45,6 +60,101 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
     );
     _fadeAnimation = CurvedAnimation(parent: _controller, curve: Curves.easeIn);
     _controller.forward();
+    _gerenciarDadosProducao();
+  }
+
+  Future<void> _gerenciarDadosProducao() async {
+    const String tipoCache = 'resumo_home';
+
+    // 1. Tentar carregar dados locais imediatamente para não deixar a tela vazia
+    final cacheLocal = await _dbHelper.buscarCacheGrafico(tipoCache);
+    if (cacheLocal.isNotEmpty) {
+      _atualizarInterfaceComCache(cacheLocal);
+    }
+
+    // 2. Verificar se precisa de atualização (se cache está vazio ou tem mais de 1h)
+    bool precisaAtualizar = true;
+    if (cacheLocal.isNotEmpty) {
+      DateTime ultimaVez = DateTime.parse(cacheLocal.first['atualizado_em']);
+      if (DateTime.now().difference(ultimaVez).inHours < 1) {
+        precisaAtualizar = false;
+        if (mounted) setState(() => _isLoadingProducao = false);
+      }
+    }
+
+    // 3. Buscar da API se necessário ou se o cache estiver vazio
+    if (precisaAtualizar) {
+      await _buscarDadosAPIeSalvar(tipoCache);
+    }
+  }
+
+  Future<void> _buscarDadosAPIeSalvar(String tipo) async {
+    try {
+      final response = await http
+          .get(
+            Uri.parse(
+              'http://168.190.90.2:5000/consulta/Tracx/resumo_producao',
+            ),
+          )
+          .timeout(
+            const Duration(seconds: 7),
+          ); // Timeout para evitar espera infinita
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+
+        // Prepara os dados no formato esperado pelo seu método salvarCacheGrafico
+        List<Map<String, dynamic>> paraSalvar = [
+          {
+            'periodo': 'DiasProduzidosMes',
+            'valor': (data['DiasProduzidosMes'] ?? 0).toDouble(),
+          },
+          {
+            'periodo': 'PrevisaoProducao',
+            'valor': (data['PrevisaoProducao'] ?? 0).toDouble(),
+          },
+          {
+            'periodo': 'TotalProducao',
+            'valor': (data['TotalProducao'] ?? 0).toDouble(),
+          },
+        ];
+
+        await _dbHelper.salvarCacheGrafico(paraSalvar, tipo);
+
+        // Recarrega do banco para garantir consistência
+        final novoCache = await _dbHelper.buscarCacheGrafico(tipo);
+        _atualizarInterfaceComCache(novoCache);
+      }
+    } catch (e) {
+      debugPrint('Rede indisponível. Mantendo dados locais.');
+      if (mounted) setState(() => _isLoadingProducao = false);
+    }
+  }
+
+  void _atualizarInterfaceComCache(List<Map<String, dynamic>> cache) {
+    if (!mounted) return;
+
+    setState(() {
+      _dadosProducao = {
+        "DiasProduzidosMes": cache.firstWhere(
+          (e) => e['periodo'] == 'DiasProduzidosMes',
+        )['valor'],
+        "PrevisaoProducao": cache.firstWhere(
+          (e) => e['periodo'] == 'PrevisaoProducao',
+        )['valor'],
+        "TotalProducao": cache.firstWhere(
+          (e) => e['periodo'] == 'TotalProducao',
+        )['valor'],
+      };
+
+      // Extrair e formatar a hora da última atualização
+      final DateTime dataDb = DateTime.parse(cache.first['atualizado_em']);
+      final String hora = dataDb.hour.toString().padLeft(2, '0');
+      final String minuto = dataDb.minute.toString().padLeft(2, '0');
+      _ultimaAtualizacao = "Atualizado às $hora:$minuto";
+
+      _isLoadingProducao = false;
+    });
   }
 
   @override
@@ -53,7 +163,6 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
     super.dispose();
   }
 
-  // 🔹 Função genérica para aplicar transição personalizada
   void _navigateWithTransition(BuildContext context, Widget page) {
     Navigator.push(
       context,
@@ -142,10 +251,17 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
     return tooltip != null ? Tooltip(message: tooltip, child: button) : button;
   }
 
+  String _formatarNumero(double valor) {
+    return valor
+        .toStringAsFixed(2)
+        .replaceAllMapped(
+          RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+          (Match m) => '${m[1]}.',
+        );
+  }
+
   @override
   Widget build(BuildContext context) {
-    // 💡 MUDANÇA 1: Reorganização dos itens para 3 (Embalagem, Localização, Tinturaria)
-    // Os demais (Relatório e Usuários) virão abaixo na ordem em que forem definidos.
     final List<_MenuItem> menuItems = [
       _MenuItem(
         title: 'Registrar',
@@ -170,12 +286,13 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
           );
         },
       ),
-      _MenuItem(
-        title: 'Mapa de Produção',
-        icon: Icons.map_outlined,
-        color: Colors.indigo.shade600,
-        onTap: () => _navigateWithTransition(context, MapaProducaoScreen()),
-      ),
+      if (widget.conferente == 'Joao')
+        _MenuItem(
+          title: 'Mapa de Produção',
+          icon: Icons.map_outlined,
+          color: Colors.indigo.shade600,
+          onTap: () => _navigateWithTransition(context, MapaProducaoScreen()),
+        ),
       _MenuItem(
         title: 'Registros',
         icon: Icons.list_alt,
@@ -211,98 +328,109 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
-        child: Column(
-          children: [
-            FadeTransition(
-              opacity: _fadeAnimation,
-              child: SlideTransition(
-                position: Tween<Offset>(
-                  begin: const Offset(0, -0.2),
-                  end: Offset.zero,
-                ).animate(_fadeAnimation),
-                child: Container(
-                  margin: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 16,
-                  ),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 16,
-                  ),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [Colors.blue.shade50, Colors.white],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
+        // Alteração principal: Usamos SingleChildScrollView e removemos o Expanded do Grid
+        // Isso faz com que o gráfico fique logo após o grid, e não no fim da tela.
+        child: SingleChildScrollView(
+          child: Column(
+            children: [
+              // Header
+              FadeTransition(
+                opacity: _fadeAnimation,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0, -0.2),
+                    end: Offset.zero,
+                  ).animate(_fadeAnimation),
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 16,
                     ),
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black12,
-                        blurRadius: 12,
-                        offset: const Offset(0, 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 16,
+                    ),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [Colors.blue.shade50, Colors.white],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
                       ),
-                    ],
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text.rich(
-                          TextSpan(
-                            children: [
-                              const TextSpan(
-                                text: 'Bem-vindo, ',
-                                style: TextStyle(
-                                  fontSize: 20,
-                                  color: Colors.black54,
-                                ),
-                              ),
-                              TextSpan(
-                                text: widget.conferente,
-                                style: const TextStyle(
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.black87,
-                                ),
-                              ),
-                            ],
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 1,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black12,
+                          blurRadius: 12,
+                          offset: const Offset(0, 6),
                         ),
-                      ),
-                      const SizedBox(width: 16),
-                      if (_isAdmin) ...[
-                        _buildHeaderIconButton(
-                          icon: CupertinoIcons.person_crop_circle,
-                          tooltip: 'Gerenciar usuários',
-                          onTap: _showUserActionsSheet,
-                          color: Colors.blueAccent,
-                        ),
-                        const SizedBox(width: 12),
                       ],
-                      _buildHeaderIconButton(
-                        icon: Icons.logout,
-                        tooltip: 'Sair',
-                        onTap: () {
-                          Navigator.pushAndRemoveUntil(
-                            context,
-                            MaterialPageRoute(builder: (_) => LoginScreen()),
-                            (route) => false,
-                          );
-                        },
-                      ),
-                    ],
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text.rich(
+                            TextSpan(
+                              children: [
+                                const TextSpan(
+                                  text: 'Bem-vindo, ',
+                                  style: TextStyle(
+                                    fontSize: 20,
+                                    color: Colors.black54,
+                                  ),
+                                ),
+                                TextSpan(
+                                  text: widget.conferente,
+                                  style: const TextStyle(
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        if (_isAdmin) ...[
+                          _buildHeaderIconButton(
+                            icon: CupertinoIcons.person_crop_circle,
+                            tooltip: 'Gerenciar usuários',
+                            onTap: _showUserActionsSheet,
+                            color: Colors.blueAccent,
+                          ),
+                          const SizedBox(width: 12),
+                        ],
+                        _buildHeaderIconButton(
+                          icon: Icons.logout,
+                          tooltip: 'Sair',
+                          onTap: () {
+                            Navigator.pushAndRemoveUntil(
+                              context,
+                              MaterialPageRoute(builder: (_) => LoginScreen()),
+                              (route) => false,
+                            );
+                          },
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
-            Expanded(
-              child: GridView.builder(
+
+              // Grid de Menus
+              // REMOVIDO: Expanded (para não empurrar o gráfico para baixo)
+              // ADICIONADO: shrinkWrap: true e physics: NeverScrollableScrollPhysics
+              GridView.builder(
                 padding: EdgeInsets.symmetric(
                   horizontal: isPhone ? 16 : 32,
                   vertical: isPhone ? 12 : 24,
                 ),
+                shrinkWrap:
+                    true, // Importante: Ocupa apenas o espaço necessário
+                physics:
+                    const NeverScrollableScrollPhysics(), // A rolagem é gerenciada pelo SingleChildScrollView
                 itemCount: menuItems.length,
                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: crossAxisCount,
@@ -343,11 +471,329 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
                   );
                 },
               ),
-            ),
-          ],
+
+              // Gráfico de Produção
+              // Agora ele aparece imediatamente após o Grid, sem ficar preso no rodapé
+              if (!_isLoadingProducao && _dadosProducao != null)
+                Container(
+                  margin: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.1),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    children: [
+                      // Cabeçalho do Card: Título + Horário da última atualização
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment
+                            .spaceBetween, // Empurra o horário para a direita
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.trending_up,
+                                color: Colors.orange.shade700,
+                                size: 24,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Previsão Produção',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.orange.shade700,
+                                ),
+                              ),
+                            ],
+                          ),
+                          // Informação de atualização (conforme discutido)
+                          Text(
+                            _ultimaAtualizacao,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey.shade500,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      // Layout Original preservado: Gráfico (Esq) + Cards (Dir)
+                      Row(
+                        children: [
+                          // Gráfico Gauge
+                          Expanded(
+                            child: AnimatedBuilder(
+                              animation: _controller,
+                              builder: (context, child) {
+                                final totalProducao =
+                                    _dadosProducao!['TotalProducao'] as double;
+                                final previsaoProducao =
+                                    _dadosProducao!['PrevisaoProducao']
+                                        as double;
+                                final percentual =
+                                    (totalProducao / previsaoProducao).clamp(
+                                      0.0,
+                                      1.0,
+                                    );
+
+                                return SizedBox(
+                                  height: 140,
+                                  child: CustomPaint(
+                                    painter: GaugePainter(
+                                      percentage:
+                                          percentual * _controller.value,
+                                      totalProducao: totalProducao,
+                                      previsaoProducao: previsaoProducao,
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+
+                          // Cards de Valores
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _buildCardValor(
+                                  label: 'Produção Atual',
+                                  valor:
+                                      _dadosProducao!['TotalProducao']
+                                          as double,
+                                  cor: const Color(0xFF8B1538),
+                                  icon: Icons.factory,
+                                ),
+                                const SizedBox(height: 12),
+                                _buildCardValor(
+                                  label: 'Previsão do Mês',
+                                  valor:
+                                      _dadosProducao!['PrevisaoProducao']
+                                          as double,
+                                  cor: const Color(0xFF9C6BA8),
+                                  icon: Icons.timeline,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              // Espaço extra no final para não ficar colado na borda inferior do scroll
+              const SizedBox(height: 20),
+            ],
+          ),
         ),
       ),
     );
+  }
+
+  Widget _buildCardValor({
+    required String label,
+    required double valor,
+    required Color cor,
+    required IconData icon,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: cor.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: cor.withOpacity(0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 16, color: cor),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.grey[700],
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            _formatarNumero(valor),
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: cor,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// CustomPainter para o Gráfico Gauge
+class GaugePainter extends CustomPainter {
+  final double percentage;
+  final double totalProducao;
+  final double previsaoProducao;
+
+  GaugePainter({
+    required this.percentage,
+    required this.totalProducao,
+    required this.previsaoProducao,
+  });
+
+  String _formatarNumero(double valor) {
+    return valor
+        .toStringAsFixed(2)
+        .replaceAllMapped(
+          RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+          (Match m) => '${m[1]}.',
+        );
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height * 0.75);
+    final radius = math.min(size.width, size.height * 1.5) / 2 - 10;
+    const startAngle = math.pi;
+    const sweepAngle = math.pi;
+
+    // Background (Previsão)
+    final bgPaint = Paint()
+      ..color = const Color(0xFFE8D5E8)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 20
+      ..strokeCap = StrokeCap.round;
+
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: radius),
+      startAngle,
+      sweepAngle,
+      false,
+      bgPaint,
+    );
+
+    // Foreground (Produção Atual)
+    final fgPaint = Paint()
+      ..color = const Color(0xFF8B1538)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 20
+      ..strokeCap = StrokeCap.round;
+
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: radius),
+      startAngle,
+      sweepAngle * percentage,
+      false,
+      fgPaint,
+    );
+
+    // Calcular posição do ponto no final do arco de produção
+    final endAngle = startAngle + (sweepAngle * percentage);
+    final pointX = center.dx + radius * math.cos(endAngle);
+    final pointY = center.dy + radius * math.sin(endAngle);
+    final pointPosition = Offset(pointX, pointY);
+
+    // Desenhar círculo branco (borda)
+    final pointBorderPaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(pointPosition, 12, pointBorderPaint);
+
+    // Desenhar círculo vermelho (centro)
+    final pointPaint = Paint()
+      ..color = const Color(0xFF8B1538)
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(pointPosition, 8, pointPaint);
+
+    // Desenhar label com valor da produção atual acima do ponto
+    final labelText = _formatarNumero(totalProducao);
+    final labelPainter = TextPainter(
+      text: TextSpan(
+        text: labelText,
+        style: const TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.bold,
+          color: Color(0xFF8B1538),
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    );
+    labelPainter.layout();
+
+    // Posicionar o texto acima do ponto
+    final labelX = pointX - labelPainter.width / 2;
+    final labelY = pointY - 30;
+
+    // Fundo branco semi-transparente para o texto
+    final labelBgPaint = Paint()
+      ..color = Colors.white.withOpacity(0.95)
+      ..style = PaintingStyle.fill;
+
+    final labelBgRect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(
+        labelX - 6,
+        labelY - 4,
+        labelPainter.width + 12,
+        labelPainter.height + 8,
+      ),
+      const Radius.circular(6),
+    );
+    canvas.drawRRect(labelBgRect, labelBgPaint);
+
+    // Desenhar borda do fundo
+    final labelBorderPaint = Paint()
+      ..color = const Color(0xFF8B1538).withOpacity(0.3)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1;
+    canvas.drawRRect(labelBgRect, labelBorderPaint);
+
+    // Desenhar texto
+    labelPainter.paint(canvas, Offset(labelX, labelY));
+
+    // Texto central - Valor da Previsão
+    final previsaoText = _formatarNumero(previsaoProducao);
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: previsaoText,
+        style: const TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.bold,
+          color: Colors.black87,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    );
+    textPainter.layout();
+    textPainter.paint(
+      canvas,
+      Offset(
+        center.dx - textPainter.width / 2,
+        center.dy - textPainter.height / 2,
+      ),
+    );
+  }
+
+  @override
+  bool shouldRepaint(GaugePainter oldDelegate) {
+    return oldDelegate.percentage != percentage;
   }
 }
 
@@ -408,7 +854,6 @@ class _MenuItemCardState extends State<_MenuItemCard>
 
   @override
   Widget build(BuildContext context) {
-    // Detecta se é um dispositivo pequeno para ajustes finos.
     final bool isSmallDevice = MediaQuery.of(context).size.width < 600;
 
     return MouseRegion(
@@ -431,7 +876,6 @@ class _MenuItemCardState extends State<_MenuItemCard>
             return Transform.scale(
               scale: _scaleAnimation.value,
               child: Container(
-                // 💡 CORREÇÃO 2: Redução drástica do padding vertical para economizar espaço no card quadrado.
                 padding: EdgeInsets.symmetric(
                   horizontal: isSmallDevice ? 8 : 12,
                   vertical: isSmallDevice ? 8 : 14,
@@ -457,15 +901,13 @@ class _MenuItemCardState extends State<_MenuItemCard>
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // O ícone usa FittedBox e um Padding leve.
                     FittedBox(
                       fit: BoxFit.scaleDown,
                       child: Padding(
-                        // Padding do ícone reduzido para dar mais espaço ao texto
                         padding: const EdgeInsets.only(top: 4.0, bottom: 4.0),
                         child: Icon(
                           widget.icon,
-                          size: isSmallDevice ? 32 : 40, // Ícone menor
+                          size: isSmallDevice ? 32 : 40,
                           color: widget.color,
                         ),
                       ),

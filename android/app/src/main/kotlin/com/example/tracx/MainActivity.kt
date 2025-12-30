@@ -16,9 +16,13 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        methodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
 
-        // Handler de métodos Flutter -> Android
+        methodChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            CHANNEL
+        )
+
+        // Métodos Flutter -> Android
         methodChannel?.setMethodCallHandler { call, result ->
             when (call.method) {
                 "configureProfile" -> {
@@ -30,25 +34,38 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+    }
 
-        // Receber scans do DataWedge
+    override fun onResume() {
+        super.onResume()
         registerReceiver(
             dataWedgeReceiver,
-            IntentFilter("com.example.tracx.SCAN")
+            IntentFilter("com.example.tracx.SCAN"),
+            Context.RECEIVER_NOT_EXPORTED
         )
     }
 
-    private fun configureDataWedgeProfile(profileName: String?, intentAction: String?) {
+    override fun onPause() {
+        unregisterReceiver(dataWedgeReceiver)
+        super.onPause()
+    }
+
+    private fun configureDataWedgeProfile(
+        profileName: String?,
+        intentAction: String?
+    ) {
         if (profileName == null || intentAction == null) return
 
         val profileConfig = Bundle().apply {
             putString("PROFILE_NAME", profileName)
             putBoolean("PROFILE_ENABLED", true)
             putString("CONFIG_MODE", "CREATE_IF_NOT_EXIST")
+
             putBundle("APP_LIST", Bundle().apply {
                 putString("PACKAGE_NAME", packageName)
                 putString("ACTIVITY_LIST", "*")
             })
+
             putBundle("INTENT_CONFIG", Bundle().apply {
                 putBoolean("OUTPUT_ENABLED", true)
                 putString("INTENT_ACTION", intentAction)
@@ -57,25 +74,27 @@ class MainActivity : FlutterActivity() {
             })
         }
 
-        val intent = Intent()
-        intent.action = "com.symbol.datawedge.api.SET_CONFIG"
-        intent.putExtra("com.symbol.datawedge.api.SET_CONFIG", profileConfig)
+        val intent = Intent("com.symbol.datawedge.api.SET_CONFIG").apply {
+            putExtra("com.symbol.datawedge.api.SET_CONFIG", profileConfig)
+        }
+
         sendBroadcast(intent)
     }
 
-    private val dataWedgeReceiver: BroadcastReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent == null) return
+    private val dataWedgeReceiver: BroadcastReceiver =
+        object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                if (intent == null) return
 
-            val scannedData = intent.getStringExtra("com.symbol.datawedge.data_string")
-            if (scannedData != null) {
-                methodChannel?.invokeMethod("onScan", mapOf("data" to scannedData))
+                val scannedData =
+                    intent.getStringExtra("com.symbol.datawedge.data_string")
+
+                if (scannedData != null) {
+                    methodChannel?.invokeMethod(
+                        "onScan",
+                        mapOf("data" to scannedData)
+                    )
+                }
             }
         }
-    }
-
-    override fun onDestroy() {
-        unregisterReceiver(dataWedgeReceiver)
-        super.onDestroy()
-    }
 }

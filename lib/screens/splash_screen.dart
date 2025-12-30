@@ -3,6 +3,10 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tracx/screens/login_screen.dart'; // Importação adicionada
+import 'package:intl/intl.dart';
+import 'package:tracx/services/SyncService.dart';
+import 'ConsultaMapaProducaoScreen.dart';
+import 'package:tracx/services/estoque_db_helper.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -32,6 +36,10 @@ class _SplashScreenState extends State<SplashScreen>
   void initState() {
     super.initState();
 
+    // 1. Inicia a sincronização pesada imediatamente
+    _sincronizarHistoricoCompleto();
+
+    // 2. Mantém suas animações existentes
     _mainController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 3500),
@@ -529,6 +537,115 @@ class _SplashScreenState extends State<SplashScreen>
         ),
       ),
     );
+  }
+
+  Future<void> _sincronizarHistoricoCompleto() async {
+    try {
+      final dbHelper = EstoqueDbHelper();
+      final agora = DateTime.now();
+      // Define do dia 01 deste mês até ontem
+      final dataInicial = DateTime(agora.year, agora.month, 1);
+      final dataOntem = agora.subtract(const Duration(days: 1));
+
+      if (dataOntem.isBefore(dataInicial)) return;
+
+      // Autentica apenas UMA vez para todas as chamadas
+      final token = await ApiService.authenticate(
+        endpoint: AppConstants.authEndpointWMS,
+        email: AppConstants.authEmailWMS,
+        senha: AppConstants.authSenhaWMS,
+        usuarioId: AppConstants.authUsuarioIdWMS,
+      );
+
+      List<DateTime> diasFaltantes = [];
+      for (
+        DateTime d = dataInicial;
+        !d.isAfter(dataOntem);
+        d = d.add(const Duration(days: 1))
+      ) {
+        String iso = DateFormat("yyyy-MM-dd'T'00:00:00").format(d);
+        // Só adiciona à lista se NÃO existir no banco local
+        final jaExiste = await dbHelper.getMapasByDate(iso);
+        if (jaExiste.isEmpty) diasFaltantes.add(d);
+      }
+
+      // O SEGREDO: Future.wait dispara todas as APIs ao mesmo tempo
+      if (diasFaltantes.isNotEmpty) {
+        await Future.wait(
+          diasFaltantes.map((data) async {
+            String isoDate = DateFormat("yyyy-MM-dd'T'00:00:00").format(data);
+            try {
+              final registros = await ApiService.fetchMapByDate(
+                apiKeyWMS: token,
+                isoDate: isoDate,
+              );
+              if (registros.isNotEmpty) {
+                await dbHelper.insertMapas(registros, isoDate);
+              }
+            } catch (e) {
+              debugPrint("Erro no dia $isoDate: $e");
+            }
+          }),
+        );
+      }
+    } catch (e) {
+      debugPrint("Erro na carga da Splash: $e");
+    }
+  }
+
+  Future<void> _initSync() async {
+    try {
+      await SyncService.sincronizarHistorico();
+    } catch (e) {
+      print("Falha na sincronização silenciosa: $e");
+    }
+  }
+
+  Future<void> _sincronizarDados() async {
+    try {
+      final dbHelper = EstoqueDbHelper();
+      final agora = DateTime.now();
+      final dataInicial = DateTime(agora.year, agora.month, 1);
+      final dataOntem = agora.subtract(const Duration(days: 1));
+
+      // 1. Autenticação única para ganhar tempo
+      final tokenWMS = await ApiService.authenticate(
+        endpoint: AppConstants.authEndpointWMS,
+        email: AppConstants.authEmailWMS,
+        senha: AppConstants.authSenhaWMS,
+        usuarioId: AppConstants.authUsuarioIdWMS,
+      );
+
+      List<DateTime> diasParaSincronizar = [];
+      for (
+        DateTime d = dataInicial;
+        !d.isAfter(dataOntem);
+        d = d.add(const Duration(days: 1))
+      ) {
+        diasParaSincronizar.add(d);
+      }
+
+      // 2. PARALELISMO TOTAL: Consulta todos os dias do mês de uma vez
+      await Future.wait(
+        diasParaSincronizar.map((data) async {
+          String iso = DateFormat("yyyy-MM-dd'T'00:00:00").format(data);
+
+          // Verifica se o dia já existe para não gastar internet à toa
+          var existente = await dbHelper.getMapasByDate(iso);
+          if (existente.isEmpty) {
+            var registros = await ApiService.fetchMapByDate(
+              apiKeyWMS: tokenWMS,
+              isoDate: iso,
+            );
+            if (registros.isNotEmpty) {
+              await dbHelper.insertMapas(registros, iso);
+            }
+          }
+        }),
+      );
+    } catch (e) {
+      debugPrint("Erro na sincronização da Splash: $e");
+    }
   }
 
   Widget _buildOrnament(Color color) {
