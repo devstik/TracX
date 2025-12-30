@@ -7,6 +7,14 @@ import 'package:intl/intl.dart';
 import 'package:tracx/services/SyncService.dart';
 import 'ConsultaMapaProducaoScreen.dart';
 import 'package:tracx/services/estoque_db_helper.dart';
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:tracx/services/update_service.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -17,6 +25,9 @@ class SplashScreen extends StatefulWidget {
 
 class _SplashScreenState extends State<SplashScreen>
     with TickerProviderStateMixin {
+  bool _animationFinished = false;
+  bool _updateOk = false;
+
   late final AnimationController _mainController;
   late final AnimationController _rotationController;
   late final AnimationController _particlesController;
@@ -32,11 +43,54 @@ class _SplashScreenState extends State<SplashScreen>
 
   // FUNÇÃO ATUALIZADA: Verifica as credenciais salvas para definir a próxima tela.
 
+  void _showUpdateDialog({required bool force, required String apkUrl}) {
+    showDialog(
+      context: context,
+      barrierDismissible: !force, // 🔒 bloqueia se for forçado
+      builder: (context) {
+        return WillPopScope(
+          onWillPop: () async => !force,
+          child: AlertDialog(
+            title: const Text('Atualização disponível'),
+            content: Text(
+              force
+                  ? 'Esta versão do aplicativo não é mais suportada. '
+                        'Atualize para continuar.'
+                  : 'Existe uma nova versão disponível. '
+                        'Deseja atualizar agora?',
+            ),
+            actions: [
+              if (!force)
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+
+                    // Permite seguir para o app
+                    _updateOk = true;
+                    _tryNavigate();
+                  },
+                  child: const Text('Depois'),
+                ),
+              ElevatedButton(
+                onPressed: () async {
+                  final uri = Uri.parse(apkUrl);
+                  if (await canLaunchUrl(uri)) {
+                    await launchUrl(uri, mode: LaunchMode.externalApplication);
+                  }
+                },
+                child: const Text('Atualizar'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   @override
   void initState() {
     super.initState();
 
-    // 1. Inicia a sincronização pesada imediatamente
     _sincronizarHistoricoCompleto();
 
     // 2. Mantém suas animações existentes
@@ -117,16 +171,22 @@ class _SplashScreenState extends State<SplashScreen>
 
     _mainController.addStatusListener((status) async {
       if (status == AnimationStatus.completed) {
-        await Future.delayed(const Duration(milliseconds: 3500));
-        if (!mounted) return;
-
-        // NOVO: Navegação para a tela de login após a animação
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => LoginScreen()),
-        );
+        _animationFinished = true;
+        _tryNavigate();
       }
     });
+  }
+
+  void _tryNavigate() async {
+    if (!_animationFinished || !_updateOk) return;
+
+    await Future.delayed(const Duration(milliseconds: 3500));
+    if (!mounted) return;
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (context) => LoginScreen()),
+    );
   }
 
   @override
@@ -507,7 +567,7 @@ class _SplashScreenState extends State<SplashScreen>
 
                         // Versão e ano
                         Text(
-                          'v1.0.0',
+                          'v1.0.3',
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontSize: 10,

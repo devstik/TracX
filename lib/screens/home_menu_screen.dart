@@ -17,6 +17,7 @@ import 'dart:math' as math;
 import 'dart:convert';
 import 'dart:async';
 import 'package:http/http.dart' as http;
+import 'package:tracx/services/update_service.dart';
 
 class HomeMenuScreen extends StatefulWidget {
   final String conferente;
@@ -328,8 +329,6 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
-        // Alteração principal: Usamos SingleChildScrollView e removemos o Expanded do Grid
-        // Isso faz com que o gráfico fique logo após o grid, e não no fim da tela.
         child: SingleChildScrollView(
           child: Column(
             children: [
@@ -393,15 +392,23 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
                           ),
                         ),
                         const SizedBox(width: 16),
+                        _buildHeaderIconButton(
+                          icon: Icons.system_update_alt,
+                          tooltip: 'Verificar atualização',
+                          onTap: () =>
+                              UpdateService.check(context, showMessages: true),
+                          color: Colors.green.shade700,
+                        ),
                         if (_isAdmin) ...[
+                          const SizedBox(width: 12),
                           _buildHeaderIconButton(
                             icon: CupertinoIcons.person_crop_circle,
                             tooltip: 'Gerenciar usuários',
                             onTap: _showUserActionsSheet,
                             color: Colors.blueAccent,
                           ),
-                          const SizedBox(width: 12),
                         ],
+                        const SizedBox(width: 12),
                         _buildHeaderIconButton(
                           icon: Icons.logout,
                           tooltip: 'Sair',
@@ -420,17 +427,13 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
               ),
 
               // Grid de Menus
-              // REMOVIDO: Expanded (para não empurrar o gráfico para baixo)
-              // ADICIONADO: shrinkWrap: true e physics: NeverScrollableScrollPhysics
               GridView.builder(
                 padding: EdgeInsets.symmetric(
                   horizontal: isPhone ? 16 : 32,
                   vertical: isPhone ? 12 : 24,
                 ),
-                shrinkWrap:
-                    true, // Importante: Ocupa apenas o espaço necessário
-                physics:
-                    const NeverScrollableScrollPhysics(), // A rolagem é gerenciada pelo SingleChildScrollView
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
                 itemCount: menuItems.length,
                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: crossAxisCount,
@@ -473,7 +476,6 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
               ),
 
               // Gráfico de Produção
-              // Agora ele aparece imediatamente após o Grid, sem ficar preso no rodapé
               if (!_isLoadingProducao && _dadosProducao != null)
                 Container(
                   margin: const EdgeInsets.all(16),
@@ -491,10 +493,9 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
                   ),
                   child: Column(
                     children: [
-                      // Cabeçalho do Card: Título + Horário da última atualização
+                      // Cabeçalho do Card
                       Row(
-                        mainAxisAlignment: MainAxisAlignment
-                            .spaceBetween, // Empurra o horário para a direita
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Row(
                             children: [
@@ -514,7 +515,6 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
                               ),
                             ],
                           ),
-                          // Informação de atualização (conforme discutido)
                           Text(
                             _ultimaAtualizacao,
                             style: TextStyle(
@@ -526,7 +526,6 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
                         ],
                       ),
                       const SizedBox(height: 16),
-                      // Layout Original preservado: Gráfico (Esq) + Cards (Dir)
                       Row(
                         children: [
                           // Gráfico Gauge
@@ -591,7 +590,6 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
                     ],
                   ),
                 ),
-              // Espaço extra no final para não ficar colado na borda inferior do scroll
               const SizedBox(height: 20),
             ],
           ),

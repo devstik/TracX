@@ -2,7 +2,7 @@ name: tracx
 description: "A new Flutter project."
 publish_to: "none"
 
-version: 1.0.0+1
+version: 1.0.3+3
 
 environment:
   sdk: ^3.8.1
@@ -36,6 +36,10 @@ dependencies:
   flutter_datawedge: ^3.2.0
   connectivity_plus: ^7.0.0
   syncfusion_flutter_gauges: ^32.1.21
+  dio: ^5.9.0 
+  install_plugin_v3: ^ 3.1.3
+  url_launcher: ^6.3.2
+  package_info_plus: ^9.0.0
 
   flutter_localizations:
     sdk: flutter
