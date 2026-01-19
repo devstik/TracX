@@ -26,7 +26,7 @@ class SplashScreen extends StatefulWidget {
 class _SplashScreenState extends State<SplashScreen>
     with TickerProviderStateMixin {
   bool _animationFinished = false;
-  bool _updateOk = false;
+  bool _updateOk = true;
 
   late final AnimationController _mainController;
   late final AnimationController _rotationController;
@@ -567,7 +567,7 @@ class _SplashScreenState extends State<SplashScreen>
 
                         // Versão e ano
                         Text(
-                          'v1.0.3',
+                          'v1.0.7',
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontSize: 10,

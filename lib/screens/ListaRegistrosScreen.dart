@@ -3,12 +3,15 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
-// IMPORTS NECESSÁRIOS PARA PDF
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import '../models/registro.dart';
 import '../models/registro_tinturaria.dart';
+import 'package:excel/excel.dart' hide Border;
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
+import 'package:hive/hive.dart';
 
 // CORES E ESTILOS GLOBAIS
 
@@ -28,7 +31,8 @@ const TextStyle _kHeaderStyle = TextStyle(
 );
 
 class ListaRegistrosScreen extends StatefulWidget {
-  const ListaRegistrosScreen({super.key});
+  final String? conferente;
+  const ListaRegistrosScreen({super.key, this.conferente});
 
   @override
   _ListaRegistrosScreenState createState() => _ListaRegistrosScreenState();
@@ -67,7 +71,7 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
     // Inicializa os Futures para que a busca comece imediatamente
     _embalagemFuture = _buscarTodos();
     _tinturariaFuture = _buscarRegistrosTinturaria();
@@ -171,6 +175,252 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
     return DateFormat('dd/MM/yy').format(data);
   }
 
+  // Função para editar um registro
+  void _editarRegistro(Registro registro, int indexNoBox) {
+    final ordemController = TextEditingController(
+      text: registro.ordemProducao.toString(),
+    );
+    final quantidadeController = TextEditingController(
+      text: registro.quantidade.toString(),
+    );
+    final artigoController = TextEditingController(text: registro.artigo);
+    final corController = TextEditingController(text: registro.cor);
+    final pesoController = TextEditingController(
+      text: registro.peso.toStringAsFixed(3).replaceAll('.', ','),
+    );
+    final metrosController = TextEditingController(
+      text: (registro.metros ?? 0.0).toStringAsFixed(3).replaceAll('.', ','),
+    );
+    final dataTingimentoController = TextEditingController(
+      text: registro.dataTingimento ?? '',
+    );
+    final numCorteController = TextEditingController(
+      text: registro.numCorte ?? '',
+    );
+    final volumeProgController = TextEditingController(
+      text: (registro.volumeProg ?? 0.0)
+          .toStringAsFixed(3)
+          .replaceAll('.', ','),
+    );
+    final caixaController = TextEditingController(text: registro.caixa ?? '0');
+    String? localizacaoSelecionada = registro.localizacao;
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Editar Registro'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: ordemController,
+                decoration: const InputDecoration(labelText: 'Ordem Produção'),
+                keyboardType: TextInputType.number,
+              ),
+              TextField(
+                controller: artigoController,
+                decoration: const InputDecoration(labelText: 'Artigo'),
+              ),
+              TextField(
+                controller: corController,
+                decoration: const InputDecoration(labelText: 'Cor'),
+              ),
+              TextField(
+                controller: quantidadeController,
+                decoration: const InputDecoration(labelText: 'Quantidade'),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+              ),
+              TextField(
+                controller: pesoController,
+                decoration: const InputDecoration(labelText: 'Peso (Kg)'),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+              ),
+              TextField(
+                controller: metrosController,
+                decoration: const InputDecoration(labelText: 'Metros'),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+              ),
+              TextField(
+                controller: volumeProgController,
+                decoration: const InputDecoration(labelText: 'Volume'),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+              ),
+              TextField(
+                controller: caixaController,
+                decoration: const InputDecoration(labelText: 'Caixa'),
+              ),
+              TextField(
+                controller: dataTingimentoController,
+                decoration: const InputDecoration(labelText: 'Data Tingimento'),
+              ),
+              TextField(
+                controller: numCorteController,
+                decoration: const InputDecoration(labelText: 'Num Corte'),
+              ),
+              DropdownButtonFormField<String>(
+                value: localizacaoSelecionada,
+                decoration: const InputDecoration(labelText: 'Localização'),
+                items: const ['Mesas', 'Imatecs']
+                    .map(
+                      (loc) => DropdownMenuItem(value: loc, child: Text(loc)),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  localizacaoSelecionada = value;
+                },
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final novoRegistro = Registro(
+                data: registro.data,
+                ordemProducao: int.tryParse(ordemController.text) ?? 0,
+                quantidade: int.tryParse(quantidadeController.text) ?? 0,
+                artigo: artigoController.text,
+                cor: corController.text,
+                peso:
+                    double.tryParse(pesoController.text.replaceAll(',', '.')) ??
+                    0.0,
+                conferente: registro.conferente,
+                turno: registro.turno,
+                metros:
+                    double.tryParse(
+                      metrosController.text.replaceAll(',', '.'),
+                    ) ??
+                    0.0,
+                dataTingimento: dataTingimentoController.text,
+                numCorte: numCorteController.text,
+                volumeProg:
+                    double.tryParse(
+                      volumeProgController.text.replaceAll(',', '.'),
+                    ) ??
+                    0.0,
+                localizacao: localizacaoSelecionada ?? 'Manual',
+                caixa: caixaController.text,
+              );
+
+              final box = Hive.box<Registro>('registros');
+              final registrosMap = await _buscarTodos();
+              final allRegistros = registrosMap['Embalagem'] ?? [];
+
+              // Encontrar o índice correto
+              int indexToUpdate = -1;
+              for (int i = 0; i < allRegistros.length; i++) {
+                if (_getRegistroKey(allRegistros[i]) ==
+                    _getRegistroKey(registro)) {
+                  indexToUpdate = i;
+                  break;
+                }
+              }
+
+              if (indexToUpdate != -1) {
+                await box.putAt(indexToUpdate, novoRegistro);
+                setState(() {
+                  _embalagemFuture = _buscarTodos();
+                });
+
+                if (!mounted) return;
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Registro atualizado com sucesso!'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              }
+            },
+            child: const Text('Salvar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Função para deletar um registro
+  Future<void> _deletarRegistro(Registro registro) async {
+    // Verificar se o usuário está autorizado a deletar
+    const List<String> usuariosAutorizados = ['Leide', 'João'];
+
+    if (widget.conferente == null ||
+        !usuariosAutorizados.contains(widget.conferente)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Apenas Leide e João podem excluir registros.'),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Confirmar Exclusão'),
+        content: const Text(
+          'Tem certeza que deseja excluir este registro? Esta ação não pode ser desfeita.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final box = Hive.box<Registro>('registros');
+              final registrosMap = await _buscarTodos();
+              final allRegistros = registrosMap['Embalagem'] ?? [];
+
+              // Encontrar o índice correto
+              int indexToDelete = -1;
+              for (int i = 0; i < allRegistros.length; i++) {
+                if (_getRegistroKey(allRegistros[i]) ==
+                    _getRegistroKey(registro)) {
+                  indexToDelete = i;
+                  break;
+                }
+              }
+
+              if (indexToDelete != -1) {
+                await box.deleteAt(indexToDelete);
+                setState(() {
+                  _embalagemFuture = _buscarTodos();
+                });
+
+                if (!mounted) return;
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Registro excluído com sucesso!'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Excluir', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
   // Manteve as funções de compartilhamento de texto e PDF (fora do escopo de refatoração de UI)
   String _gerarTextoCompartilhamento(Map<String, List<Registro>> agrupados) {
     final buffer = StringBuffer();
@@ -257,6 +507,106 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
     });
 
     return buffer.toString().trim();
+  }
+
+  Future<void> _generateEmbalagemExcel(
+    Map<String, List<Registro>> agrupados,
+  ) async {
+    final excel = Excel.createExcel();
+    final sheet = excel['Registros Embalagem'];
+
+    // Remove a sheet padrão se existir
+    if (excel.sheets.containsKey('Sheet1')) {
+      excel.delete('Sheet1');
+    }
+
+    // Cabeçalhos
+    final headers = [
+      'Data/Turno',
+      'OP',
+      'Artigo',
+      'Cor',
+      'Qtd',
+      'Peso (Kg)',
+      'Conferente',
+      'Data Tingimento',
+      'Nº Corte',
+      'Vol. Prog.',
+      'Metros',
+    ];
+
+    int rowIndex = 0;
+
+    // Adiciona cabeçalhos
+    for (var i = 0; i < headers.length; i++) {
+      final cell = sheet.cell(
+        CellIndex.indexByColumnRow(columnIndex: i, rowIndex: rowIndex),
+      );
+      cell.value = TextCellValue(headers[i]);
+      cell.cellStyle = CellStyle(
+        bold: true,
+        backgroundColorHex: ExcelColor.fromHexString('#CD1818'),
+        fontColorHex: ExcelColor.white,
+      );
+    }
+    rowIndex++;
+
+    // Adiciona dados
+    agrupados.forEach((chave, registros) {
+      for (var r in registros) {
+        final dataTingimento =
+            (r.dataTingimento != null && r.dataTingimento!.isNotEmpty)
+            ? _formatarData(DateTime.parse(r.dataTingimento!))
+            : '-';
+
+        final volumeProgStr = (r.volumeProg != null && r.volumeProg! > 0)
+            ? _kBrThreeDecimalFormatter.format(r.volumeProg!)
+            : '-';
+
+        final metrosStr = (r.metros != null && r.metros! > 0)
+            ? _kBrThreeDecimalFormatter.format(r.metros!)
+            : '-';
+
+        final rowData = [
+          chave,
+          r.ordemProducao.toString(),
+          r.artigo,
+          r.cor,
+          _kBrIntegerFormatter.format(r.quantidade),
+          _kBrThreeDecimalFormatter.format(r.peso),
+          r.conferente,
+          dataTingimento,
+          r.numCorte ?? '-',
+          volumeProgStr,
+          metrosStr,
+        ];
+
+        for (var i = 0; i < rowData.length; i++) {
+          sheet
+              .cell(
+                CellIndex.indexByColumnRow(columnIndex: i, rowIndex: rowIndex),
+              )
+              .value = TextCellValue(
+            rowData[i],
+          );
+        }
+        rowIndex++;
+      }
+    });
+
+    // Salva e compartilha
+    final bytes = excel.encode();
+    if (bytes != null) {
+      final directory = await getTemporaryDirectory();
+      final file = File(
+        '${directory.path}/Registros_Embalagem_${DateFormat('ddMMyy').format(DateTime.now())}.xlsx',
+      );
+      await file.writeAsBytes(bytes);
+
+      await Share.shareXFiles([
+        XFile(file.path),
+      ], subject: 'Relatório de Embalagem');
+    }
   }
 
   // Manteve a função de geração de PDF para Embalagem (fora do escopo de refatoração de UI)
@@ -420,6 +770,90 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
       filename:
           'Registros_Embalagem_${DateFormat('ddMMyy').format(DateTime.now())}.pdf',
     );
+  }
+
+  Future<void> _generateTinturariaExcel(
+    List<RegistroTinturaria> registros,
+  ) async {
+    final excel = Excel.createExcel();
+    final sheet = excel['Registros Tinturaria'];
+
+    if (excel.sheets.containsKey('Sheet1')) {
+      excel.delete('Sheet1');
+    }
+
+    final headers = [
+      'Data/Turno',
+      'Material',
+      'Larg. Crua',
+      'Elast. Crua',
+      'Nº Máquina',
+      'Data Corte',
+      'Lote Elástico',
+      'Conferente',
+      'Turno',
+    ];
+
+    int rowIndex = 0;
+
+    for (var i = 0; i < headers.length; i++) {
+      final cell = sheet.cell(
+        CellIndex.indexByColumnRow(columnIndex: i, rowIndex: rowIndex),
+      );
+      cell.value = TextCellValue(headers[i]);
+      cell.cellStyle = CellStyle(
+        bold: true,
+        backgroundColorHex: ExcelColor.fromHexString('#090057'),
+        fontColorHex: ExcelColor.white,
+      );
+    }
+    rowIndex++;
+
+    final agrupados = <String, List<RegistroTinturaria>>{};
+    for (var r in registros) {
+      final chave = '${r.dataCorte} - ${r.turno}';
+      agrupados.putIfAbsent(chave, () => []).add(r);
+    }
+
+    agrupados.forEach((chave, registrosList) {
+      for (var r in registrosList) {
+        final rowData = [
+          chave,
+          r.nomeMaterial,
+          r.larguraCrua,
+          r.elasticidadeCrua,
+          r.nMaquina,
+          r.dataCorte,
+          r.loteElastico,
+          r.conferente,
+          r.turno,
+        ];
+
+        for (var i = 0; i < rowData.length; i++) {
+          sheet
+              .cell(
+                CellIndex.indexByColumnRow(columnIndex: i, rowIndex: rowIndex),
+              )
+              .value = TextCellValue(
+            rowData[i],
+          );
+        }
+        rowIndex++;
+      }
+    });
+
+    final bytes = excel.encode();
+    if (bytes != null) {
+      final directory = await getTemporaryDirectory();
+      final file = File(
+        '${directory.path}/Registros_Tinturaria_${DateFormat('ddMMyy').format(DateTime.now())}.xlsx',
+      );
+      await file.writeAsBytes(bytes);
+
+      await Share.shareXFiles([
+        XFile(file.path),
+      ], subject: 'Relatório de Tinturaria');
+    }
   }
 
   // Manteve a função de geração de PDF para Tinturaria (fora do escopo de refatoração de UI)
@@ -919,11 +1353,10 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
                         : 'Deseja exportar todos os registros visíveis de Embalagem ou Raschelina?',
                   ),
                   actions: [
-                    // AÇÕES DE EMBALAGEM
+                    // EMBALAGEM - PDF
                     TextButton(
                       onPressed: () async {
                         Navigator.pop(dialogContext);
-                        // Lógica de exportação de Embalagem (PDF)
                         await _handleEmbalagemExport(
                           isPdf: true,
                           selectedCount: selectedEmbalagemCount,
@@ -934,10 +1367,25 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
                         style: const TextStyle(color: _kPrimaryColorEmbalagem),
                       ),
                     ),
+                    // EMBALAGEM - EXCEL (NOVO)
                     TextButton(
                       onPressed: () async {
                         Navigator.pop(dialogContext);
-                        // Lógica de exportação de Embalagem (Texto Simples)
+                        await _handleEmbalagemExport(
+                          isPdf: false,
+                          isExcel: true,
+                          selectedCount: selectedEmbalagemCount,
+                        );
+                      },
+                      child: Text(
+                        'Embalagem (Excel) ${selectedEmbalagemCount > 0 ? '($selectedEmbalagemCount)' : ''}',
+                        style: const TextStyle(color: _kPrimaryColorEmbalagem),
+                      ),
+                    ),
+                    // EMBALAGEM - TEXTO
+                    TextButton(
+                      onPressed: () async {
+                        Navigator.pop(dialogContext);
                         await _handleEmbalagemExport(
                           isPdf: false,
                           selectedCount: selectedEmbalagemCount,
@@ -948,11 +1396,10 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
                         style: const TextStyle(color: _kPrimaryColorEmbalagem),
                       ),
                     ),
-                    // AÇÃO DE TINTURARIA
+                    // TINTURARIA - PDF
                     TextButton(
                       onPressed: () async {
                         Navigator.pop(dialogContext);
-                        // Lógica de exportação de Tinturaria (PDF)
                         await _handleTinturariaExport(
                           selectedCount: selectedTinturariaCount,
                           isPdf: true,
@@ -963,11 +1410,25 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
                         style: const TextStyle(color: _kPrimaryColorTinturaria),
                       ),
                     ),
-                    // AÇÃO DE TINTURARIA (TEXTO)
+                    // TINTURARIA - EXCEL (NOVO)
                     TextButton(
                       onPressed: () async {
                         Navigator.pop(dialogContext);
-                        // Lógica de exportação de Tinturaria (Texto Simples)
+                        await _handleTinturariaExport(
+                          selectedCount: selectedTinturariaCount,
+                          isPdf: false,
+                          isExcel: true,
+                        );
+                      },
+                      child: Text(
+                        'Raschelina (Excel) ${selectedTinturariaCount > 0 ? '($selectedTinturariaCount)' : ''}',
+                        style: const TextStyle(color: _kPrimaryColorTinturaria),
+                      ),
+                    ),
+                    // TINTURARIA - TEXTO
+                    TextButton(
+                      onPressed: () async {
+                        Navigator.pop(dialogContext);
                         await _handleTinturariaExport(
                           selectedCount: selectedTinturariaCount,
                           isPdf: false,
@@ -993,6 +1454,7 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
             Tab(text: 'EMBALAGEM', icon: Icon(Icons.inventory_2_outlined)),
             Tab(text: 'RASCHELINA', icon: Icon(Icons.color_lens_outlined)),
             Tab(text: 'CONFRONTO', icon: Icon(Icons.compare_arrows)),
+            Tab(text: 'Relatório', icon: Icon(Icons.compare_arrows)),
           ],
         ),
       ),
@@ -1002,20 +1464,273 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
           _buildEmbalagemTab(),
           _buildTinturariaTab(),
           _buildConfrontoTab(),
+          _buildRelatorioTab(),
         ],
       ),
     );
+  }
+
+  // =======================================================
+  // NOVA ABA: RELATÓRIO DIÁRIO POR ARTIGO
+  // =======================================================
+  Widget _buildRelatorioTab() {
+    return FutureBuilder<Map<String, List<Registro>>>(
+      future: _embalagemFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        } else if (snapshot.hasError) {
+          return Center(child: Text('Erro: ${snapshot.error}'));
+        } else if (!snapshot.hasData || snapshot.data!['Embalagem']!.isEmpty) {
+          return const Center(child: Text('Nenhum dado para relatório.'));
+        }
+
+        // 1. Aplica os filtros atuais (se houver) ou pega tudo
+        final allRegistros = snapshot.data!['Embalagem']!;
+        final registrosFiltrados = _filtrarRegistros(allRegistros);
+
+        if (registrosFiltrados.isEmpty) {
+          return const Center(child: Text('Nenhum registro encontrado.'));
+        }
+
+        // 2. Agrupamento: Data -> Artigo -> Soma Peso
+        // Map<DataIsoString, Map<NomeArtigo, DoublePeso>>
+        final Map<String, Map<String, double>> groupedData = {};
+
+        for (var r in registrosFiltrados) {
+          // Normaliza a data para ignorar hora/minuto (apenas a data do dia)
+          final dateKey = DateTime(
+            r.data.year,
+            r.data.month,
+            r.data.day,
+          ).toIso8601String();
+
+          if (!groupedData.containsKey(dateKey)) {
+            groupedData[dateKey] = {};
+          }
+
+          // Atualiza o peso do artigo naquela data
+          groupedData[dateKey]!.update(
+            r.artigo,
+            (currentWeight) => currentWeight + r.peso,
+            ifAbsent: () => r.peso,
+          );
+        }
+
+        // 3. Ordenação das Datas (Recente -> Antigo)
+        final sortedDateKeys = groupedData.keys.toList()
+          ..sort((a, b) => DateTime.parse(b).compareTo(DateTime.parse(a)));
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(12),
+          itemCount: sortedDateKeys.length,
+          itemBuilder: (context, index) {
+            final dateKeyStr = sortedDateKeys[index];
+            final dateObj = DateTime.parse(dateKeyStr);
+            final artigosMap = groupedData[dateKeyStr]!;
+
+            // Calcula o total do dia para exibir no cabeçalho
+            final totalPesoDia = artigosMap.values.fold<double>(
+              0,
+              (sum, v) => sum + v,
+            );
+
+            // Ordena os artigos do dia por peso (do maior para o menor) para melhor visualização
+            final sortedArtigos = artigosMap.entries.toList()
+              ..sort((a, b) => b.value.compareTo(a.value));
+
+            return Card(
+              margin: const EdgeInsets.only(bottom: 12),
+              elevation: 3,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: ExpansionTile(
+                initiallyExpanded:
+                    index ==
+                    0, // Abre o primeiro item (dia mais recente) automaticamente
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                collapsedShape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                backgroundColor: Colors.white,
+                collapsedBackgroundColor: Colors.white,
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: _kPrimaryColorEmbalagem.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.calendar_month,
+                    color: _kPrimaryColorEmbalagem,
+                  ),
+                ),
+                title: Text(
+                  DateFormat('dd/MM/yyyy').format(dateObj),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+                subtitle: Text(
+                  'Total: ${_kBrThreeDecimalFormatter.format(totalPesoDia)} Kg',
+                  style: TextStyle(
+                    color: Colors.grey.shade700,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                children: [
+                  const Divider(height: 1),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 8,
+                      horizontal: 16,
+                    ),
+                    child: Column(
+                      children: [
+                        // Cabeçalho da sub-lista
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8.0),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: const [
+                              Text(
+                                'Artigo',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.black54,
+                                  fontSize: 12,
+                                ),
+                              ),
+                              Text(
+                                'Peso Total',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.black54,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        // Lista de Artigos
+                        ...sortedArtigos.map((entry) {
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 6.0),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    entry.key, // Nome do Artigo
+                                    style: const TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey.shade100,
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(
+                                      color: Colors.grey.shade300,
+                                    ),
+                                  ),
+                                  child: Text(
+                                    '${_kBrThreeDecimalFormatter.format(entry.value)} Kg',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: _kPrimaryColorEmbalagem.darken(10),
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // Função para consolidar a lógica de exportação de Tinturaria
+  Future<void> _handleTinturariaExport({
+    required bool isPdf,
+    required int selectedCount,
+    bool isExcel = false, // ADICIONE ESTE PARÂMETRO
+  }) async {
+    if (!mounted) return;
+    try {
+      final allTinturaria = await _tinturariaFuture;
+
+      final List<RegistroTinturaria> registrosToExport = selectedCount > 0
+          ? allTinturaria
+                .where(
+                  (r) => _selectedTinturariaKeys.contains(_getTinturariaKey(r)),
+                )
+                .toList()
+          : allTinturaria; // Se não houver seleção, exporta todos
+
+      if (registrosToExport.isEmpty) {
+        throw Exception("Nenhum pedido para exportar.");
+      }
+
+      final agrupadosTinturaria = <String, List<RegistroTinturaria>>{};
+      for (var r in registrosToExport) {
+        final chave = '${r.dataCorte} - ${r.turno}';
+        agrupadosTinturaria.putIfAbsent(chave, () => []).add(r);
+      }
+
+      // ADICIONE ESTA CONDIÇÃO
+      if (isPdf) {
+        await _generateTinturariaPdf(registrosToExport);
+      } else if (isExcel) {
+        await _generateTinturariaExcel(registrosToExport);
+      } else {
+        final texto = _gerarTinturariaTextoCompartilhamento(
+          agrupadosTinturaria,
+        );
+        if (texto.isNotEmpty) Share.share(texto);
+      }
+
+      // Desseleciona após a exportação (limpa o estado do widget)
+      if (selectedCount > 0 && mounted) {
+        setState(() => _selectedTinturariaKeys.clear());
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erro ao compartilhar: ${e.toString()}')),
+      );
+    }
   }
 
   // Função para consolidar a lógica de exportação de Embalagem
   Future<void> _handleEmbalagemExport({
     required bool isPdf,
     required int selectedCount,
+    bool isExcel = false, // ADICIONE ESTE PARÂMETRO
   }) async {
     if (!mounted) return;
 
     try {
-      // Usa o future já carregado para evitar nova requisição, se possível
       final allEmbalagem = (await _embalagemFuture)['Embalagem']!;
       List<Registro> filteredEmbalagem = _filtrarRegistros(allEmbalagem);
 
@@ -1040,8 +1755,11 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
         agrupadosEmbalagem.putIfAbsent(chave, () => []).add(r);
       }
 
+      // ADICIONE ESTA CONDIÇÃO
       if (isPdf) {
         await _generateEmbalagemPdf(agrupadosEmbalagem);
+      } else if (isExcel) {
+        await _generateEmbalagemExcel(agrupadosEmbalagem);
       } else {
         final texto = _gerarTextoCompartilhamento(agrupadosEmbalagem);
         if (texto.isNotEmpty) Share.share(texto);
@@ -1050,55 +1768,6 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
       // Desseleciona após a exportação (limpa o estado do widget)
       if (selectedCount > 0 && mounted) {
         setState(() => _selectedEmbalagemKeys.clear());
-      }
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao compartilhar: ${e.toString()}')),
-      );
-    }
-  }
-
-  // Função para consolidar a lógica de exportação de Tinturaria
-  Future<void> _handleTinturariaExport({
-    required bool isPdf,
-    required int selectedCount,
-  }) async {
-    if (!mounted) return;
-    try {
-      // Usa o future já carregado
-      final allTinturaria = await _tinturariaFuture;
-
-      final List<RegistroTinturaria> registrosToExport = selectedCount > 0
-          ? allTinturaria
-                .where(
-                  (r) => _selectedTinturariaKeys.contains(_getTinturariaKey(r)),
-                )
-                .toList()
-          : allTinturaria; // Se não houver seleção, exporta todos
-
-      if (registrosToExport.isEmpty) {
-        throw Exception("Nenhum pedido para exportar.");
-      }
-
-      final agrupadosTinturaria = <String, List<RegistroTinturaria>>{};
-      for (var r in registrosToExport) {
-        final chave = '${r.dataCorte} - ${r.turno}';
-        agrupadosTinturaria.putIfAbsent(chave, () => []).add(r);
-      }
-
-      if (isPdf) {
-        await _generateTinturariaPdf(registrosToExport);
-      } else {
-        final texto = _gerarTinturariaTextoCompartilhamento(
-          agrupadosTinturaria,
-        ); // Usa a função de texto para Tinturaria
-        if (texto.isNotEmpty) Share.share(texto);
-      }
-
-      // Desseleciona após a exportação (limpa o estado do widget)
-      if (selectedCount > 0 && mounted) {
-        setState(() => _selectedTinturariaKeys.clear());
       }
     } catch (e) {
       if (!mounted) return;
@@ -1309,6 +1978,36 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
         onTap: () => _toggleEmbalagemSelection(
           r,
         ), // Permite selecionar pelo toque na linha
+        onLongPress: () {
+          // Menu ao fazer long-press
+          showModalBottomSheet(
+            context: context,
+            builder: (context) => Container(
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.edit, color: Colors.blue),
+                    title: const Text('Editar'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _editarRegistro(r, 0);
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.delete, color: Colors.red),
+                    title: const Text('Excluir'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _deletarRegistro(r);
+                    },
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1586,7 +2285,6 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
     );
   }
 
- 
   // ABA CONFRONTO (APRIMORADA)
 
   // NOVO: Função auxiliar para calcular rankings

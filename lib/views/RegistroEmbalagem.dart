@@ -156,10 +156,10 @@ class _QrScannerPageState extends State<QrScannerPage> {
       // 2. Usa o construtor de fábrica QrCodeData.fromJson para converter o JSON.
       final qrData = QrCodeData.fromJson(jsonMap);
 
-      // 3. Validação de Negócio: Se a Ordem de Produção for 0, o código é inválido.
-      if (qrData.ordem == 0) {
-        return null;
-      }
+      // // 3. Validação de Negócio: Se a Ordem de Produção for 0, o código é inválido.
+      // if (qrData.ordem == 0) {
+      //   return null;
+      // }
 
       // Se tudo estiver OK, o objeto QrCodeData é retornado
       return qrData;
@@ -324,6 +324,7 @@ class _RegistroScreenState extends State<RegistroScreen> {
 
   DateTime? _data;
   bool _isSaving = false;
+  bool _isManualEntry = false; // Controla se está em modo de entrada manual
 
   @override
   void initState() {
@@ -367,9 +368,9 @@ class _RegistroScreenState extends State<RegistroScreen> {
 
   String getTurno() {
     final hour = DateTime.now().hour;
-    if (hour >= 6 && hour <= 14) return 'A';
-    if (hour > 14 && hour <= 22) return 'B';
-    return 'C';
+    if (hour >= 6 && hour < 14) return 'A'; // De 06:00 às 13:59
+    if (hour >= 14 && hour < 22) return 'B'; // De 14:00 às 21:59
+    return 'C'; // De 22:00 às 05:59
   }
 
   String _safeString(String? value) {
@@ -734,8 +735,8 @@ class _RegistroScreenState extends State<RegistroScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 0.0, vertical: 8.0),
       child: TextFormField(
         controller: controller,
-        enabled: false,
-        decoration: _getInputDecoration(label, icon, enabled: false),
+        enabled: _isManualEntry,
+        decoration: _getInputDecoration(label, icon, enabled: _isManualEntry),
 
         keyboardType: isNumeric
             ? const TextInputType.numberWithOptions(decimal: true)
@@ -755,21 +756,57 @@ class _RegistroScreenState extends State<RegistroScreen> {
 
   Widget _buildQrButton() {
     return Padding(
-      padding: const EdgeInsets.only(top: 10.0, bottom: 20.0),
-      child: ElevatedButton.icon(
-        onPressed: _scanQR,
-        icon: const Icon(Icons.qr_code_scanner),
-        label: const Text('Ler QR Code', style: TextStyle(fontSize: 18)),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: _kPrimaryColor,
-          foregroundColor: Colors.white,
-          minimumSize: const Size(double.infinity, 50),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10.0),
+      padding: const EdgeInsets.only(top: 10.0, bottom: 10.0),
+      child: Row(
+        children: [
+          // Botão de Escanear QR Code
+          Expanded(
+            child: ElevatedButton.icon(
+              onPressed: _isManualEntry ? null : _scanQR,
+              icon: const Icon(Icons.qr_code_scanner),
+              label: const Text('Ler QR Code', style: TextStyle(fontSize: 14)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _kPrimaryColor,
+                foregroundColor: Colors.white,
+                disabledBackgroundColor: Colors.grey.shade400,
+                disabledForegroundColor: Colors.grey.shade700,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10.0),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                elevation: 5,
+              ),
+            ),
           ),
-          padding: const EdgeInsets.symmetric(vertical: 15),
-          elevation: 5,
-        ),
+          const SizedBox(width: 10),
+          // Botão de Entrada Manual
+          Expanded(
+            child: ElevatedButton.icon(
+              onPressed: () {
+                setState(() {
+                  _isManualEntry = !_isManualEntry;
+                  if (!_isManualEntry) {
+                    _limparFormulario();
+                  }
+                });
+              },
+              icon: Icon(_isManualEntry ? Icons.close : Icons.edit),
+              label: Text(
+                _isManualEntry ? 'Cancelar Manual' : 'Entrada Manual',
+                style: const TextStyle(fontSize: 14),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _isManualEntry ? Colors.orange : _kAccentColor,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10.0),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                elevation: 5,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -805,12 +842,17 @@ class _RegistroScreenState extends State<RegistroScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _buildSectionTitle('Dados de Identificação', Icons.info_outline),
+
+            // --- CORRIJA ESTA PARTE ---
             _buildTextField(
               _ordemController,
               'Ordem de Produção',
               Icons.assignment,
               isNumeric: true,
+              isRequired: false,
             ),
+
+            // --------------------------
             _buildTextField(
               _artigoController,
               'Artigo',
@@ -922,7 +964,7 @@ class _RegistroScreenState extends State<RegistroScreen> {
   }
 
   Widget _buildLocationAndActionSection() {
-    final bool isFormReady = _ordemController.text.isNotEmpty;
+    final bool isFormReady = _artigoController.text.isNotEmpty;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

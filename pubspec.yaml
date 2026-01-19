@@ -2,7 +2,7 @@ name: tracx
 description: "A new Flutter project."
 publish_to: "none"
 
-version: 1.0.3+3
+version: 1.0.7+7
 
 environment:
   sdk: ^3.8.1
@@ -10,6 +10,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  excel: ^4.0.6 
 
   # Ícones do iOS
   cupertino_icons: ^1.0.8

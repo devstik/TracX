@@ -199,6 +199,14 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
+              leading: const Icon(Icons.system_update_alt),
+              title: const Text('Verificar Atualização'),
+              onTap: () {
+                Navigator.pop(context);
+                UpdateService.check(context, showMessages: true);
+              },
+            ),
+            ListTile(
               leading: const Icon(Icons.person_add),
               title: const Text('Cadastrar Usuário'),
               onTap: () {
@@ -298,7 +306,10 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
         title: 'Registros',
         icon: Icons.list_alt,
         color: Colors.green.shade700,
-        onTap: () => _navigateWithTransition(context, ListaRegistrosScreen()),
+        onTap: () => _navigateWithTransition(
+          context,
+          ListaRegistrosScreen(conferente: widget.conferente),
+        ),
       ),
       _MenuItem(
         title: 'Localização',
@@ -392,23 +403,15 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
                           ),
                         ),
                         const SizedBox(width: 16),
-                        _buildHeaderIconButton(
-                          icon: Icons.system_update_alt,
-                          tooltip: 'Verificar atualização',
-                          onTap: () =>
-                              UpdateService.check(context, showMessages: true),
-                          color: Colors.green.shade700,
-                        ),
                         if (_isAdmin) ...[
-                          const SizedBox(width: 12),
                           _buildHeaderIconButton(
                             icon: CupertinoIcons.person_crop_circle,
-                            tooltip: 'Gerenciar usuários',
+                            tooltip: 'Usuários e Atualizar',
                             onTap: _showUserActionsSheet,
                             color: Colors.blueAccent,
                           ),
+                          const SizedBox(width: 12),
                         ],
-                        const SizedBox(width: 12),
                         _buildHeaderIconButton(
                           icon: Icons.logout,
                           tooltip: 'Sair',
