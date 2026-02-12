@@ -11,7 +11,6 @@ from datetime import datetime
 API_BASE = "http://168.190.90.2:5000"
 PRINTER_NAME = "EtqEmbalagem"
 POLL_INTERVAL = 2
-AGENT_ID = "STKDT047"
 
 LOG_DIR = r"C:\AgenteImpressao"
 LOG_FILE = os.path.join(LOG_DIR, "agente.log")
@@ -22,7 +21,6 @@ LOG_FILE = os.path.join(LOG_DIR, "agente.log")
 def log(msg):
     if not os.path.exists(LOG_DIR):
         os.makedirs(LOG_DIR)
-
     with open(LOG_FILE, "a", encoding="utf-8") as f:
         f.write(f"[{datetime.now().strftime('%d/%m/%Y %H:%M:%S')}] {msg}\n")
 
@@ -32,7 +30,6 @@ def log(msg):
 def imprimir_zpl(zpl, item_id):
     try:
         log(f"⏳ Enviando ID {item_id} para a impressora '{PRINTER_NAME}'")
-
         hPrinter = win32print.OpenPrinter(PRINTER_NAME)
         try:
             hJob = win32print.StartDocPrinter(
@@ -41,7 +38,8 @@ def imprimir_zpl(zpl, item_id):
                 (f"Etiqueta Zebra - ID {item_id}", None, "RAW")
             )
             win32print.StartPagePrinter(hPrinter)
-            win32print.WritePrinter(hPrinter, zpl.encode("utf-8"))
+            # Alterado para latin-1 para garantir integridade dos dados gráficos do ZPL
+            win32print.WritePrinter(hPrinter, zpl.encode("latin-1"))
             win32print.EndPagePrinter(hPrinter)
             win32print.EndDocPrinter(hPrinter)
             return True
@@ -55,7 +53,7 @@ def imprimir_zpl(zpl, item_id):
 # MAIN
 # ===============================
 def main():
-    log(f"🟢 Agente iniciado | Impressora: {PRINTER_NAME} | AgentID: {AGENT_ID}")
+    log(f"🟢 Agente iniciado v2 (Ack Mode) | Impressora: {PRINTER_NAME}")
 
     url_busca = f"{API_BASE}/consulta/wms/buscar_impressao"
 
@@ -65,7 +63,6 @@ def main():
 
             if resp.status_code == 200:
                 data = resp.json()
-
                 if not data:
                     time.sleep(POLL_INTERVAL)
                     continue
@@ -77,10 +74,22 @@ def main():
                 log(f"📥 Recebido: {endereco} (ID: {item_id})")
 
                 if zpl:
+                    # TENTA IMPRIMIR
                     if imprimir_zpl(zpl, item_id):
-                        log("✔️ Impressão concluída")
+                        log(f"✔️ Impressão enviada. Confirmando recebimento para deletar da fila...")
+                        
+                        # NOVO: Chamar a rota de confirmação (DELETE)
+                        url_confirmar = f"{API_BASE}/consulta/wms/confirmar_impressao/{item_id}"
+                        try:
+                            confirm_resp = requests.delete(url_confirmar, timeout=5)
+                            if confirm_resp.status_code == 200:
+                                log(f"🗑️ ID {item_id} removido da fila do servidor.")
+                            else:
+                                log(f"⚠️ Servidor não deletou {item_id}, pode imprimir duplicado.")
+                        except Exception as e:
+                            log(f"⚠️ Erro ao confirmar deleção: {e}")
                     else:
-                        log("⚠️ Falha no spooler")
+                        log(f"⚠️ Falha no spooler. O item {item_id} permanecerá na fila para tentar novamente.")
                 else:
                     log("🚫 ZPL vazio")
 

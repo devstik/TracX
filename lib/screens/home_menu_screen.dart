@@ -12,6 +12,8 @@ import 'package:tracx/screens/HistoricoMovimentacaoScreen.dart';
 import 'package:tracx/screens/RegistroPrincipalScreen.dart';
 import 'package:tracx/screens/MapaProducaoScreen.dart';
 import 'package:tracx/screens/ConsultaMapaProducaoScreen.dart';
+import 'package:tracx/screens/ApontamentoProdutividadeScreen.dart';
+import 'package:tracx/screens/RegistrosApontamento.dart';
 import 'package:tracx/services/estoque_db_helper.dart';
 import 'dart:math' as math;
 import 'dart:convert';
@@ -328,6 +330,20 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
           context,
           const ConsultaMapaProducaoScreen(),
         ),
+      ),
+      _MenuItem(
+        title: 'Apontamento',
+        icon: Icons.analytics_outlined,
+        color: Colors.deepPurple.shade600,
+        onTap: () =>
+            _navigateWithTransition(context, const ProducaoTabsScreen()),
+      ),
+      _MenuItem(
+        title: 'Registros Apontamento',
+        icon: Icons.analytics_outlined,
+        color: Colors.deepPurple.shade600,
+        onTap: () =>
+            _navigateWithTransition(context, const RegistrosApontamento()),
       ),
     ];
 
