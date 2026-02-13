@@ -5,30 +5,33 @@ import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import '../screens/ListaRegistrosScreen.dart';
-import '../screens/login_screen.dart';
 
 // =========================================================================
-// CORES E CONSTANTES
+// 🎨 PALETA OFICIAL (PADRÃO HOME + SPLASH)
 // =========================================================================
+const Color _kPrimaryColor = Color(0xFF2563EB); // Azul principal (moderno)
+const Color _kAccentColor = Color(0xFF60A5FA); // Azul claro premium
 
-const Color _kPrimaryColor = Color(
-  0xFFCD1818,
-); // Vermelho Principal (App Bar, Ações Principais, Ícones do Formulário)
-const Color _kAccentColor = Color(0xFF3A59D1); // Azul (Cantos do QR Scanner)
-const Color _kBackgroundColor = Color(0xFFF0F2F5); // Fundo Leve
-const Color _kInputFillColor = Colors.white; // Cor de preenchimento do input
+const Color _kBgTop = Color(0xFF050A14);
+const Color _kBgBottom = Color(0xFF0B1220);
+
+const Color _kSurface = Color(0xFF101B34);
+const Color _kSurface2 = Color(0xFF0F172A);
+
+const Color _kTextPrimary = Color(0xFFF9FAFB);
+const Color _kTextSecondary = Color(0xFF9CA3AF);
+
+// borda mais visível
+const Color _kBorderSoft = Color(0x33FFFFFF);
 
 // =========================================================================
 // CLASSES AUXILIARES ORIGINAIS
 // =========================================================================
 
-// Classe de controle de texto para data
 class DateTextController extends TextEditingController {
   DateTextController({String? text}) : super(text: text);
 }
 
-// Classe que formata a entrada de texto em tempo real para dd/mm/yy
 class DateTextFormatter extends TextInputFormatter {
   @override
   TextEditingValue formatEditUpdate(
@@ -43,9 +46,7 @@ class DateTextFormatter extends TextInputFormatter {
 
     String formattedText = '';
     for (int i = 0; i < newText.length; i++) {
-      if (i == 2 || i == 4) {
-        formattedText += '/';
-      }
+      if (i == 2 || i == 4) formattedText += '/';
       formattedText += newText[i];
     }
 
@@ -57,12 +58,12 @@ class DateTextFormatter extends TextInputFormatter {
 }
 
 // =========================================================================
-// TELA DE REGISTRO (ALTERADA)
+// TELA DE REGISTRO TINTURARIA (MODERNA / PADRÃO EMBALAGEM)
 // =========================================================================
 
 class RegistroScreenTinturaria extends StatefulWidget {
   final String conferente;
-  RegistroScreenTinturaria({required this.conferente});
+  const RegistroScreenTinturaria({required this.conferente, super.key});
 
   @override
   _RegistroScreenTinturariaState createState() =>
@@ -81,10 +82,8 @@ class _RegistroScreenTinturariaState extends State<RegistroScreenTinturaria> {
   final _conferenteController = TextEditingController();
   final _turnoController = TextEditingController();
 
-  DateTime? _data;
-  // Variável _formBloqueado removida.
-  // Novo estado para controlar se há dados de QR Code preenchidos (habilita Salvar).
   bool _camposPreenchidos = false;
+  DateTime? _data;
 
   @override
   void initState() {
@@ -114,6 +113,159 @@ class _RegistroScreenTinturariaState extends State<RegistroScreenTinturaria> {
     return 'Turno C';
   }
 
+  // =========================================================================
+  // UI PREMIUM HELPERS
+  // =========================================================================
+
+  Widget _buildGlassCard({required Widget child}) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(22),
+        gradient: LinearGradient(
+          colors: [_kSurface.withOpacity(0.92), _kSurface2.withOpacity(0.92)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        border: Border.all(color: _kBorderSoft),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.55),
+            blurRadius: 25,
+            offset: const Offset(0, 16),
+          ),
+        ],
+      ),
+      child: child,
+    );
+  }
+
+  Widget _buildSectionTitle(String title, IconData icon) {
+    return Row(
+      children: [
+        Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+            color: _kPrimaryColor.withOpacity(0.15),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: _kBorderSoft),
+          ),
+          child: Icon(icon, color: _kAccentColor, size: 20),
+        ),
+        const SizedBox(width: 12),
+        Text(
+          title,
+          style: const TextStyle(
+            color: _kTextPrimary,
+            fontSize: 16,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.2,
+          ),
+        ),
+      ],
+    );
+  }
+
+  InputDecoration _getInputDecoration(String label, IconData icon) {
+    return InputDecoration(
+      labelText: label,
+      labelStyle: const TextStyle(
+        color: _kTextSecondary,
+        fontSize: 13,
+        fontWeight: FontWeight.w600,
+      ),
+      floatingLabelStyle: const TextStyle(
+        color: _kAccentColor,
+        fontWeight: FontWeight.w800,
+      ),
+      prefixIcon: Icon(icon, color: _kTextSecondary, size: 20),
+      filled: true,
+      fillColor: _kSurface2.withOpacity(0.90),
+
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(18),
+        borderSide: const BorderSide(color: _kBorderSoft),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(18),
+        borderSide: const BorderSide(color: _kAccentColor, width: 1.6),
+      ),
+      disabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(18),
+        borderSide: const BorderSide(color: _kBorderSoft),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(18),
+        borderSide: BorderSide(color: Colors.red.shade300, width: 1.2),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(18),
+        borderSide: BorderSide(color: Colors.red.shade300, width: 1.2),
+      ),
+
+      contentPadding: const EdgeInsets.symmetric(vertical: 18, horizontal: 18),
+    );
+  }
+
+  Widget _buildTextField(
+    TextEditingController controller,
+    String label,
+    IconData icon, {
+    TextInputType keyboardType = TextInputType.text,
+    List<TextInputFormatter>? inputFormatters,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: TextFormField(
+        controller: controller,
+        enabled: false, // sempre bloqueado
+        keyboardType: keyboardType,
+        inputFormatters: inputFormatters,
+        style: const TextStyle(
+          color: _kTextPrimary,
+          fontSize: 14,
+          fontWeight: FontWeight.w700,
+        ),
+        decoration: _getInputDecoration(label, icon),
+        validator: (value) =>
+            value == null || value.isEmpty ? 'Campo obrigatório' : null,
+      ),
+    );
+  }
+
+  Widget _buildBadge(IconData icon, String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        gradient: LinearGradient(
+          colors: [_kSurface.withOpacity(0.9), _kSurface2.withOpacity(0.9)],
+        ),
+        border: Border.all(color: _kBorderSoft),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 18, color: _kAccentColor),
+          const SizedBox(width: 10),
+          Text(
+            text,
+            style: const TextStyle(
+              color: _kTextPrimary,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // =========================================================================
+  // FUNÇÕES PRINCIPAIS
+  // =========================================================================
+
   Future<void> _scanQR() async {
     try {
       final qr = await Navigator.push<QrCodeDataTinturaria>(
@@ -125,7 +277,6 @@ class _RegistroScreenTinturariaState extends State<RegistroScreenTinturaria> {
       );
 
       if (qr != null && mounted) {
-        // Verifique se o widget ainda está montado
         setState(() {
           _nomeMaterialController.text = qr.nomeMaterial;
           _larguraCruaController.text = qr.larguraCrua;
@@ -133,18 +284,20 @@ class _RegistroScreenTinturariaState extends State<RegistroScreenTinturaria> {
           _nMaquinaController.text = qr.nMaquina;
           _dataCorteController.text = qr.dataCorte;
           _loteElasticoController.text = qr.loteElastico;
-          // Altera o estado para habilitar o botão Salvar
           _camposPreenchidos = true;
         });
       }
     } catch (e) {
-      print('Erro ao escanear QR Code: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Erro ao ler QR Code. Tente novamente.'),
-            backgroundColor: Colors.red,
-            duration: Duration(seconds: 2),
+          SnackBar(
+            content: const Text('Erro ao ler QR Code. Tente novamente.'),
+            backgroundColor: Colors.red.shade700,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+            margin: const EdgeInsets.all(16),
           ),
         );
       }
@@ -152,7 +305,6 @@ class _RegistroScreenTinturariaState extends State<RegistroScreenTinturaria> {
   }
 
   void _salvarRegistro() async {
-    // Verifica se os campos estão preenchidos (via QR Code) e se o formulário é válido
     if (_formKey.currentState!.validate() &&
         _data != null &&
         _camposPreenchidos) {
@@ -169,7 +321,6 @@ class _RegistroScreenTinturariaState extends State<RegistroScreenTinturaria> {
 
       await enviarRegistroParaAPI(registro);
 
-      // Limpa os campos preenchidos pelo QR Code
       _nomeMaterialController.clear();
       _larguraCruaController.clear();
       _elasticidadeCruaController.clear();
@@ -177,7 +328,6 @@ class _RegistroScreenTinturariaState extends State<RegistroScreenTinturaria> {
       _dataCorteController.clear();
       _loteElasticoController.clear();
 
-      // Desabilita o botão Salvar novamente para aguardar a próxima leitura
       setState(() {
         _camposPreenchidos = false;
       });
@@ -195,247 +345,136 @@ class _RegistroScreenTinturariaState extends State<RegistroScreenTinturaria> {
           .timeout(const Duration(seconds: 60));
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        print("✅ Sucesso na API: ${response.statusCode} - ${response.body}");
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Registro salvo com sucesso!'),
-              backgroundColor: Colors.green,
-              duration: Duration(seconds: 2),
+            SnackBar(
+              content: const Text('Registro salvo com sucesso!'),
+              backgroundColor: Colors.green.shade700,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+              margin: const EdgeInsets.all(16),
             ),
           );
         }
       } else {
-        print("❌ Erro na API: ${response.statusCode} - ${response.body}");
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Erro ao salvar registro: ${response.statusCode}'),
-              backgroundColor: _kPrimaryColor,
-              duration: const Duration(seconds: 3),
+              backgroundColor: Colors.red.shade700,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+              margin: const EdgeInsets.all(16),
             ),
           );
         }
       }
-    } catch (e) {
-      print("❌ Exceção ao enviar registro: $e");
+    } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Erro de conexão ao salvar registro.'),
-            backgroundColor: _kPrimaryColor,
-            duration: Duration(seconds: 3),
+          SnackBar(
+            content: const Text('Erro de conexão ao salvar registro.'),
+            backgroundColor: Colors.red.shade700,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+            margin: const EdgeInsets.all(16),
           ),
         );
       }
     }
   }
 
-  // Função centralizada para estilizar a decoração dos inputs
-  InputDecoration _getInputDecoration(
-    String label,
-    IconData icon, {
-    bool enabled = true,
-  }) {
-    return InputDecoration(
-      labelText: label,
-      hintText: 'Informe o $label',
-      prefixIcon: Icon(
-        icon,
-        color: enabled ? _kPrimaryColor : Colors.grey.shade400,
-      ),
-      filled: true,
-      fillColor: enabled ? _kInputFillColor : Colors.grey.shade200,
-      enabled: enabled,
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10.0),
-        borderSide: BorderSide(
-          color: enabled ? Colors.grey.shade300 : Colors.grey.shade400,
-        ),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10.0),
-        borderSide: const BorderSide(color: _kPrimaryColor, width: 2.0),
-      ),
-      errorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10.0),
-        borderSide: const BorderSide(color: _kPrimaryColor, width: 2.0),
-      ),
-      disabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10.0),
-        borderSide: BorderSide(color: Colors.grey.shade400),
-      ),
-      contentPadding: const EdgeInsets.symmetric(
-        vertical: 15.0,
-        horizontal: 10.0,
-      ),
-      floatingLabelStyle: TextStyle(
-        color: enabled ? _kPrimaryColor : Colors.grey.shade600,
-        fontWeight: FontWeight.bold,
-      ),
-      counterText: '',
-    );
-  }
-
-  // WIDGET: CAMPO DE TEXTO
-  Widget _buildTextField(
-    TextEditingController controller,
-    String label,
-    IconData icon, {
-    TextInputType keyboardType = TextInputType.text,
-    int? maxLength,
-    // Definido como false (bloqueado) por padrão, conforme solicitado.
-    bool enabled = false,
-    List<TextInputFormatter>? inputFormatters,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 0.0, vertical: 8.0),
-      child: TextFormField(
-        controller: controller,
-        enabled: enabled, // Sempre false para bloqueio
-        maxLength: maxLength,
-        inputFormatters: inputFormatters,
-        style: TextStyle(
-          // Cor do texto ajustada para campos desabilitados
-          color: enabled ? Colors.black87 : Colors.grey.shade700,
-        ),
-        keyboardType: keyboardType,
-        decoration: _getInputDecoration(label, icon, enabled: enabled),
-        // Validação verifica se o campo foi preenchido (pelo QR Code)
-        validator: (value) => value == null || value.isEmpty
-            ? 'O campo $label é obrigatório.'
-            : null,
-      ),
-    );
-  }
-
-  // WIDGET: INFORMAÇÕES DE RODAPÉ
-  Widget _buildFooterInfo() {
-    return Padding(
-      padding: const EdgeInsets.only(top: 10.0, bottom: 20.0),
-      child: Container(
-        padding: const EdgeInsets.all(15),
-        decoration: BoxDecoration(
-          color: _kInputFillColor,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: Colors.grey.shade200),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.grey.withOpacity(0.2),
-              spreadRadius: 1,
-              blurRadius: 5,
-              offset: const Offset(0, 3),
-            ),
-          ],
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Row(
-              children: [
-                const Icon(
-                  Icons.person_outline,
-                  size: 20,
-                  color: _kPrimaryColor,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  'Conferente: ${widget.conferente}',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15,
-                    color: Colors.black87,
-                  ),
-                ),
-              ],
-            ),
-            Row(
-              children: [
-                const Icon(Icons.access_time, size: 20, color: _kPrimaryColor),
-                const SizedBox(width: 8),
-                Text(
-                  'Turno: ${_getTurno()}',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15,
-                    color: Colors.black87,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  // =========================================================================
+  // UI BUILD
+  // =========================================================================
 
   Widget _buildFormulario() {
     return SingleChildScrollView(
-      child: Padding(
-        padding: const EdgeInsets.all(20.0), // Ajuste de padding
+      padding: const EdgeInsets.all(18),
+      child: Form(
+        key: _formKey,
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Botão de QR Code
-            Padding(
-              padding: const EdgeInsets.only(top: 0.0, bottom: 20.0),
-              child: ElevatedButton.icon(
-                onPressed: _scanQR,
-                icon: const Icon(Icons.qr_code_scanner),
-                label: const Text(
-                  'Ler QR Code',
-                  style: TextStyle(fontSize: 18),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _kPrimaryColor, // Cor Principal
-                  foregroundColor: Colors.white,
-                  minimumSize: const Size(double.infinity, 50),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10.0),
+            _buildGlassCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildSectionTitle("Leitura", Icons.qr_code_scanner_rounded),
+                  const SizedBox(height: 16),
+
+                  SizedBox(
+                    height: 56,
+                    child: ElevatedButton.icon(
+                      onPressed: _scanQR,
+                      icon: const Icon(Icons.qr_code_scanner_rounded),
+                      label: const Text(
+                        "LER QR CODE",
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 0.8,
+                        ),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        elevation: 0,
+                        backgroundColor: _kPrimaryColor,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                      ),
+                    ),
                   ),
-                  padding: const EdgeInsets.symmetric(vertical: 15),
-                  elevation: 5,
-                ),
+                ],
               ),
             ),
-            Form(
-              key: _formKey,
+
+            const SizedBox(height: 18),
+
+            _buildGlassCard(
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Campos do formulário (sempre bloqueados/desabilitados)
+                  _buildSectionTitle(
+                    "Dados do Material",
+                    Icons.inventory_2_outlined,
+                  ),
+                  const SizedBox(height: 18),
+
                   _buildTextField(
                     _nomeMaterialController,
                     'Nome do Material',
                     Icons.texture,
-                    enabled: false, // BLOQUEADO
                   ),
                   _buildTextField(
                     _larguraCruaController,
                     'Largura Crua',
                     Icons.straighten,
                     keyboardType: TextInputType.number,
-                    enabled: false, // BLOQUEADO
                   ),
                   _buildTextField(
                     _elasticidadeCruaController,
                     'Elasticidade Crua',
                     Icons.compare_arrows,
                     keyboardType: TextInputType.number,
-                    enabled: false, // BLOQUEADO
                   ),
                   _buildTextField(
                     _nMaquinaController,
                     'Número da Máquina',
-                    Icons.precision_manufacturing,
+                    Icons.precision_manufacturing_outlined,
                     keyboardType: TextInputType.number,
-                    enabled: false, // BLOQUEADO
                   ),
                   _buildTextField(
                     _dataCorteController,
                     'Data de Corte',
-                    Icons.calendar_today,
+                    Icons.calendar_month_outlined,
                     keyboardType: TextInputType.datetime,
-                    enabled: false, // BLOQUEADO
                     inputFormatters: [
                       FilteringTextInputFormatter.digitsOnly,
                       DateTextFormatter(),
@@ -444,48 +483,63 @@ class _RegistroScreenTinturariaState extends State<RegistroScreenTinturaria> {
                   _buildTextField(
                     _loteElasticoController,
                     'Lote Elástico',
-                    Icons.category,
-                    enabled: false, // BLOQUEADO
+                    Icons.category_outlined,
                   ),
 
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 18),
 
-                  // Botão Salvar
                   SizedBox(
-                    width: double.infinity,
+                    height: 56,
                     child: ElevatedButton.icon(
-                      // Habilita o botão apenas se os campos foram preenchidos
                       onPressed: _camposPreenchidos ? _salvarRegistro : null,
+                      icon: const Icon(Icons.save_rounded),
+                      label: const Text(
+                        "SALVAR REGISTRO",
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 0.8,
+                        ),
+                      ),
                       style: ElevatedButton.styleFrom(
+                        elevation: 0,
                         backgroundColor: _kPrimaryColor,
                         foregroundColor: Colors.white,
-                        minimumSize: const Size(double.infinity, 50),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10.0),
+                        disabledBackgroundColor: _kPrimaryColor.withOpacity(
+                          0.35,
                         ),
-                        padding: const EdgeInsets.symmetric(vertical: 15),
-                        elevation: 5,
-                        // Estilo para desativado
-                        disabledBackgroundColor: Colors.grey.shade400,
-                        disabledForegroundColor: Colors.grey.shade700,
-                      ),
-                      icon: const Icon(Icons.save),
-                      label: const Text(
-                        'Salvar Registro',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
+                        disabledForegroundColor: Colors.white70,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(18),
                         ),
                       ),
                     ),
                   ),
-                  const SizedBox(height: 16),
-
-                  // Informações de Rodapé
-                  _buildFooterInfo(),
                 ],
               ),
             ),
+
+            const SizedBox(height: 18),
+
+            Row(
+              children: [
+                Expanded(
+                  child: _buildBadge(
+                    Icons.person_outline_rounded,
+                    "Conferente: ${widget.conferente}",
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildBadge(
+                    Icons.access_time_rounded,
+                    "Turno: ${_getTurno()}",
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 22),
           ],
         ),
       ),
@@ -495,15 +549,23 @@ class _RegistroScreenTinturariaState extends State<RegistroScreenTinturaria> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _kBackgroundColor,
-      body:
-          _buildFormulario(), // <--- Alterado para chamar diretamente o formulário
+      backgroundColor: _kBgBottom,
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [_kBgTop, _kBgBottom],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+        ),
+        child: SafeArea(child: _buildFormulario()),
+      ),
     );
   }
 }
 
 // =========================================================================
-// WIDGET: SCANNER DE QR CODE
+// SCANNER DE QR CODE (PADRÃO PREMIUM)
 // =========================================================================
 
 class QrScannerPage extends StatefulWidget {
@@ -521,52 +583,41 @@ class _QrScannerPageState extends State<QrScannerPage> {
     torchEnabled: false,
   );
 
-  bool _isProcessing = false; // Previne múltiplas leituras
+  bool _isProcessing = false;
 
   QrCodeDataTinturaria? _parseQrCode(String? qrCode) {
-    if (qrCode == null || qrCode.isEmpty) {
-      return null;
-    }
+    if (qrCode == null || qrCode.isEmpty) return null;
 
     try {
       final Map<String, dynamic> jsonMap = jsonDecode(qrCode);
-      final qrData = QrCodeDataTinturaria.fromJson(jsonMap);
-      return qrData;
-    } catch (e) {
-      print('Erro ao decodificar QR Code como JSON: $e');
+      return QrCodeDataTinturaria.fromJson(jsonMap);
+    } catch (_) {
       return null;
     }
   }
 
   void _handleQrCodeDetected(QrCodeDataTinturaria qrData) async {
-    if (_isProcessing) return; // Previne múltiplas execuções
+    if (_isProcessing) return;
 
-    setState(() {
-      _isProcessing = true;
-    });
+    setState(() => _isProcessing = true);
 
-    // Feedback visual
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Row(
+      SnackBar(
+        content: const Row(
           children: [
             Icon(Icons.check_circle, color: Colors.white),
             SizedBox(width: 10),
             Text('QR Code detectado!'),
           ],
         ),
-        backgroundColor: Colors.green,
-        duration: Duration(seconds: 1),
+        backgroundColor: Colors.green.shade700,
+        duration: const Duration(seconds: 1),
       ),
     );
 
-    // Pequeno delay para dar feedback visual
-    await Future.delayed(const Duration(milliseconds: 500));
+    await Future.delayed(const Duration(milliseconds: 400));
 
-    if (mounted) {
-      // Retorna os dados para a tela anterior
-      Navigator.of(context).pop(qrData);
-    }
+    if (mounted) Navigator.of(context).pop(qrData);
   }
 
   @override
@@ -577,27 +628,30 @@ class _QrScannerPageState extends State<QrScannerPage> {
 
   @override
   Widget build(BuildContext context) {
-    const double scannerSize = 250.0;
+    const double scannerSize = 260.0;
 
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
         centerTitle: true,
-        title: const Text('Escanear QR Code'),
+        title: const Text(
+          'Escanear QR Code',
+          style: TextStyle(fontWeight: FontWeight.w700),
+        ),
         backgroundColor: _kPrimaryColor,
         foregroundColor: Colors.white,
+        elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
+          icon: const Icon(Icons.arrow_back_rounded),
           onPressed: () => Navigator.of(context).pop(),
         ),
       ),
       body: Stack(
         children: [
-          // 1. Scanner de Câmera (Fundo)
           MobileScanner(
             controller: _cameraController,
             onDetect: (capture) {
-              if (_isProcessing) return; // Ignora se já está processando
+              if (_isProcessing) return;
 
               final List<Barcode> barcodes = capture.barcodes;
               if (barcodes.isNotEmpty) {
@@ -607,18 +661,17 @@ class _QrScannerPageState extends State<QrScannerPage> {
                   if (qrData != null) {
                     _handleQrCodeDetected(qrData);
                   } else {
-                    // Feedback de QR Code inválido
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Row(
+                      SnackBar(
+                        content: const Row(
                           children: [
                             Icon(Icons.error, color: Colors.white),
                             SizedBox(width: 10),
                             Text('QR Code inválido ou incompleto!'),
                           ],
                         ),
-                        backgroundColor: _kPrimaryColor,
-                        duration: Duration(seconds: 2),
+                        backgroundColor: Colors.red.shade700,
+                        duration: const Duration(seconds: 2),
                       ),
                     );
                   }
@@ -627,10 +680,9 @@ class _QrScannerPageState extends State<QrScannerPage> {
             },
           ),
 
-          // 2. Overlay de Fundo Escuro com Recorte
           ColorFiltered(
             colorFilter: ColorFilter.mode(
-              Colors.black.withOpacity(0.6),
+              Colors.black.withOpacity(0.65),
               BlendMode.srcOut,
             ),
             child: Stack(
@@ -648,7 +700,7 @@ class _QrScannerPageState extends State<QrScannerPage> {
                     height: scannerSize,
                     decoration: BoxDecoration(
                       color: Colors.red,
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: BorderRadius.circular(18),
                     ),
                   ),
                 ),
@@ -656,7 +708,6 @@ class _QrScannerPageState extends State<QrScannerPage> {
             ),
           ),
 
-          // 3. Pintura dos Cantos
           Center(
             child: CustomPaint(
               size: const Size(scannerSize, scannerSize),
@@ -664,38 +715,35 @@ class _QrScannerPageState extends State<QrScannerPage> {
             ),
           ),
 
-          // 4. Instrução de texto
           const Align(
             alignment: Alignment.bottomCenter,
             child: Padding(
-              padding: EdgeInsets.only(bottom: 40.0),
+              padding: EdgeInsets.only(bottom: 46.0),
               child: Text(
                 'Posicione o QR Code dentro do quadro',
                 style: TextStyle(
                   color: Colors.white,
-                  fontSize: 16,
+                  fontSize: 14,
                   backgroundColor: Color(0xAA000000),
-                  fontWeight: FontWeight.w500,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ),
           ),
 
-          // 5. Botão de Lanterna
           Align(
             alignment: Alignment.topCenter,
             child: Padding(
-              padding: const EdgeInsets.only(top: 20.0),
+              padding: const EdgeInsets.only(top: 18.0),
               child: _TorchButton(controller: _cameraController),
             ),
           ),
 
-          // 6. Indicador de processamento
           if (_isProcessing)
             Container(
               color: Colors.black54,
               child: const Center(
-                child: CircularProgressIndicator(color: _kPrimaryColor),
+                child: CircularProgressIndicator(color: _kAccentColor),
               ),
             ),
         ],
@@ -716,9 +764,7 @@ class _TorchButtonState extends State<_TorchButton> {
   bool isTorchOn = false;
 
   void _toggleTorch() {
-    setState(() {
-      isTorchOn = !isTorchOn;
-    });
+    setState(() => isTorchOn = !isTorchOn);
     widget.controller.toggleTorch();
   }
 
@@ -728,7 +774,7 @@ class _TorchButtonState extends State<_TorchButton> {
       decoration: BoxDecoration(
         color: Colors.black54,
         borderRadius: BorderRadius.circular(30),
-        border: Border.all(color: Colors.white, width: 2),
+        border: Border.all(color: Colors.white.withOpacity(0.6), width: 1.5),
       ),
       child: IconButton(
         icon: Icon(
@@ -743,7 +789,6 @@ class _TorchButtonState extends State<_TorchButton> {
   }
 }
 
-// WIDGET: PINTURA DOS CANTOS
 class _QrScannerCornersPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
@@ -751,15 +796,13 @@ class _QrScannerCornersPainter extends CustomPainter {
       ..color = _kAccentColor
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round
-      ..strokeWidth = 5.0;
+      ..strokeWidth = 5.2;
 
     final cornerLength = size.width / 5;
 
-    // Top-Left
     canvas.drawLine(const Offset(0, 0), Offset(cornerLength, 0), paint);
     canvas.drawLine(const Offset(0, 0), Offset(0, cornerLength), paint);
 
-    // Top-Right
     canvas.drawLine(
       Offset(size.width - cornerLength, 0),
       Offset(size.width, 0),
@@ -771,7 +814,6 @@ class _QrScannerCornersPainter extends CustomPainter {
       paint,
     );
 
-    // Bottom-Left
     canvas.drawLine(
       Offset(0, size.height),
       Offset(cornerLength, size.height),
@@ -783,7 +825,6 @@ class _QrScannerCornersPainter extends CustomPainter {
       paint,
     );
 
-    // Bottom-Right
     canvas.drawLine(
       Offset(size.width - cornerLength, size.height),
       Offset(size.width, size.height),
@@ -797,7 +838,5 @@ class _QrScannerCornersPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) {
-    return false;
-  }
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

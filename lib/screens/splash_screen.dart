@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:tracx/screens/login_screen.dart'; // Importação adicionada
+import 'package:tracx/screens/login_screen.dart';
 import 'package:intl/intl.dart';
 import 'package:tracx/services/SyncService.dart';
 import 'ConsultaMapaProducaoScreen.dart';
@@ -10,7 +10,6 @@ import 'package:tracx/services/estoque_db_helper.dart';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -29,56 +28,84 @@ class _SplashScreenState extends State<SplashScreen>
   bool _updateOk = true;
 
   late final AnimationController _mainController;
-  late final AnimationController _rotationController;
-  late final AnimationController _particlesController;
+  late final AnimationController _shimmerController;
   late final AnimationController _pulseController;
 
-  late final Animation<double> _logoReveal;
+  late final Animation<double> _logoScale;
+  late final Animation<double> _logoOpacity;
   late final Animation<double> _letterS;
   late final Animation<double> _letterT;
   late final Animation<double> _letterI;
   late final Animation<double> _letterK;
-  late final Animation<double> _glowIntensity;
+  late final Animation<double> _lineExpand;
+  late final Animation<double> _textFade;
   late final Animation<double> _contentFade;
 
-  // FUNÇÃO ATUALIZADA: Verifica as credenciais salvas para definir a próxima tela.
+  // CORES CORPORATIVAS
+  static const Color bg = Color(0xFF050A14);
+  static const Color surface = Color(0xFF0B1220);
+  static const Color surface2 = Color(0xFF101B34);
+  static const Color primary = Color(0xFF4DA3FF);
+  static const Color accent = Color(0xFF5EF7C5);
+  static const Color danger = Color(0xFFFF5C8A);
+  static const Color borderSoft = Color(0x18FFFFFF);
 
   void _showUpdateDialog({required bool force, required String apkUrl}) {
     showDialog(
       context: context,
-      barrierDismissible: !force, // 🔒 bloqueia se for forçado
+      barrierDismissible: !force,
       builder: (context) {
         return WillPopScope(
           onWillPop: () async => !force,
           child: AlertDialog(
-            title: const Text('Atualização disponível'),
+            backgroundColor: surface2,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(22),
+            ),
+            title: const Text(
+              'Atualização disponível',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
             content: Text(
               force
-                  ? 'Esta versão do aplicativo não é mais suportada. '
-                        'Atualize para continuar.'
-                  : 'Existe uma nova versão disponível. '
-                        'Deseja atualizar agora?',
+                  ? 'Esta versão do aplicativo não é mais suportada.\nAtualize para continuar.'
+                  : 'Existe uma nova versão disponível.\nDeseja atualizar agora?',
+              style: const TextStyle(color: Colors.white70, height: 1.4),
             ),
             actions: [
               if (!force)
                 TextButton(
                   onPressed: () {
                     Navigator.of(context).pop();
-
-                    // Permite seguir para o app
                     _updateOk = true;
                     _tryNavigate();
                   },
-                  child: const Text('Depois'),
+                  child: const Text(
+                    'Depois',
+                    style: TextStyle(color: Colors.white70),
+                  ),
                 ),
               ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: primary,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
                 onPressed: () async {
                   final uri = Uri.parse(apkUrl);
                   if (await canLaunchUrl(uri)) {
                     await launchUrl(uri, mode: LaunchMode.externalApplication);
                   }
                 },
-                child: const Text('Atualizar'),
+                child: const Text(
+                  'Atualizar',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
               ),
             ],
           ),
@@ -93,77 +120,81 @@ class _SplashScreenState extends State<SplashScreen>
 
     _sincronizarHistoricoCompleto();
 
-    // 2. Mantém suas animações existentes
     _mainController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 3500),
+      duration: const Duration(milliseconds: 3200),
     );
 
-    _rotationController = AnimationController(
+    _shimmerController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 20000),
-    )..repeat();
-
-    _particlesController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 8000),
+      duration: const Duration(milliseconds: 2500),
     )..repeat();
 
     _pulseController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 2000),
+      duration: const Duration(milliseconds: 1800),
     )..repeat(reverse: true);
 
-    // Revelação dos círculos
-    _logoReveal = Tween<double>(begin: 0.0, end: 1.0).animate(
+    _logoScale = Tween<double>(begin: 0.85, end: 1.0).animate(
       CurvedAnimation(
         parent: _mainController,
         curve: const Interval(0.0, 0.4, curve: Curves.easeOutCubic),
       ),
     );
 
-    // Cada letra aparece individualmente em cascata
+    _logoOpacity = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _mainController,
+        curve: const Interval(0.0, 0.35, curve: Curves.easeIn),
+      ),
+    );
+
     _letterS = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
         parent: _mainController,
-        curve: const Interval(0.3, 0.5, curve: Curves.easeOutBack),
+        curve: const Interval(0.20, 0.45, curve: Curves.easeOutCubic),
       ),
     );
 
     _letterT = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
         parent: _mainController,
-        curve: const Interval(0.4, 0.6, curve: Curves.easeOutBack),
+        curve: const Interval(0.30, 0.55, curve: Curves.easeOutCubic),
       ),
     );
 
     _letterI = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
         parent: _mainController,
-        curve: const Interval(0.5, 0.7, curve: Curves.easeOutBack),
+        curve: const Interval(0.40, 0.65, curve: Curves.easeOutCubic),
       ),
     );
 
     _letterK = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
         parent: _mainController,
-        curve: const Interval(0.6, 0.8, curve: Curves.easeOutBack),
+        curve: const Interval(0.50, 0.75, curve: Curves.easeOutCubic),
       ),
     );
 
-    // Intensidade do brilho
-    _glowIntensity = Tween<double>(begin: 0.0, end: 1.0).animate(
+    _lineExpand = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
         parent: _mainController,
-        curve: const Interval(0.2, 0.6, curve: Curves.easeInOut),
+        curve: const Interval(0.60, 0.85, curve: Curves.easeOutCubic),
       ),
     );
 
-    // Fade do conteúdo inferior
+    _textFade = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _mainController,
+        curve: const Interval(0.65, 0.90, curve: Curves.easeOut),
+      ),
+    );
+
     _contentFade = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
         parent: _mainController,
-        curve: const Interval(0.7, 0.9, curve: Curves.easeIn),
+        curve: const Interval(0.75, 1.0, curve: Curves.easeIn),
       ),
     );
 
@@ -180,7 +211,7 @@ class _SplashScreenState extends State<SplashScreen>
   void _tryNavigate() async {
     if (!_animationFinished || !_updateOk) return;
 
-    await Future.delayed(const Duration(milliseconds: 3500));
+    await Future.delayed(const Duration(milliseconds: 1600));
     if (!mounted) return;
 
     Navigator.pushReplacement(
@@ -192,54 +223,47 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   void dispose() {
     _mainController.dispose();
-    _rotationController.dispose();
-    _particlesController.dispose();
+    _shimmerController.dispose();
     _pulseController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    const primaryColor = Color(0xFFb41c1c);
-    const accentColor = Color(0xFFd32f2f);
     final screenSize = MediaQuery.of(context).size;
 
     return Scaffold(
+      backgroundColor: bg,
       body: Container(
         width: double.infinity,
         height: double.infinity,
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Colors.white,
-              const Color(0xFFFCFCFC),
-              const Color(0xFFFAFAFA),
-              primaryColor.withOpacity(0.02),
-            ],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [const Color(0xFF0B1220), bg, const Color(0xFF050A14)],
+            stops: const [0.0, 0.5, 1.0],
           ),
         ),
         child: Stack(
           children: [
-            // Padrão de grid sutil
-            CustomPaint(
-              size: screenSize,
-              painter: _GridPainter(color: primaryColor),
-            ),
+            // Grid corporativo minimalista
+            CustomPaint(size: screenSize, painter: _MinimalGridPainter()),
 
-            // Partículas flutuantes
-            AnimatedBuilder(
-              animation: _particlesController,
-              builder: (context, child) {
-                return CustomPaint(
-                  size: screenSize,
-                  painter: _EnhancedParticlesPainter(
-                    animation: _particlesController.value,
-                    color: primaryColor,
+            // Glow suave de fundo
+            Positioned(
+              top: screenSize.height * 0.25,
+              left: screenSize.width * 0.5 - 300,
+              child: Container(
+                width: 600,
+                height: 600,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(
+                    colors: [primary.withOpacity(0.08), Colors.transparent],
                   ),
-                );
-              },
+                ),
+              ),
             ),
 
             // Conteúdo principal
@@ -247,290 +271,257 @@ class _SplashScreenState extends State<SplashScreen>
               child: AnimatedBuilder(
                 animation: Listenable.merge([
                   _mainController,
-                  _rotationController,
+                  _shimmerController,
                   _pulseController,
                 ]),
                 builder: (context, child) {
                   return Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      // Logo com anéis rotativos
-                      Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          // Anel externo rotativo
-                          Transform.scale(
-                            scale: _logoReveal.value,
-                            child: Transform.rotate(
-                              angle: _rotationController.value * 2 * math.pi,
-                              child: Container(
-                                width: 320,
-                                height: 320,
+                      // Logo STIK Corporativo
+                      Transform.scale(
+                        scale: _logoScale.value,
+                        child: Opacity(
+                          opacity: _logoOpacity.value,
+                          child: Column(
+                            children: [
+                              // Container com as letras STIK
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 32,
+                                  vertical: 24,
+                                ),
                                 decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
+                                  color: surface.withOpacity(0.4),
+                                  borderRadius: BorderRadius.circular(20),
                                   border: Border.all(
-                                    color: primaryColor.withOpacity(0.08),
+                                    color: primary.withOpacity(0.15),
                                     width: 1,
                                   ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.3),
+                                      blurRadius: 30,
+                                      spreadRadius: 5,
+                                    ),
+                                  ],
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    _buildCorporateLetter('S', _letterS.value),
+                                    const SizedBox(width: 4),
+                                    _buildCorporateLetter('T', _letterT.value),
+                                    const SizedBox(width: 4),
+                                    _buildCorporateLetter('I', _letterI.value),
+                                    const SizedBox(width: 4),
+                                    _buildCorporateLetter('K', _letterK.value),
+                                  ],
                                 ),
                               ),
-                            ),
-                          ),
 
-                          // Anel médio contra-rotativo
-                          Transform.scale(
-                            scale: _logoReveal.value,
-                            child: Transform.rotate(
-                              angle: -_rotationController.value * 1.5 * math.pi,
-                              child: Container(
-                                width: 260,
-                                height: 260,
+                              // Linha decorativa animada
+                              SizedBox(
+                                height: 40,
+                                child: Stack(
+                                  alignment: Alignment.center,
+                                  children: [
+                                    // Linha base
+                                    Container(
+                                      width: 180,
+                                      height: 1,
+                                      color: Colors.white.withOpacity(0.1),
+                                    ),
+                                    // Linha animada com gradiente
+                                    AnimatedBuilder(
+                                      animation: _lineExpand,
+                                      builder: (context, child) {
+                                        return Container(
+                                          width: 180 * _lineExpand.value,
+                                          height: 2,
+                                          decoration: BoxDecoration(
+                                            gradient: LinearGradient(
+                                              colors: [
+                                                Colors.transparent,
+                                                primary,
+                                                accent,
+                                                Colors.transparent,
+                                              ],
+                                              stops: const [0.0, 0.4, 0.6, 1.0],
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                      // TracX Badge
+                      Opacity(
+                        opacity: _textFade.value.clamp(0.0, 1.0),
+                        child: Transform.translate(
+                          offset: Offset(0, (1 - _textFade.value) * 15),
+                          child: Column(
+                            children: [
+                              // Nome do produto
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 28,
+                                  vertical: 12,
+                                ),
                                 decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
+                                  borderRadius: BorderRadius.circular(30),
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      primary.withOpacity(0.15),
+                                      accent.withOpacity(0.12),
+                                    ],
+                                  ),
                                   border: Border.all(
-                                    color: accentColor.withOpacity(0.12),
+                                    color: primary.withOpacity(0.3),
                                     width: 1.5,
                                   ),
                                 ),
-                              ),
-                            ),
-                          ),
-
-                          // Círculo de fundo com gradiente e animação suave (Ponto 2)
-                          Transform.scale(
-                            scale: _logoReveal.value,
-                            child: Transform.rotate(
-                              // Animação de rotação suave adicionada
-                              angle: _pulseController.value * 0.05 * math.pi,
-                              child: Container(
-                                width: 200,
-                                height: 200,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  gradient: RadialGradient(
-                                    colors: [
-                                      primaryColor.withOpacity(0.15),
-                                      primaryColor.withOpacity(0.08),
-                                      primaryColor.withOpacity(0.02),
-                                      Colors.transparent,
-                                    ],
-                                    stops: const [0.0, 0.4, 0.7, 1.0],
+                                child: const Text(
+                                  'TracX',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 3,
+                                    color: Colors.white,
                                   ),
                                 ),
                               ),
-                            ),
-                          ),
 
-                          // Pulso de brilho
-                          Transform.scale(
-                            scale:
-                                _logoReveal.value *
-                                (1.0 + _pulseController.value * 0.05),
-                            child: Container(
-                              width: 180,
-                              height: 180,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: primaryColor.withOpacity(
-                                      (0.15 *
-                                              _glowIntensity.value *
-                                              (0.7 +
-                                                  _pulseController.value * 0.3))
-                                          .clamp(0.0, 1.0),
-                                    ),
-                                    blurRadius:
-                                        40 *
-                                        (0.7 + _pulseController.value * 0.3),
-                                    spreadRadius:
-                                        10 *
-                                        (0.7 + _pulseController.value * 0.3),
-                                  ),
-                                ],
+                              const SizedBox(height: 20),
+
+                              // Tagline corporativa
+                              Text(
+                                'Sistema de Rastreabilidade',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: 1.2,
+                                  color: Colors.white.withOpacity(0.75),
+                                ),
                               ),
-                            ),
-                          ),
 
-                          // Letras STIK animadas individualmente
-                          SizedBox(
-                            height: 100,
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                _buildAnimatedLetter(
-                                  'S',
-                                  _letterS.value,
-                                  primaryColor,
-                                  accentColor,
+                              const SizedBox(height: 6),
+
+                              Text(
+                                'Gestão Inteligente de Materiais',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w500,
+                                  letterSpacing: 0.8,
+                                  color: Colors.white.withOpacity(0.5),
                                 ),
-                                const SizedBox(width: 2),
-                                _buildAnimatedLetter(
-                                  'T',
-                                  _letterT.value,
-                                  primaryColor,
-                                  accentColor,
-                                ),
-                                const SizedBox(width: 2),
-                                _buildAnimatedLetter(
-                                  'I',
-                                  _letterI.value,
-                                  primaryColor,
-                                  accentColor,
-                                ),
-                                const SizedBox(width: 2),
-                                _buildAnimatedLetter(
-                                  'K',
-                                  _letterK.value,
-                                  primaryColor,
-                                  accentColor,
-                                ),
-                              ],
-                            ),
+                              ),
+
+                              const SizedBox(height: 36),
+                            ],
                           ),
-                        ],
+                        ),
                       ),
 
-                      const SizedBox(height: 70),
+                      const SizedBox(height: 50),
 
-                      // Subtítulo com ornamentos
+                      // Loading corporativo
                       Opacity(
                         opacity: _contentFade.value.clamp(0.0, 1.0),
                         child: Column(
                           children: [
-                            // Ornamento superior
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                _buildOrnament(primaryColor),
-                                const SizedBox(width: 16),
-                                Container(
-                                  width: 6,
-                                  height: 6,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    color: primaryColor,
+                            // Barra de progresso premium
+                            SizedBox(
+                              width: 240,
+                              child: Stack(
+                                children: [
+                                  // Fundo
+                                  Container(
+                                    height: 3,
+                                    decoration: BoxDecoration(
+                                      color: surface2,
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
                                   ),
-                                ),
-                                const SizedBox(width: 16),
-                                _buildOrnament(primaryColor),
-                              ],
+                                  // Progresso
+                                  AnimatedBuilder(
+                                    animation: _mainController,
+                                    builder: (context, child) {
+                                      return Container(
+                                        height: 3,
+                                        width: 240 * _mainController.value,
+                                        decoration: BoxDecoration(
+                                          borderRadius: BorderRadius.circular(
+                                            10,
+                                          ),
+                                          gradient: LinearGradient(
+                                            colors: [primary, accent],
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                  // Shimmer effect
+                                  AnimatedBuilder(
+                                    animation: _shimmerController,
+                                    builder: (context, child) {
+                                      return Container(
+                                        height: 3,
+                                        decoration: BoxDecoration(
+                                          borderRadius: BorderRadius.circular(
+                                            10,
+                                          ),
+                                          gradient: LinearGradient(
+                                            begin: Alignment.centerLeft,
+                                            end: Alignment.centerRight,
+                                            colors: [
+                                              Colors.transparent,
+                                              Colors.white.withOpacity(0.3),
+                                              Colors.transparent,
+                                            ],
+                                            stops: [
+                                              _shimmerController.value - 0.3,
+                                              _shimmerController.value,
+                                              _shimmerController.value + 0.3,
+                                            ],
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ],
+                              ),
                             ),
 
                             const SizedBox(height: 20),
 
-                            // Subtítulo
-                            Text(
-                              'TracX',
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: 6,
-                                color: primaryColor.withOpacity(0.75),
-                              ),
-                            ),
-
-                            // Espaçamento aumentado para mais leveza (Ponto 1)
-                            const SizedBox(height: 12),
-
-                            // Tagline
-                            Text(
-                              'Rastreabilidade de Materiais',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w400,
-                                letterSpacing: 1.5,
-                                color: Colors.grey[600],
-                              ),
-                            ),
-
-                            const SizedBox(height: 24),
-
-                            // Ornamento inferior
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                _buildOrnament(primaryColor),
-                                const SizedBox(width: 16),
-                                Container(
-                                  width: 6,
-                                  height: 6,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    color: primaryColor,
-                                  ),
-                                ),
-                                const SizedBox(width: 16),
-                                _buildOrnament(primaryColor),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-
-                      const SizedBox(height: 60),
-
-                      // NOVO: Indicador de Carregamento Linear (Ponto 3)
-                      Opacity(
-                        opacity: _contentFade.value.clamp(0.0, 1.0),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 80.0),
-                          child: LinearProgressIndicator(
-                            value: _mainController.value,
-                            backgroundColor: primaryColor.withOpacity(0.1),
-                            valueColor: AlwaysStoppedAnimation<Color>(
-                              primaryColor.withOpacity(0.6),
-                            ),
-                            minHeight: 3,
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        ),
-                      ),
-
-                      const SizedBox(
-                        height: 20,
-                      ), // Espaço entre a barra e os dots
-                      // Loading moderno - dots animados (original)
-                      Opacity(
-                        opacity: _contentFade.value.clamp(0.0, 1.0),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: List.generate(3, (index) {
-                            return AnimatedBuilder(
+                            // Status text
+                            AnimatedBuilder(
                               animation: _pulseController,
                               builder: (context, child) {
-                                final delay = index * 0.2;
-                                final value =
-                                    ((_pulseController.value + delay) % 1.0);
-                                final scale =
-                                    0.6 + (math.sin(value * math.pi) * 0.4);
-
-                                return Container(
-                                  margin: const EdgeInsets.symmetric(
-                                    horizontal: 4,
-                                  ),
-                                  width: 8,
-                                  height: 8,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    color: primaryColor.withOpacity(
-                                      (0.3 + scale * 0.5).clamp(0.0, 1.0),
+                                return Opacity(
+                                  opacity: 0.5 + (_pulseController.value * 0.3),
+                                  child: Text(
+                                    'Carregando...',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      letterSpacing: 1.5,
+                                      color: Colors.white.withOpacity(0.6),
                                     ),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: primaryColor.withOpacity(
-                                          (0.3 * scale).clamp(0.0, 1.0),
-                                        ),
-                                        blurRadius: 6 * scale,
-                                        spreadRadius: 1 * scale,
-                                      ),
-                                    ],
                                   ),
-                                  transform: Matrix4.identity()..scale(scale),
                                 );
                               },
-                            );
-                          }),
+                            ),
+                          ],
                         ),
                       ),
                     ],
@@ -539,52 +530,83 @@ class _SplashScreenState extends State<SplashScreen>
               ),
             ),
 
-            // Rodapé: Versão e Copyright
+            // Rodapé corporativo premium
             Positioned(
-              bottom: 50,
+              bottom: 44,
               left: 0,
               right: 0,
               child: AnimatedBuilder(
                 animation: _contentFade,
                 builder: (context, child) {
                   return Opacity(
-                    opacity: (_contentFade.value * 1.0).clamp(0.0, 1.0),
+                    opacity: (_contentFade.value).clamp(0.0, 1.0),
                     child: Column(
                       children: [
-                        // Texto "by: Stik Elástico"
-                        const Text(
-                          'by Stik Tech',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w400,
-                            letterSpacing: 0.5,
-                            color: primaryColor,
+                        // Separador elegante
+                        Container(
+                          width: 100,
+                          height: 1,
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                Colors.transparent,
+                                Colors.white.withOpacity(0.2),
+                                Colors.transparent,
+                              ],
+                            ),
+                          ),
+                        ),
+
+                        const SizedBox(height: 20),
+
+                        // by STIK Tech
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 22,
+                            vertical: 10,
+                          ),
+                          decoration: BoxDecoration(
+                            color: surface.withOpacity(0.5),
+                            borderRadius: BorderRadius.circular(25),
+                            border: Border.all(color: borderSoft, width: 1),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                width: 6,
+                                height: 6,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  gradient: LinearGradient(
+                                    colors: [primary, accent],
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              const Text(
+                                'by STIK Tech',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 1.8,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
 
                         const SizedBox(height: 10),
 
-                        // Versão e ano
+                        // Versão
                         Text(
-                          'v1.0.7',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: Colors.grey[400],
-                            letterSpacing: 2,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '2025',
-                          textAlign: TextAlign.center,
+                          'v1.0.7 • 2025',
                           style: TextStyle(
                             fontSize: 9,
-                            color: Colors.grey[350],
-                            letterSpacing: 1,
-                            fontWeight: FontWeight.w400,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 2,
+                            color: Colors.white.withOpacity(0.35),
                           ),
                         ),
                       ],
@@ -599,17 +621,74 @@ class _SplashScreenState extends State<SplashScreen>
     );
   }
 
+  Widget _buildCorporateLetter(String letter, double progress) {
+    final opacity = progress.clamp(0.0, 1.0);
+    final translateY = (1 - progress) * 20;
+
+    return Transform.translate(
+      offset: Offset(0, translateY),
+      child: Opacity(
+        opacity: opacity,
+        child: ShaderMask(
+          shaderCallback: (bounds) {
+            return const LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Color(0xFF4DA3FF), Color(0xFF5EF7C5)],
+            ).createShader(bounds);
+          },
+          child: Text(
+            letter,
+            style: const TextStyle(
+              fontSize: 64,
+              fontWeight: FontWeight.w900,
+              letterSpacing: -1,
+              color: Colors.white,
+              height: 1.0,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFeatureBadge(IconData icon, String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: surface.withOpacity(0.6),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: primary.withOpacity(0.2), width: 1),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: primary),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.5,
+              color: Colors.white.withOpacity(0.85),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _sincronizarHistoricoCompleto() async {
     try {
       final dbHelper = EstoqueDbHelper();
       final agora = DateTime.now();
-      // Define do dia 01 deste mês até ontem
+
       final dataInicial = DateTime(agora.year, agora.month, 1);
       final dataOntem = agora.subtract(const Duration(days: 1));
 
       if (dataOntem.isBefore(dataInicial)) return;
 
-      // Autentica apenas UMA vez para todas as chamadas
       final token = await ApiService.authenticate(
         endpoint: AppConstants.authEndpointWMS,
         email: AppConstants.authEmailWMS,
@@ -624,12 +703,10 @@ class _SplashScreenState extends State<SplashScreen>
         d = d.add(const Duration(days: 1))
       ) {
         String iso = DateFormat("yyyy-MM-dd'T'00:00:00").format(d);
-        // Só adiciona à lista se NÃO existir no banco local
         final jaExiste = await dbHelper.getMapasByDate(iso);
         if (jaExiste.isEmpty) diasFaltantes.add(d);
       }
 
-      // O SEGREDO: Future.wait dispara todas as APIs ao mesmo tempo
       if (diasFaltantes.isNotEmpty) {
         await Future.wait(
           diasFaltantes.map((data) async {
@@ -652,213 +729,28 @@ class _SplashScreenState extends State<SplashScreen>
       debugPrint("Erro na carga da Splash: $e");
     }
   }
-
-  Future<void> _initSync() async {
-    try {
-      await SyncService.sincronizarHistorico();
-    } catch (e) {
-      print("Falha na sincronização silenciosa: $e");
-    }
-  }
-
-  Future<void> _sincronizarDados() async {
-    try {
-      final dbHelper = EstoqueDbHelper();
-      final agora = DateTime.now();
-      final dataInicial = DateTime(agora.year, agora.month, 1);
-      final dataOntem = agora.subtract(const Duration(days: 1));
-
-      // 1. Autenticação única para ganhar tempo
-      final tokenWMS = await ApiService.authenticate(
-        endpoint: AppConstants.authEndpointWMS,
-        email: AppConstants.authEmailWMS,
-        senha: AppConstants.authSenhaWMS,
-        usuarioId: AppConstants.authUsuarioIdWMS,
-      );
-
-      List<DateTime> diasParaSincronizar = [];
-      for (
-        DateTime d = dataInicial;
-        !d.isAfter(dataOntem);
-        d = d.add(const Duration(days: 1))
-      ) {
-        diasParaSincronizar.add(d);
-      }
-
-      // 2. PARALELISMO TOTAL: Consulta todos os dias do mês de uma vez
-      await Future.wait(
-        diasParaSincronizar.map((data) async {
-          String iso = DateFormat("yyyy-MM-dd'T'00:00:00").format(data);
-
-          // Verifica se o dia já existe para não gastar internet à toa
-          var existente = await dbHelper.getMapasByDate(iso);
-          if (existente.isEmpty) {
-            var registros = await ApiService.fetchMapByDate(
-              apiKeyWMS: tokenWMS,
-              isoDate: iso,
-            );
-            if (registros.isNotEmpty) {
-              await dbHelper.insertMapas(registros, iso);
-            }
-          }
-        }),
-      );
-    } catch (e) {
-      debugPrint("Erro na sincronização da Splash: $e");
-    }
-  }
-
-  Widget _buildOrnament(Color color) {
-    return Container(
-      width: 30,
-      height: 1.5,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            Colors.transparent,
-            color.withOpacity(0.5),
-            Colors.transparent,
-          ],
-        ),
-        borderRadius: BorderRadius.circular(1),
-      ),
-    );
-  }
-
-  Widget _buildAnimatedLetter(
-    String letter,
-    double progress,
-    Color primaryColor,
-    Color accentColor,
-  ) {
-    final scale = progress.clamp(0.0, 1.0);
-    final opacity = progress.clamp(0.0, 1.0);
-    final translateY = (1 - progress) * 30;
-
-    return Transform.translate(
-      offset: Offset(0, translateY),
-      child: Transform.scale(
-        scale: scale,
-        child: Opacity(
-          opacity: opacity,
-          child: ShaderMask(
-            shaderCallback: (bounds) {
-              return LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [primaryColor, accentColor],
-                stops: const [0.3, 1.0],
-              ).createShader(bounds);
-            },
-            child: Text(
-              letter,
-              style: const TextStyle(
-                fontSize: 68,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 0,
-                color: Colors.white,
-                shadows: [
-                  Shadow(
-                    color: Color(0x25000000),
-                    offset: Offset(0, 6),
-                    blurRadius: 16,
-                  ),
-                  Shadow(
-                    color: Color(0x15000000),
-                    offset: Offset(0, 3),
-                    blurRadius: 8,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 }
 
-// Grid de fundo sutil
-class _GridPainter extends CustomPainter {
-  final Color color;
+// ==================== PAINTERS ====================
 
-  _GridPainter({required this.color});
-
+class _MinimalGridPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = color.withOpacity(0.02)
+      ..color = Colors.white.withOpacity(0.015)
       ..strokeWidth = 0.5;
 
-    const spacing = 40.0;
+    const spacing = 80.0;
 
-    // Linhas verticais
     for (double i = 0; i < size.width; i += spacing) {
       canvas.drawLine(Offset(i, 0), Offset(i, size.height), paint);
     }
 
-    // Linhas horizontais
     for (double i = 0; i < size.height; i += spacing) {
       canvas.drawLine(Offset(0, i), Offset(size.width, i), paint);
     }
   }
 
   @override
-  bool shouldRepaint(_GridPainter oldDelegate) => false;
-}
-
-// Partículas aprimoradas
-class _EnhancedParticlesPainter extends CustomPainter {
-  final double animation;
-  final Color color;
-
-  _EnhancedParticlesPainter({required this.animation, required this.color});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()..style = PaintingStyle.fill;
-
-    // Partículas pequenas
-    for (int i = 0; i < 40; i++) {
-      final seed = i * 137.508;
-      final x = (math.sin(seed) * 0.5 + 0.5) * size.width;
-      final baseY = (math.cos(seed * 0.7) * 0.5 + 0.5) * size.height;
-      final y = (baseY + (animation * 200)) % size.height;
-      final radius = 1.0 + (math.sin(seed * 1.3) * 0.5 + 0.5) * 1.2;
-
-      final distanceFromCenter =
-          (y - size.height / 2).abs() / (size.height / 2);
-      final opacity = ((1.0 - distanceFromCenter) * 0.15).clamp(0.0, 1.0);
-
-      paint.color = color.withOpacity(opacity);
-      canvas.drawCircle(Offset(x, y), radius, paint);
-    }
-
-    // Partículas brilhantes
-    for (int i = 0; i < 15; i++) {
-      final seed = i * 234.567;
-      final x = (math.cos(seed * 1.2) * 0.5 + 0.5) * size.width;
-      final baseY = (math.sin(seed * 0.8) * 0.5 + 0.5) * size.height;
-      final y = (baseY - (animation * 150)) % (size.height + 100) - 50;
-
-      final pulseValue = math.sin((animation + seed) * math.pi * 2);
-      final radius = 1.5 + pulseValue * 0.8;
-
-      final distanceFromCenter =
-          (y - size.height / 2).abs() / (size.height / 2);
-      final baseOpacity = ((1.0 - distanceFromCenter) * 0.2).clamp(0.0, 1.0);
-      final opacity = (baseOpacity * (0.5 + pulseValue * 0.5)).clamp(0.0, 1.0);
-
-      paint.color = color.withOpacity(opacity);
-      canvas.drawCircle(Offset(x, y), radius, paint);
-
-      // Glow nas partículas brilhantes
-      paint.color = color.withOpacity((opacity * 0.3).clamp(0.0, 1.0));
-      canvas.drawCircle(Offset(x, y), radius * 2, paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(_EnhancedParticlesPainter oldDelegate) =>
-      oldDelegate.animation != animation;
+  bool shouldRepaint(_MinimalGridPainter oldDelegate) => false;
 }

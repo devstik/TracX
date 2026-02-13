@@ -3,6 +3,24 @@ import 'package:tracx/models/HistoricoMov.dart';
 import 'package:tracx/services/movimentacao_service.dart';
 import 'package:intl/intl.dart';
 
+// =========================================================================
+// 🎨 PALETA OFICIAL (PADRÃO HOME + SPLASH)
+// =========================================================================
+const Color _kPrimaryColor = Color(0xFF2563EB); // Azul principal (moderno)
+const Color _kAccentColor = Color(0xFF60A5FA); // Azul claro premium
+
+const Color _kBgTop = Color(0xFF050A14);
+const Color _kBgBottom = Color(0xFF0B1220);
+
+const Color _kSurface = Color(0xFF101B34);
+const Color _kSurface2 = Color(0xFF0F172A);
+
+const Color _kTextPrimary = Color(0xFFF9FAFB);
+const Color _kTextSecondary = Color(0xFF9CA3AF);
+
+// borda mais visível (antes tava apagada demais)
+const Color _kBorderSoft = Color(0x33FFFFFF);
+
 class HistoricoMovimentacaoScreen extends StatefulWidget {
   final int nrOrdem; // NrOrdem inicial. 0 busca todas.
   final String? titulo;
@@ -22,58 +40,72 @@ class _HistoricoMovimentacaoScreenState
     extends State<HistoricoMovimentacaoScreen> {
   late Future<List<HistoricoMov>> _historicoFuture;
 
-  // 1. Variáveis de Estado para o Filtro
   late int _filterNrOrdem;
   final TextEditingController _nrOrdemController = TextEditingController();
 
-  // COR PRINCIPAL
-  static const Color _primaryColor = Color(0xFFCD1818);
+  // Controle de ordenação
+  bool _mostrarMaisRecentesPrimeiro = true;
 
   @override
   void initState() {
     super.initState();
-    _filterNrOrdem = widget.nrOrdem; // Inicializa com o valor recebido
+    _filterNrOrdem = widget.nrOrdem;
     _nrOrdemController.text = _filterNrOrdem > 0
         ? _filterNrOrdem.toString()
         : '';
     _fetchHistorico(_filterNrOrdem);
   }
 
-  // Novo método para buscar o histórico com base no filtro
   void _fetchHistorico(int nrOrdem) {
     setState(() {
       _historicoFuture = MovimentacaoService.buscarHistorico(nrOrdem);
-      _filterNrOrdem = nrOrdem; // Atualiza o estado do filtro
+      _filterNrOrdem = nrOrdem;
     });
   }
 
-  // Método para exibir o diálogo de filtro
   void _showFilterDialog() {
     showDialog(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: const Text('Filtrar por Ordem de Produção'),
+          backgroundColor: _kSurface,
+          title: const Text(
+            'Filtrar por Ordem de Produção',
+            style: TextStyle(color: _kTextPrimary),
+          ),
           content: TextField(
             controller: _nrOrdemController,
             keyboardType: TextInputType.number,
-            decoration: const InputDecoration(
+            style: const TextStyle(color: _kTextPrimary),
+            decoration: InputDecoration(
               labelText: 'Número da OP',
+              labelStyle: const TextStyle(color: _kTextSecondary),
               hintText: 'Digite 0 para ver todas',
-              border: OutlineInputBorder(),
+              hintStyle: TextStyle(color: _kTextSecondary.withOpacity(0.7)),
+              enabledBorder: OutlineInputBorder(
+                borderSide: BorderSide(color: _kBorderSoft),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderSide: const BorderSide(color: _kAccentColor, width: 1.5),
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
             onSubmitted: (_) => _applyFilter(context),
           ),
           actions: <Widget>[
             TextButton(
-              child: const Text('Cancelar'),
+              child: const Text(
+                'Cancelar',
+                style: TextStyle(color: _kTextSecondary),
+              ),
               onPressed: () {
                 Navigator.of(context).pop();
               },
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: _primaryColor,
+                backgroundColor: _kPrimaryColor,
                 foregroundColor: Colors.white,
               ),
               child: const Text('Filtrar'),
@@ -85,18 +117,16 @@ class _HistoricoMovimentacaoScreenState
     );
   }
 
-  // Método para aplicar o filtro
   void _applyFilter(BuildContext context) {
-    Navigator.of(context).pop(); // Fecha o diálogo
+    Navigator.of(context).pop();
 
     final nrOrdemText = _nrOrdemController.text.trim();
     int newNrOrdem = 0;
+
     if (nrOrdemText.isNotEmpty) {
-      // Tenta converter para inteiro, se falhar, usa 0
       newNrOrdem = int.tryParse(nrOrdemText) ?? 0;
     }
 
-    // Aplica o novo filtro se for diferente do atual
     if (newNrOrdem != _filterNrOrdem) {
       _fetchHistorico(newNrOrdem);
     }
@@ -110,7 +140,6 @@ class _HistoricoMovimentacaoScreenState
 
   @override
   Widget build(BuildContext context) {
-    // Título dinâmico que reflete o filtro atual
     final String appBarTitle =
         widget.titulo ??
         (_filterNrOrdem > 0
@@ -118,102 +147,139 @@ class _HistoricoMovimentacaoScreenState
             : 'Movimentação Geral');
 
     return Scaffold(
+      backgroundColor: _kBgBottom,
       appBar: AppBar(
         centerTitle: true,
         title: Text(appBarTitle),
         elevation: 0,
-        backgroundColor: _primaryColor,
-        foregroundColor: Colors.white,
+        backgroundColor: _kBgBottom,
+        foregroundColor: _kTextPrimary,
         actions: [
-          // 2. Botão de Filtro
           IconButton(
             icon: const Icon(Icons.filter_list),
+            tooltip: "Filtrar OP",
             onPressed: _showFilterDialog,
+          ),
+
+          // BOTÃO ORDENAR
+          IconButton(
+            tooltip: _mostrarMaisRecentesPrimeiro
+                ? "Mostrando: Mais recentes"
+                : "Mostrando: Mais antigos",
+            icon: Icon(
+              _mostrarMaisRecentesPrimeiro
+                  ? Icons.arrow_downward_rounded
+                  : Icons.arrow_upward_rounded,
+            ),
+            onPressed: () {
+              setState(() {
+                _mostrarMaisRecentesPrimeiro = !_mostrarMaisRecentesPrimeiro;
+              });
+            },
           ),
         ],
       ),
-      body: FutureBuilder<List<HistoricoMov>>(
-        future: _historicoFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [_kBgTop, _kBgBottom],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+        ),
+        child: FutureBuilder<List<HistoricoMov>>(
+          future: _historicoFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(
+                child: CircularProgressIndicator(color: _kAccentColor),
+              );
+            }
 
-          if (snapshot.hasError) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Text(
-                  'Erro ao carregar histórico: ${snapshot.error}',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: _primaryColor),
-                ),
-              ),
-            );
-          }
-
-          final historicoOrdenado = snapshot.data ?? [];
-
-          if (historicoOrdenado.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.history_toggle_off,
-                    size: 60,
-                    color: Colors.grey.shade400,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    _filterNrOrdem > 0
-                        ? 'Nenhuma movimentação encontrada para a OP $_filterNrOrdem.'
-                        : 'Nenhuma movimentação encontrada.',
+            if (snapshot.hasError) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Text(
+                    'Erro ao carregar histórico: ${snapshot.error}',
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.grey.shade600, fontSize: 16),
+                    style: const TextStyle(color: _kAccentColor),
                   ),
-                ],
+                ),
+              );
+            }
+
+            // ORDENAÇÃO
+            final historicoOrdenado = List<HistoricoMov>.from(
+              snapshot.data ?? [],
+            );
+
+            historicoOrdenado.sort((a, b) {
+              if (_mostrarMaisRecentesPrimeiro) {
+                return b.dataMovimentacao.compareTo(a.dataMovimentacao);
+              } else {
+                return a.dataMovimentacao.compareTo(b.dataMovimentacao);
+              }
+            });
+
+            if (historicoOrdenado.isEmpty) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.history_toggle_off,
+                        size: 70,
+                        color: _kTextSecondary.withOpacity(0.5),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        _filterNrOrdem > 0
+                            ? 'Nenhuma movimentação encontrada para a OP $_filterNrOrdem.'
+                            : 'Nenhuma movimentação encontrada.',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: _kTextSecondary,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }
+
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              child: ListView.builder(
+                itemCount: historicoOrdenado.length,
+                itemBuilder: (context, index) {
+                  final mov = historicoOrdenado[index];
+
+                  final isLast = index == historicoOrdenado.length - 1;
+                  final isFirst = index == 0;
+
+                  return _TimelineItem(
+                    movimentacao: mov,
+                    isFirst: isFirst,
+                    isLast: isLast,
+                    icon: Icons.swap_horiz_rounded,
+                    iconColor: _kPrimaryColor,
+                  );
+                },
               ),
             );
-          }
-
-          // O restante do código do ListView.builder permanece o mesmo
-          return Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 16.0,
-              vertical: 8.0,
-            ),
-            child: ListView.builder(
-              itemCount: historicoOrdenado.length,
-              itemBuilder: (context, index) {
-                final mov = historicoOrdenado[index];
-
-                // Se a API retorna do mais novo para o mais antigo, o 'isFirst' é o index 0
-                // e o 'isLast' é o último item (tamanho da lista - 1)
-                final isLast = index == historicoOrdenado.length - 1;
-                final isFirst = index == 0;
-
-                const IconData fixedIcon = Icons.swap_horiz;
-                final Color highlightColor = _primaryColor;
-
-                return _TimelineItem(
-                  movimentacao: mov,
-                  isFirst: isFirst,
-                  isLast: isLast,
-                  icon: fixedIcon,
-                  iconColor: highlightColor,
-                );
-              },
-            ),
-          );
-        },
+          },
+        ),
       ),
     );
   }
 }
 
 // =========================================================================
-// WIDGET DO ITEM DA LINHA DO TEMPO (TimelineItem APRIMORADO)
+// ITEM DA LINHA DO TEMPO
 // =========================================================================
 
 class _TimelineItem extends StatelessWidget {
@@ -231,83 +297,95 @@ class _TimelineItem extends StatelessWidget {
     required this.iconColor,
   });
 
-  // Função auxiliar para construir uma linha de informação (Título + Valor)
   Widget _buildInfoRow({
     required String label,
     required String value,
     bool isBold = false,
     Color? valueColor,
+    IconData? icon,
   }) {
-    return Column(
+    return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          style: const TextStyle(fontSize: 12, color: Colors.black54),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: isBold ? FontWeight.bold : FontWeight.w600,
-            color: valueColor ?? Colors.grey.shade800,
+        if (icon != null) ...[
+          Icon(icon, size: 16, color: _kTextSecondary),
+          const SizedBox(width: 6),
+        ],
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: const TextStyle(fontSize: 12, color: _kTextSecondary),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                value,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: isBold ? FontWeight.bold : FontWeight.w600,
+                  color: valueColor ?? _kTextPrimary,
+                ),
+              ),
+            ],
           ),
         ),
       ],
     );
   }
 
-  // Função auxiliar para construir a Rota "De -> Para"
-  Widget _buildRouteText({
-    required String origem,
-    required String destino,
-    required Color color,
-  }) {
+  Widget _buildRouteText({required String origem, required String destino}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'Rota de Movimentação:',
-          style: TextStyle(fontSize: 12, color: Colors.black54),
+          'Movimentação',
+          style: TextStyle(fontSize: 12, color: _kTextSecondary),
         ),
-        const SizedBox(height: 4),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Origem
-            Flexible(
-              child: Text(
-                origem,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.bold,
-                  color: color,
+        const SizedBox(height: 6),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: _kSurface2.withOpacity(0.8),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: _kBorderSoft, width: 1),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  origem,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: _kTextPrimary,
+                  ),
                 ),
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4.0),
-              child: Icon(
-                Icons.arrow_right_alt,
-                color: Colors.black54,
-                size: 22,
-              ),
-            ),
-            // Destino
-            Flexible(
-              child: Text(
-                destino,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.bold,
-                  color: color,
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 8.0),
+                child: Icon(
+                  Icons.arrow_right_alt_rounded,
+                  size: 26,
+                  color: _kAccentColor,
                 ),
               ),
-            ),
-          ],
+              Expanded(
+                child: Text(
+                  destino,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.end,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: _kTextPrimary,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ],
     );
@@ -320,99 +398,132 @@ class _TimelineItem extends StatelessWidget {
       movimentacao.dataMovimentacao.toLocal(),
     );
 
-    // Pega a cor principal novamente para o destaque
-    const Color primaryColor = Color(0xFFCD1818);
-
     return IntrinsicHeight(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // 1. Linha do Tempo Visual
+          // LINHA DO TEMPO
           SizedBox(
-            width: 40,
+            width: 42,
             child: Column(
               children: [
-                // Linha Acima (invisível no primeiro item)
                 Expanded(
                   child: Container(
                     width: 2,
-                    color: isFirst ? Colors.transparent : Colors.grey.shade300,
+                    color: isFirst ? Colors.transparent : _kBorderSoft,
                   ),
                 ),
-                // Círculo do Evento
                 Container(
-                  padding: const EdgeInsets.all(4),
+                  padding: const EdgeInsets.all(6),
                   decoration: BoxDecoration(
                     color: iconColor,
                     shape: BoxShape.circle,
                     boxShadow: [
                       BoxShadow(
-                        color: iconColor.withOpacity(0.4),
-                        blurRadius: 6,
+                        color: iconColor.withOpacity(0.5),
+                        blurRadius: 8,
                         spreadRadius: 1,
                       ),
                     ],
                   ),
                   child: Icon(icon, color: Colors.white, size: 20),
                 ),
-                // Linha Abaixo (invisível no último item)
                 Expanded(
                   child: Container(
                     width: 2,
-                    color: isLast ? Colors.transparent : Colors.grey.shade300,
+                    color: isLast ? Colors.transparent : _kBorderSoft,
                   ),
                 ),
               ],
             ),
           ),
+
           const SizedBox(width: 12),
-          // 2. Conteúdo do Cartão
+
+          // CARD CONTEÚDO
           Expanded(
-            child: Card(
-              elevation: 4,
-              margin: const EdgeInsets.only(bottom: 16),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-                side: BorderSide(color: iconColor.withOpacity(0.5), width: 1.5),
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 18),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: _kSurface.withOpacity(0.92),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: _kBorderSoft, width: 1),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.35),
+                    blurRadius: 12,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
               ),
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // OP (NrOrdem) - Em destaque no topo do cartão
-                    _buildInfoRow(
-                      label: 'Ordem de Produção (OP)',
-                      value: movimentacao.nrOrdem.toString(),
-                      isBold: true,
-                      valueColor: primaryColor,
-                    ),
-                    const Divider(height: 20, color: Colors.black12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // TOPO: OP
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _kPrimaryColor.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: _kPrimaryColor.withOpacity(0.4),
+                          ),
+                        ),
+                        child: Text(
+                          "OP ${movimentacao.nrOrdem}",
+                          style: const TextStyle(
+                            color: _kPrimaryColor,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                      const Spacer(),
+                      const Icon(
+                        Icons.local_shipping_rounded,
+                        size: 18,
+                        color: _kAccentColor,
+                      ),
+                    ],
+                  ),
 
-                    // Rota (De -> Para) - Em destaque
-                    _buildRouteText(
-                      origem: movimentacao.localizacaoOrigem,
-                      destino: movimentacao.localizacaoDestino,
-                      color: Colors.grey.shade800,
-                    ),
-                    const Divider(height: 20, color: Colors.black12),
+                  const SizedBox(height: 14),
 
-                    // Data, Hora e Conferente
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Data/Hora
-                        _buildInfoRow(label: 'Data/Hora', value: formattedDate),
-                        // Conferente
-                        _buildInfoRow(
+                  // ROTA
+                  _buildRouteText(
+                    origem: movimentacao.localizacaoOrigem,
+                    destino: movimentacao.localizacaoDestino,
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // INFO DATA / CONFERENTE
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildInfoRow(
+                          label: 'Data/Hora',
+                          value: formattedDate,
+                          icon: Icons.access_time_rounded,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _buildInfoRow(
                           label: 'Conferente',
                           value: movimentacao.conferente,
+                          icon: Icons.person_rounded,
                         ),
-                      ],
-                    ),
-                  ],
-                ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
           ),

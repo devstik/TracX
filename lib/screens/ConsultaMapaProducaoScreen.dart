@@ -5,13 +5,29 @@ import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import '../services/estoque_db_helper.dart';
 
+// =========================================================================
+// 🎨 PALETA OFICIAL (PADRÃO HOME + SPLASH)
+// =========================================================================
+const Color _kPrimaryColor = Color(0xFF2563EB); // Azul principal (moderno)
+const Color _kAccentColor = Color(0xFF60A5FA); // Azul claro premium
+
+const Color _kBgTop = Color(0xFF050A14);
+const Color _kBgBottom = Color(0xFF0B1220);
+
+const Color _kSurface = Color(0xFF101B34);
+const Color _kSurface2 = Color(0xFF0F172A);
+
+const Color _kTextPrimary = Color(0xFFF9FAFB);
+const Color _kTextSecondary = Color(0xFF9CA3AF);
+
+// borda mais visível
+const Color _kBorderSoft = Color(0x33FFFFFF);
+
 // **********************************************
 // 1. CONFIGURAÇÃO E MODELO DE DADOS
 // **********************************************
 
-/// Define todas as constantes de configuração, URLs e credenciais.
 abstract class AppConstants {
-  // Configurações Comuns
   static const String empresaId = '2';
   static const int operacaoIdFiltro = 142;
 
@@ -35,21 +51,13 @@ abstract class AppConstants {
   static const String baseUrlProd = 'visions.topmanager.com.br';
   static const String prodPath =
       '/Servidor_2.7.0_api/forcadevendas/lancamentodeestoque/consultar';
-
-  // --- CORES TEMA ---
-  static final Color primaryColor = Colors.red.shade700;
-  static final Color secondaryColor = Colors.grey.shade600;
-  static final Color backgroundColor = Colors.grey.shade50;
 }
 
-/// Gerencia o cache de dados em memória para evitar consultas repetidas.
 abstract class CacheManager {
-  // Armazena o nome do produto (objeto)
   static final Map<int, String> produtosNomeCache = {};
-  // Armazena o detalhe/lote do produto
   static final Map<int, String> produtosDetalheCache = {};
 
-  static String? prodApiKey; // Chave de API para o endpoint de produtos
+  static String? prodApiKey;
 
   static void clear() {
     produtosNomeCache.clear();
@@ -58,7 +66,6 @@ abstract class CacheManager {
   }
 }
 
-/// Modelo de dados simplificado para o resultado da consulta por data.
 class MapaResultado {
   final DateTime data;
   final List<Map<String, dynamic>> registros;
@@ -80,7 +87,6 @@ class _ObjetoResumo {
   });
 }
 
-/// Exceção customizada para erros de API.
 class ApiException implements Exception {
   final String message;
   ApiException(this.message);
@@ -89,9 +95,7 @@ class ApiException implements Exception {
   String toString() => message;
 }
 
-/// Classe responsável por todas as interações com as APIs.
 abstract class ApiService {
-  /// Obtém uma chave de API (Bearer Token) através do processo de autenticação.
   static Future<String> authenticate({
     required String endpoint,
     required String email,
@@ -117,7 +121,6 @@ abstract class ApiService {
     final body = jsonDecode(response.body);
     final redirect = body['redirecionarPara']?.toString();
 
-    // Regex para extrair o JWT (token)
     final RegExp exp = RegExp("(ey[^\"'\\s]+)");
     final RegExpMatch? match = exp.firstMatch(redirect ?? '');
 
@@ -128,7 +131,6 @@ abstract class ApiService {
     throw ApiException('Não foi possível extrair a chave da API.');
   }
 
-  /// Consulta o endpoint de Produtos e armazena nomes e detalhes no cache.
   static Future<void> cacheProductDetails(Set<int> produtosIds) async {
     if (CacheManager.prodApiKey == null) return;
 
@@ -151,7 +153,6 @@ abstract class ApiService {
               final id = item['objetoID'] as int;
 
               if (produtosIds.contains(id)) {
-                // Armazena nome (objeto) e detalhe (lote)
                 CacheManager.produtosNomeCache[id] =
                     item['objeto'] as String? ?? 'Nome N/A';
                 CacheManager.produtosDetalheCache[id] =
@@ -170,7 +171,6 @@ abstract class ApiService {
     }
   }
 
-  /// Executa a consulta de mapas de produção para uma data específica.
   static Future<List<Map<String, dynamic>>> fetchMapByDate({
     required String apiKeyWMS,
     required String isoDate,
@@ -201,7 +201,6 @@ abstract class ApiService {
       registros.add(decoded);
     }
 
-    // Filtra a lista para incluir apenas a operacaoId desejada.
     return registros.where((registro) {
       return registro['operacaoId'] == AppConstants.operacaoIdFiltro;
     }).toList();
@@ -212,7 +211,6 @@ abstract class ApiService {
 // 3. INTERFACE DO USUÁRIO (WIDGETS)
 // **********************************************
 
-/// Classe principal da tela de consulta de mapas.
 class ConsultaMapaProducaoScreen extends StatefulWidget {
   const ConsultaMapaProducaoScreen({super.key});
 
@@ -221,7 +219,6 @@ class ConsultaMapaProducaoScreen extends StatefulWidget {
       _ConsultaMapaProducaoScreenState();
 }
 
-/// Mixin para métodos utilitários de UI, limpando a classe State.
 mixin UiUtils on State<ConsultaMapaProducaoScreen> {
   DateTime? parseDate(String value) {
     try {
@@ -253,14 +250,13 @@ class _ConsultaMapaProducaoScreenState extends State<ConsultaMapaProducaoScreen>
   bool _loading = false;
   List<MapaResultado> _resultados = [];
 
-  // Variáveis para feedback de progresso
   int _diasTotais = 0;
   int _diasProcessados = 0;
 
   @override
   void initState() {
     super.initState();
-    _carregarCatalogoLocal(); // Carrega dados do banco para a memória
+    _carregarCatalogoLocal();
     _objetoFiltroController.addListener(() {
       setState(() {
         _objetoFiltro = _objetoFiltroController.text.trim().toLowerCase();
@@ -286,7 +282,6 @@ class _ConsultaMapaProducaoScreenState extends State<ConsultaMapaProducaoScreen>
     super.dispose();
   }
 
-  // --- LÓGICA DE NEGÓCIOS / API ---
   String? _nomeProduto(int? produtoId) {
     if (produtoId == null) return null;
     return CacheManager.produtosNomeCache[produtoId];
@@ -306,7 +301,9 @@ class _ConsultaMapaProducaoScreenState extends State<ConsultaMapaProducaoScreen>
         final nome = _nomeProduto(produtoId);
         final quantidade = registro['quantidade'];
         final quantidadeNum = quantidade is num ? quantidade.toDouble() : 0.0;
+
         if (produtoId == null || nome == null || quantidadeNum <= 0) continue;
+
         mapa.putIfAbsent(
           produtoId,
           () => _ObjetoResumo(
@@ -354,7 +351,6 @@ class _ConsultaMapaProducaoScreenState extends State<ConsultaMapaProducaoScreen>
         "yyyy-MM-dd'T'00:00:00",
       ).format(DateTime.now());
 
-      // 1. Busca no Banco
       final db = await dbHelper.database;
       final List<Map<String, dynamic>> registrosBrutos = await db.query(
         'mapa_producao',
@@ -373,20 +369,17 @@ class _ConsultaMapaProducaoScreenState extends State<ConsultaMapaProducaoScreen>
       final List<MapaResultado> listaLocal = mapaAgrupado.entries.map((e) {
         return MapaResultado(data: DateTime.parse(e.key), registros: e.value);
       }).toList();
+
       listaLocal.sort((a, b) => b.data.compareTo(a.data));
 
-      // --- A LOGICA DE CORTE ---
-      // Se o banco retornou QUALQUER coisa para esse período, e não inclui hoje,
-      // nós assumimos que o banco já tem a "verdade" do período.
       if (listaLocal.isNotEmpty && !datasDesejadasIso.contains(hojeIso)) {
         setState(() {
           _resultados = listaLocal;
-          _loading = false; // MATA O LOADING NA HORA
+          _loading = false;
         });
         return;
       }
 
-      // Se o banco está totalmente vazio para o período, aí sim ele busca uma única vez
       setState(() {
         _resultados = listaLocal;
         _loading = true;
@@ -434,8 +427,10 @@ class _ConsultaMapaProducaoScreenState extends State<ConsultaMapaProducaoScreen>
             apiKeyWMS: token,
             isoDate: iso,
           );
+
           if (novosDados.isNotEmpty) {
             await dbHelper.insertMapas(novosDados, iso);
+
             if (mounted) {
               setState(() {
                 _resultados.removeWhere(
@@ -448,10 +443,12 @@ class _ConsultaMapaProducaoScreenState extends State<ConsultaMapaProducaoScreen>
             }
           }
         }
+
         if (mounted && _diasProcessados < _diasTotais) {
           setState(() => _diasProcessados++);
         }
       }
+
       await _buscarNomesDeProdutosFaltantes();
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -463,10 +460,12 @@ class _ConsultaMapaProducaoScreenState extends State<ConsultaMapaProducaoScreen>
     for (var res in _resultados) {
       for (var reg in res.registros) {
         final id = reg['produtoId'] as int?;
-        if (id != null && !CacheManager.produtosNomeCache.containsKey(id))
+        if (id != null && !CacheManager.produtosNomeCache.containsKey(id)) {
           idsSemNome.add(id);
+        }
       }
     }
+
     if (idsSemNome.isNotEmpty) {
       CacheManager.prodApiKey ??= await ApiService.authenticate(
         endpoint: AppConstants.authEndpointProd,
@@ -474,31 +473,55 @@ class _ConsultaMapaProducaoScreenState extends State<ConsultaMapaProducaoScreen>
         senha: AppConstants.authSenhaProd,
         usuarioId: AppConstants.authUsuarioIdProd,
       );
+
       await ApiService.cacheProductDetails(idsSemNome);
+
       if (mounted) setState(() {});
     }
   }
 
-  // --- WIDGETS DE UI ---
+  // --- UI ---
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppConstants.backgroundColor,
-      appBar: AppBar(title: const Text('Consultar Mapas de Produção')),
+      backgroundColor: _kBgBottom,
+
+      appBar: AppBar(
+        centerTitle: true,
+        elevation: 0,
+        foregroundColor: _kTextPrimary,
+        backgroundColor: _kBgBottom,
+        title: const Text(
+          'Consultar Mapas de Produção',
+          style: TextStyle(
+            fontWeight: FontWeight.w800,
+            fontSize: 18,
+            letterSpacing: 0.2,
+          ),
+        ),
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [_kBgTop, _kSurface2, _kBgBottom],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+          ),
+        ),
+      ),
+
       body: SafeArea(
         child: CustomScrollView(
           slivers: [
             SliverPadding(
-              padding: const EdgeInsets.all(24),
+              padding: const EdgeInsets.all(20),
               sliver: SliverList(
                 delegate: SliverChildListDelegate([
                   _buildFormArea(),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 18),
                   _buildObjetoResumoSection(),
 
-                  // Só mostra o progresso se NÃO houver resultados na tela
-                  // ou se estiver carregando o dia de hoje.
                   if (_loading && _resultados.isEmpty)
                     _LoadingFeedback(
                       diasTotais: _diasTotais,
@@ -508,10 +531,9 @@ class _ConsultaMapaProducaoScreenState extends State<ConsultaMapaProducaoScreen>
               ),
             ),
 
-            // Se tiver resultados, mostra. Se não tiver nada e parou de carregar, avisa.
             if (_resultados.isNotEmpty)
               SliverPadding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
+                padding: const EdgeInsets.symmetric(horizontal: 20),
                 sliver: SliverList(
                   delegate: SliverChildBuilderDelegate(
                     (context, index) =>
@@ -524,7 +546,10 @@ class _ConsultaMapaProducaoScreenState extends State<ConsultaMapaProducaoScreen>
               const SliverFillRemaining(
                 hasScrollBody: false,
                 child: Center(
-                  child: Text('Nenhum mapa registrado para este período.'),
+                  child: Text(
+                    'Nenhum mapa registrado para este período.',
+                    style: TextStyle(color: _kTextSecondary),
+                  ),
                 ),
               ),
           ],
@@ -534,69 +559,82 @@ class _ConsultaMapaProducaoScreenState extends State<ConsultaMapaProducaoScreen>
   }
 
   Widget _buildFormArea() {
-    return Column(
-      children: [
-        Form(
-          key: _formKey,
-          child: Row(
-            children: [
-              Expanded(
-                child: _DateFieldInput(
-                  label: 'Inicial',
-                  controller: _dataInicialController,
-                  parseDate: parseDate,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: _DateFieldInput(
-                  label: 'Final',
-                  controller: _dataFinalController,
-                  parseDate: parseDate,
-                ),
-              ),
-            ],
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _kSurface.withOpacity(0.92),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: _kBorderSoft, width: 1),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.35),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
           ),
-        ),
-        const SizedBox(height: 16),
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton.icon(
-            onPressed: _loading ? null : _consultar,
-            icon: _loading
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
-                    ),
-                  )
-                : const Icon(Icons.search),
-            label: Text(_loading ? 'Consultando...' : 'Consultar Período'),
-            style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              backgroundColor: AppConstants.primaryColor,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              textStyle: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
+        ],
+      ),
+      child: Column(
+        children: [
+          Form(
+            key: _formKey,
+            child: Row(
+              children: [
+                Expanded(
+                  child: _DateFieldInput(
+                    label: 'Inicial',
+                    controller: _dataInicialController,
+                    parseDate: parseDate,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _DateFieldInput(
+                    label: 'Final',
+                    controller: _dataFinalController,
+                    parseDate: parseDate,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: _loading ? null : _consultar,
+              icon: _loading
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.search),
+              label: Text(_loading ? 'Consultando...' : 'Consultar Período'),
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                backgroundColor: _kPrimaryColor,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                textStyle: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 15,
+                ),
               ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
   Widget _buildObjetoResumoSection() {
     final objetos = _agruparObjetos();
-    if (objetos.isEmpty) {
-      return const SizedBox.shrink();
-    }
+    if (objetos.isEmpty) return const SizedBox.shrink();
 
     final filtro = _objetoFiltro;
     final objetosFiltrados = filtro.isEmpty
@@ -614,88 +652,128 @@ class _ConsultaMapaProducaoScreenState extends State<ConsultaMapaProducaoScreen>
 
     final formatter = NumberFormat('#,##0.00', 'pt_BR');
 
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.search, color: AppConstants.primaryColor),
-                const SizedBox(width: 8),
-                Text(
-                  'Pesquisar por Objeto',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                    color: AppConstants.primaryColor,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _objetoFiltroController,
-              decoration: InputDecoration(
-                hintText: 'Digite o nome ou código do objeto',
-                prefixIcon: const Icon(Icons.search),
-                filled: true,
-                fillColor: Colors.grey.shade100,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _kSurface.withOpacity(0.92),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: _kBorderSoft, width: 1),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.35),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.search_rounded, color: _kAccentColor),
+              SizedBox(width: 8),
+              Text(
+                'Pesquisar por Objeto',
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 16,
+                  color: _kTextPrimary,
                 ),
               ),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          TextField(
+            controller: _objetoFiltroController,
+            style: const TextStyle(color: _kTextPrimary),
+            decoration: InputDecoration(
+              hintText: 'Digite o nome ou código do objeto',
+              hintStyle: TextStyle(color: _kTextSecondary.withOpacity(0.8)),
+              prefixIcon: const Icon(Icons.search, color: _kTextSecondary),
+              filled: true,
+              fillColor: _kSurface2,
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(color: _kBorderSoft),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: const BorderSide(color: _kAccentColor, width: 1.6),
+              ),
             ),
-            const SizedBox(height: 12),
-            Text(
-              'Total geral: ${formatter.format(totalGeral)} metros',
-              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+          ),
+
+          const SizedBox(height: 12),
+
+          Text(
+            'Total geral: ${formatter.format(totalGeral)} metros',
+            style: const TextStyle(
+              fontWeight: FontWeight.w700,
+              fontSize: 14,
+              color: _kTextSecondary,
             ),
-            const SizedBox(height: 12),
-            SizedBox(
-              height: 220,
-              child: objetosFiltrados.isEmpty
-                  ? Center(
-                      child: Text(
-                        'Nenhum objeto encontrado.',
-                        style: TextStyle(color: AppConstants.secondaryColor),
-                      ),
-                    )
-                  : ListView.separated(
-                      itemCount: objetosFiltrados.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
-                      itemBuilder: (_, index) {
-                        final item = objetosFiltrados[index];
-                        return ListTile(
-                          title: Text(item.nome),
-                          subtitle: Text(
-                            'ID: ${item.produtoId} • Lote: ${item.detalhe}',
-                          ),
-                          trailing: Text(
-                            formatter.format(item.quantidade),
-                            style: TextStyle(
-                              color: AppConstants.primaryColor,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        );
-                      },
+          ),
+
+          const SizedBox(height: 12),
+
+          SizedBox(
+            height: 220,
+            child: objetosFiltrados.isEmpty
+                ? const Center(
+                    child: Text(
+                      'Nenhum objeto encontrado.',
+                      style: TextStyle(color: _kTextSecondary),
                     ),
-            ),
-          ],
-        ),
+                  )
+                : ListView.separated(
+                    itemCount: objetosFiltrados.length,
+                    separatorBuilder: (_, __) => Divider(
+                      height: 1,
+                      color: _kBorderSoft.withOpacity(0.4),
+                    ),
+                    itemBuilder: (_, index) {
+                      final item = objetosFiltrados[index];
+
+                      return ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(
+                          item.nome,
+                          style: const TextStyle(
+                            color: _kTextPrimary,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14,
+                          ),
+                        ),
+                        subtitle: Text(
+                          'ID: ${item.produtoId} • Lote: ${item.detalhe}',
+                          style: const TextStyle(
+                            color: _kTextSecondary,
+                            fontSize: 12,
+                          ),
+                        ),
+                        trailing: Text(
+                          formatter.format(item.quantidade),
+                          style: const TextStyle(
+                            color: _kAccentColor,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
       ),
     );
   }
 }
 
-// --- WIDGETS AUXILIARES (COMPONENTES) ---
+// --- COMPONENTES ---
 
-/// Campo de entrada de data com seletor (DatePicker).
 class _DateFieldInput extends StatelessWidget {
   final String label;
   final TextEditingController controller;
@@ -718,17 +796,19 @@ class _DateFieldInput extends StatelessWidget {
         locale: const Locale('pt', 'BR'),
         builder: (context, child) {
           return Theme(
-            data: ThemeData.light().copyWith(
-              colorScheme: ColorScheme.light(
-                primary: AppConstants.primaryColor,
+            data: ThemeData.dark().copyWith(
+              colorScheme: const ColorScheme.dark(
+                primary: _kPrimaryColor,
                 onPrimary: Colors.white,
-                onSurface: Colors.black,
+                surface: _kSurface,
+                onSurface: _kTextPrimary,
               ),
             ),
             child: child!,
           );
         },
       );
+
       if (picked != null) {
         controller.text = DateFormat('dd/MM/yyyy').format(picked);
       }
@@ -738,24 +818,23 @@ class _DateFieldInput extends StatelessWidget {
       controller: controller,
       readOnly: true,
       onTap: selectDate,
+      style: const TextStyle(color: _kTextPrimary),
       decoration: InputDecoration(
         labelText: label,
+        labelStyle: const TextStyle(color: _kTextSecondary),
         filled: true,
-        fillColor: Colors.white,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.grey.shade300),
-        ),
+        fillColor: _kSurface2,
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.grey.shade300),
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: _kBorderSoft),
         ),
-        suffixIcon: Icon(
-          Icons.calendar_today,
-          color: AppConstants.secondaryColor,
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: _kAccentColor, width: 1.6),
         ),
+        suffixIcon: const Icon(Icons.calendar_today, color: _kTextSecondary),
         contentPadding: const EdgeInsets.symmetric(
-          horizontal: 16,
+          horizontal: 14,
           vertical: 14,
         ),
       ),
@@ -765,7 +844,6 @@ class _DateFieldInput extends StatelessWidget {
   }
 }
 
-/// Feedback visual durante o carregamento de dados.
 class _LoadingFeedback extends StatelessWidget {
   final int diasTotais;
   final int diasProcessados;
@@ -784,59 +862,72 @@ class _LoadingFeedback extends StatelessWidget {
         ? 'Consultando dia ${diasProcessados + 1} de $diasTotais...'
         : 'Finalizando e buscando detalhes dos produtos...';
 
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Text(
-          'Total de dias para busca: $diasTotais.',
-          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: 16),
-        LinearProgressIndicator(
-          value: progresso,
-          backgroundColor: Colors.grey.shade300,
-          color: AppConstants.primaryColor,
-        ),
-        const SizedBox(height: 8),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4.0),
-          child: Row(
+    return Container(
+      margin: const EdgeInsets.only(top: 18),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _kSurface.withOpacity(0.92),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: _kBorderSoft, width: 1),
+      ),
+      child: Column(
+        children: [
+          Text(
+            'Total de dias para busca: $diasTotais.',
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+              color: _kTextPrimary,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 14),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: LinearProgressIndicator(
+              value: progresso,
+              backgroundColor: _kSurface2,
+              color: _kAccentColor,
+              minHeight: 10,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
                 'Progresso: $percentual%',
-                style: const TextStyle(fontSize: 14),
+                style: const TextStyle(color: _kTextSecondary, fontSize: 13),
               ),
               Text(
-                'Dias: $diasProcessados de $diasTotais',
-                style: TextStyle(
-                  fontSize: 14,
+                'Dias: $diasProcessados/$diasTotais',
+                style: const TextStyle(
+                  color: _kAccentColor,
                   fontWeight: FontWeight.bold,
-                  color: AppConstants.primaryColor,
+                  fontSize: 13,
                 ),
               ),
             ],
           ),
-        ),
-        const SizedBox(height: 16),
-        Text(
-          'Status: $statusText',
-          style: TextStyle(
-            color: AppConstants.secondaryColor,
-            fontStyle: FontStyle.italic,
+          const SizedBox(height: 12),
+          Text(
+            statusText,
+            style: const TextStyle(
+              color: _kTextSecondary,
+              fontStyle: FontStyle.italic,
+            ),
+            textAlign: TextAlign.center,
           ),
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: 24),
-        CircularProgressIndicator(color: AppConstants.primaryColor),
-      ],
+          const SizedBox(height: 18),
+          const CircularProgressIndicator(color: _kAccentColor),
+        ],
+      ),
     );
   }
 }
 
 // **********************************************
-// 4. CARTÃO DE RESULTADO FINAL (Otimizado)
+// 4. CARTÃO DE RESULTADO FINAL
 // **********************************************
 
 class _MapaCard extends StatefulWidget {
@@ -849,18 +940,14 @@ class _MapaCard extends StatefulWidget {
 }
 
 class _MapaCardState extends State<_MapaCard> {
-  // Formatador para a quantidade (ex: 12.000,50)
   final NumberFormat _quantityFormat = NumberFormat('#,##0.##', 'pt_BR');
-  // Formatador para o total (garante 2 casas decimais)
   final NumberFormat _totalFormat = NumberFormat('#,##0.00', 'pt_BR');
 
-  /// Busca o nome do produto no cache. Retorna null se não encontrado.
   String? _getProductName(int? produtoId) {
     if (produtoId == null) return null;
     return CacheManager.produtosNomeCache[produtoId];
   }
 
-  /// Busca o detalhe (Lote) do produto no cache.
   String _getProductDetail(int? produtoId) {
     if (produtoId == null) return 'Lote: N/A';
     final detalhe = CacheManager.produtosDetalheCache[produtoId];
@@ -873,7 +960,6 @@ class _MapaCardState extends State<_MapaCard> {
       'dd/MM/yyyy',
     ).format(widget.resultado.data);
 
-    // 1. FILTRAR REGISTROS: Quantidade > 0 E Nome encontrado no cache.
     final filteredRegistros = widget.resultado.registros.where((registro) {
       final produtoId = registro['produtoId'] as int?;
       final quantidade = registro['quantidade'];
@@ -884,13 +970,11 @@ class _MapaCardState extends State<_MapaCard> {
       return isQuantityValid && isNameFound;
     }).toList();
 
-    // 2. CALCULAR SOMA TOTAL DA QUANTIDADE (Metros)
     final double totalQuantidade = filteredRegistros.fold(0.0, (sum, registro) {
       final quantidade = registro['quantidade'];
       return sum + (quantidade is num ? quantidade : 0.0);
     });
 
-    // Se não houver registros após o filtro, não exibe o card.
     if (filteredRegistros.isEmpty) {
       return const SizedBox.shrink();
     }
@@ -899,133 +983,146 @@ class _MapaCardState extends State<_MapaCard> {
     final totalRegistros = filteredRegistros.length;
     final subtitleText = '$totalQuantidadeFormatada metros';
 
-    return Card(
+    return Container(
       margin: const EdgeInsets.only(bottom: 16),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      elevation: 0,
-      child: ExpansionTile(
-        tilePadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        backgroundColor: Colors.white,
-        collapsedBackgroundColor: Colors.white,
-        iconColor: AppConstants.primaryColor,
-        collapsedIconColor: AppConstants.primaryColor,
-        leading: Icon(
-          Icons.calendar_today,
-          color: AppConstants.primaryColor,
-          size: 28,
-        ),
-        title: Text(
-          'Data: $dataFormatada',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 16,
-            color: AppConstants.primaryColor,
+      decoration: BoxDecoration(
+        color: _kSurface.withOpacity(0.92),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: _kBorderSoft, width: 1),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.35),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
           ),
-        ),
-        subtitle: Text(
-          subtitleText,
-          style: TextStyle(color: AppConstants.secondaryColor, fontSize: 14),
-        ),
-        children: [
-          ListView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            padding: EdgeInsets.zero,
-            itemCount: totalRegistros,
-            itemBuilder: (context, index) {
-              final registro = filteredRegistros[index];
-              final produtoId = registro['produtoId'] as int?;
-              final quantidade = registro['quantidade'];
-
-              final nomeProduto = _getProductName(produtoId)!;
-              final detalheProduto = _getProductDetail(produtoId);
-
-              final quantidadeFormatada = quantidade != null
-                  ? _quantityFormat.format(quantidade)
-                  : '??';
-
-              return Padding(
-                padding: const EdgeInsets.only(left: 20, right: 20, bottom: 8),
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppConstants.backgroundColor,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: Colors.grey.shade200),
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              nomeProduto,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                                fontSize: 15,
-                                color: Colors.black87,
-                              ),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              detalheProduto,
-                              style: TextStyle(
-                                fontWeight: FontWeight.w500,
-                                fontSize: 13,
-                                color: AppConstants.secondaryColor,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        '$quantidadeFormatada', //
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 15,
-                          color: AppConstants.primaryColor,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
-          const SizedBox(height: 8),
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 24.0,
-              vertical: 8.0,
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Total do dia',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    color: AppConstants.secondaryColor,
-                  ),
-                ),
-                Text(
-                  '$totalQuantidadeFormatada metros',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: AppConstants.primaryColor,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
         ],
+      ),
+      child: Theme(
+        data: ThemeData.dark().copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          collapsedIconColor: _kAccentColor,
+          iconColor: _kAccentColor,
+          backgroundColor: Colors.transparent,
+          collapsedBackgroundColor: Colors.transparent,
+          leading: const Icon(
+            Icons.calendar_today_rounded,
+            color: _kAccentColor,
+            size: 24,
+          ),
+          title: Text(
+            'Data: $dataFormatada',
+            style: const TextStyle(
+              fontWeight: FontWeight.w800,
+              fontSize: 15,
+              color: _kTextPrimary,
+            ),
+          ),
+          subtitle: Text(
+            subtitleText,
+            style: const TextStyle(color: _kTextSecondary, fontSize: 13),
+          ),
+          children: [
+            ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              padding: EdgeInsets.zero,
+              itemCount: totalRegistros,
+              itemBuilder: (context, index) {
+                final registro = filteredRegistros[index];
+                final produtoId = registro['produtoId'] as int?;
+                final quantidade = registro['quantidade'];
+
+                final nomeProduto = _getProductName(produtoId)!;
+                final detalheProduto = _getProductDetail(produtoId);
+
+                final quantidadeFormatada = quantidade != null
+                    ? _quantityFormat.format(quantidade)
+                    : '??';
+
+                return Padding(
+                  padding: const EdgeInsets.only(
+                    left: 16,
+                    right: 16,
+                    bottom: 10,
+                  ),
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: _kSurface2.withOpacity(0.9),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: _kBorderSoft, width: 1),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                nomeProduto,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 14,
+                                  color: _kTextPrimary,
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                detalheProduto,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w500,
+                                  fontSize: 12,
+                                  color: _kTextSecondary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Text(
+                          quantidadeFormatada,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                            color: _kAccentColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 6),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Total do dia',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: _kTextSecondary,
+                    ),
+                  ),
+                  Text(
+                    '$totalQuantidadeFormatada metros',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: _kAccentColor,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
       ),
     );
   }

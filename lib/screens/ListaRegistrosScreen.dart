@@ -15,13 +15,29 @@ import 'package:hive/hive.dart';
 
 // CORES E ESTILOS GLOBAIS
 
-// Cores Primárias
-const Color _kPrimaryColorEmbalagem = Color(
-  0xFFCD1818,
-); // Vermelho da Embalagem
-const Color _kPrimaryColorTinturaria = Color(
-  0xFF090057,
-); // Azul Escuro da Tinturaria
+// =========================================================================
+// 🎨 PALETA OFICIAL (PADRÃO HOME + SPLASH)
+// =========================================================================
+const Color _kPrimaryColor = Color(0xFF2563EB); // Azul principal (moderno)
+const Color _kAccentColor = Color(0xFF60A5FA); // Azul claro premium
+
+const Color _kBgTop = Color(0xFF050A14);
+const Color _kBgBottom = Color(0xFF0B1220);
+
+const Color _kSurface = Color(0xFF101B34);
+const Color _kSurface2 = Color(0xFF0F172A);
+
+const Color _kTextPrimary = Color(0xFFF9FAFB);
+const Color _kTextSecondary = Color(0xFF9CA3AF);
+
+// borda mais visível (antes tava apagada demais)
+const Color _kBorderSoft = Color(0x33FFFFFF);
+
+// =========================================================================
+// 🔵 CORES ESPECÍFICAS POR ABA (SEM QUEBRAR O PADRÃO)
+// =========================================================================
+const Color _kPrimaryColorEmbalagem = _kPrimaryColor; // Azul principal
+const Color _kPrimaryColorTinturaria = _kAccentColor; // Azul premium
 
 // Estilo constante para o cabeçalho das tabelas
 const TextStyle _kHeaderStyle = TextStyle(
@@ -1282,18 +1298,29 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
 
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: _kPrimaryColorEmbalagem,
+        elevation: 0,
+        centerTitle: true,
+        foregroundColor: _kTextPrimary,
+        backgroundColor: _kBgBottom,
+
         title: const Text(
           'Registros de Produção',
-          style: TextStyle(color: Colors.white),
+          style: TextStyle(
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0.2,
+            fontSize: 18,
+          ),
         ),
+
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded),
           onPressed: () => Navigator.pop(context),
         ),
+
         actions: [
-          // Ícone de Filtro que muda se houver filtro aplicado
+          // 🔍 FILTRO
           IconButton(
+            tooltip: 'Filtro',
             icon: Icon(
               (_tabController.index == 0 &&
                       (_searchOrdemProducao.isNotEmpty ||
@@ -1303,10 +1330,9 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
                           _selectedDate != null))
                   ? Icons.filter_alt
                   : Icons.filter_alt_outlined,
-              color: Colors.white,
+              color: _kTextPrimary,
             ),
             onPressed: () async {
-              // Só mostra o filtro para a aba de Embalagem, onde ele é aplicado
               if (_tabController.index == 0) {
                 await _showSearchDialog();
               } else {
@@ -1320,40 +1346,40 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
               }
             },
           ),
-          // Botão de Compartilhar
+
+          // 📤 COMPARTILHAR
           IconButton(
+            tooltip: 'Exportar / Compartilhar',
             icon: Icon(
               Icons.share,
               color: totalSelectedCount > 0
-                  ? Colors.yellowAccent
-                  : Colors.white,
+                  ? Colors.amberAccent
+                  : _kTextPrimary,
             ),
             onPressed: () {
-              // Lógica de contagem de seleção
               final selectedEmbalagemCount = _selectedEmbalagemKeys.length;
               final selectedTinturariaCount = _selectedTinturariaKeys.length;
-
-              // Determina qual relatório será gerado por padrão
-              String defaultReport = '';
-              if (selectedEmbalagemCount > 0) {
-                defaultReport = 'Registros de Embalagem selecionados';
-              } else if (selectedTinturariaCount > 0) {
-                defaultReport = 'Registros de Raschelina selecionados';
-              }
 
               showDialog(
                 context: context,
                 builder: (dialogContext) => AlertDialog(
-                  title: const Text('Compartilhar Relatório'),
+                  backgroundColor: _kSurface2,
+                  title: const Text(
+                    'Compartilhar Relatório',
+                    style: TextStyle(
+                      color: _kTextPrimary,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
                   content: Text(
                     selectedEmbalagemCount > 0
                         ? 'Deseja exportar $selectedEmbalagemCount registros selecionados de Embalagem?'
                         : selectedTinturariaCount > 0
                         ? 'Deseja exportar $selectedTinturariaCount registros selecionados de Raschelina?'
                         : 'Deseja exportar todos os registros visíveis de Embalagem ou Raschelina?',
+                    style: const TextStyle(color: _kTextSecondary),
                   ),
                   actions: [
-                    // EMBALAGEM - PDF
                     TextButton(
                       onPressed: () async {
                         Navigator.pop(dialogContext);
@@ -1364,10 +1390,12 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
                       },
                       child: Text(
                         'Embalagem (PDF) ${selectedEmbalagemCount > 0 ? '($selectedEmbalagemCount)' : ''}',
-                        style: const TextStyle(color: _kPrimaryColorEmbalagem),
+                        style: const TextStyle(
+                          color: _kPrimaryColor,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
-                    // EMBALAGEM - EXCEL (NOVO)
                     TextButton(
                       onPressed: () async {
                         Navigator.pop(dialogContext);
@@ -1379,10 +1407,12 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
                       },
                       child: Text(
                         'Embalagem (Excel) ${selectedEmbalagemCount > 0 ? '($selectedEmbalagemCount)' : ''}',
-                        style: const TextStyle(color: _kPrimaryColorEmbalagem),
+                        style: const TextStyle(
+                          color: _kPrimaryColor,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
-                    // EMBALAGEM - TEXTO
                     TextButton(
                       onPressed: () async {
                         Navigator.pop(dialogContext);
@@ -1393,10 +1423,12 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
                       },
                       child: Text(
                         'Embalagem (Texto) ${selectedEmbalagemCount > 0 ? '($selectedEmbalagemCount)' : ''}',
-                        style: const TextStyle(color: _kPrimaryColorEmbalagem),
+                        style: const TextStyle(
+                          color: _kPrimaryColor,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
-                    // TINTURARIA - PDF
                     TextButton(
                       onPressed: () async {
                         Navigator.pop(dialogContext);
@@ -1407,10 +1439,12 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
                       },
                       child: Text(
                         'Raschelina (PDF) ${selectedTinturariaCount > 0 ? '($selectedTinturariaCount)' : ''}',
-                        style: const TextStyle(color: _kPrimaryColorTinturaria),
+                        style: const TextStyle(
+                          color: _kAccentColor,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
-                    // TINTURARIA - EXCEL (NOVO)
                     TextButton(
                       onPressed: () async {
                         Navigator.pop(dialogContext);
@@ -1422,10 +1456,12 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
                       },
                       child: Text(
                         'Raschelina (Excel) ${selectedTinturariaCount > 0 ? '($selectedTinturariaCount)' : ''}',
-                        style: const TextStyle(color: _kPrimaryColorTinturaria),
+                        style: const TextStyle(
+                          color: _kAccentColor,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
-                    // TINTURARIA - TEXTO
                     TextButton(
                       onPressed: () async {
                         Navigator.pop(dialogContext);
@@ -1436,7 +1472,10 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
                       },
                       child: Text(
                         'Raschelina (Texto) ${selectedTinturariaCount > 0 ? '($selectedTinturariaCount)' : ''}',
-                        style: const TextStyle(color: _kPrimaryColorTinturaria),
+                        style: const TextStyle(
+                          color: _kAccentColor,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
                   ],
@@ -1445,19 +1484,55 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
             },
           ),
         ],
+
+        // 🔥 Fundo em gradiente igual Home/Splash
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [_kBgTop, _kSurface2, _kBgBottom],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+          ),
+        ),
+
         bottom: TabBar(
           controller: _tabController,
-          indicatorColor: Colors.white,
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white70,
+
+          indicator: const UnderlineTabIndicator(
+            borderSide: BorderSide(color: _kAccentColor, width: 3),
+          ),
+
+          labelColor: _kTextPrimary,
+          unselectedLabelColor: _kTextSecondary,
+
+          labelStyle: const TextStyle(
+            fontWeight: FontWeight.w800,
+            fontSize: 13,
+          ),
+          unselectedLabelStyle: const TextStyle(
+            fontWeight: FontWeight.w700,
+            fontSize: 13,
+          ),
+
           tabs: const [
-            Tab(text: 'EMBALAGEM', icon: Icon(Icons.inventory_2_outlined)),
-            Tab(text: 'RASCHELINA', icon: Icon(Icons.color_lens_outlined)),
-            Tab(text: 'CONFRONTO', icon: Icon(Icons.compare_arrows)),
-            Tab(text: 'Relatório', icon: Icon(Icons.compare_arrows)),
+            Tab(
+              icon: Icon(Icons.inventory_2_outlined, size: 20),
+              text: 'Embalagem',
+            ),
+            Tab(
+              icon: Icon(Icons.color_lens_outlined, size: 20),
+              text: 'Raschelina',
+            ),
+            Tab(icon: Icon(Icons.compare_arrows, size: 20), text: 'Confronto'),
+            Tab(
+              icon: Icon(Icons.analytics_outlined, size: 20),
+              text: 'Relatório',
+            ),
           ],
         ),
       ),
+
       body: TabBarView(
         controller: _tabController,
         children: [
@@ -1470,9 +1545,6 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
     );
   }
 
-  // =======================================================
-  // NOVA ABA: RELATÓRIO DIÁRIO POR ARTIGO
-  // =======================================================
   Widget _buildRelatorioTab() {
     return FutureBuilder<Map<String, List<Registro>>>(
       future: _embalagemFuture,
@@ -1480,12 +1552,16 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         } else if (snapshot.hasError) {
-          return Center(child: Text('Erro: ${snapshot.error}'));
+          return Center(
+            child: Text(
+              'Erro: ${snapshot.error}',
+              style: const TextStyle(color: Colors.red),
+            ),
+          );
         } else if (!snapshot.hasData || snapshot.data!['Embalagem']!.isEmpty) {
           return const Center(child: Text('Nenhum dado para relatório.'));
         }
 
-        // 1. Aplica os filtros atuais (se houver) ou pega tudo
         final allRegistros = snapshot.data!['Embalagem']!;
         final registrosFiltrados = _filtrarRegistros(allRegistros);
 
@@ -1493,180 +1569,397 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
           return const Center(child: Text('Nenhum registro encontrado.'));
         }
 
-        // 2. Agrupamento: Data -> Artigo -> Soma Peso
-        // Map<DataIsoString, Map<NomeArtigo, DoublePeso>>
-        final Map<String, Map<String, double>> groupedData = {};
+        // Estrutura: Map<Data, Map<Categoria, Map<Artigo, Peso>>>
+        final Map<String, Map<String, Map<String, double>>> groupedData = {};
 
         for (var r in registrosFiltrados) {
-          // Normaliza a data para ignorar hora/minuto (apenas a data do dia)
           final dateKey = DateTime(
             r.data.year,
             r.data.month,
             r.data.day,
           ).toIso8601String();
 
-          if (!groupedData.containsKey(dateKey)) {
-            groupedData[dateKey] = {};
-          }
+          final String categoria =
+              r.cor.toUpperCase().contains('PRETO 2') ||
+                  r.artigo.toUpperCase().contains('PRETO 2')
+              ? 'PRETO 2'
+              : 'ARTIGOS DE CORES';
 
-          // Atualiza o peso do artigo naquela data
-          groupedData[dateKey]!.update(
+          groupedData.putIfAbsent(dateKey, () => {});
+          groupedData[dateKey]!.putIfAbsent(categoria, () => {});
+
+          final double pesoCalculado = r.peso * r.quantidade;
+
+          groupedData[dateKey]![categoria]!.update(
             r.artigo,
-            (currentWeight) => currentWeight + r.peso,
-            ifAbsent: () => r.peso,
+            (currentWeight) => currentWeight + pesoCalculado,
+            ifAbsent: () => pesoCalculado,
           );
         }
 
-        // 3. Ordenação das Datas (Recente -> Antigo)
         final sortedDateKeys = groupedData.keys.toList()
           ..sort((a, b) => DateTime.parse(b).compareTo(DateTime.parse(a)));
 
         return ListView.builder(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(14),
           itemCount: sortedDateKeys.length,
           itemBuilder: (context, index) {
             final dateKeyStr = sortedDateKeys[index];
-            final dateObj = DateTime.parse(dateKeyStr);
-            final artigosMap = groupedData[dateKeyStr]!;
+            final categoriasMap = groupedData[dateKeyStr]!;
 
-            // Calcula o total do dia para exibir no cabeçalho
-            final totalPesoDia = artigosMap.values.fold<double>(
-              0,
-              (sum, v) => sum + v,
-            );
+            double totalPreto = 0;
+            categoriasMap['PRETO 2']?.forEach((_, peso) => totalPreto += peso);
 
-            // Ordena os artigos do dia por peso (do maior para o menor) para melhor visualização
-            final sortedArtigos = artigosMap.entries.toList()
-              ..sort((a, b) => b.value.compareTo(a.value));
+            double totalCores = 0;
+            categoriasMap['ARTIGOS DE CORES']?.forEach((_, peso) {
+              totalCores += peso;
+            });
 
-            return Card(
-              margin: const EdgeInsets.only(bottom: 12),
-              elevation: 3,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+            final totalGeral = totalPreto + totalCores;
+
+            return Container(
+              margin: const EdgeInsets.only(bottom: 18),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.06),
+                    blurRadius: 12,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
               ),
-              child: ExpansionTile(
-                initiallyExpanded:
-                    index ==
-                    0, // Abre o primeiro item (dia mais recente) automaticamente
+              child: Card(
+                elevation: 0,
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(16),
                 ),
-                collapsedShape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                backgroundColor: Colors.white,
-                collapsedBackgroundColor: Colors.white,
-                leading: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: _kPrimaryColorEmbalagem.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Icon(
-                    Icons.calendar_month,
-                    color: _kPrimaryColorEmbalagem,
-                  ),
-                ),
-                title: Text(
-                  DateFormat('dd/MM/yyyy').format(dateObj),
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                  ),
-                ),
-                subtitle: Text(
-                  'Total: ${_kBrThreeDecimalFormatter.format(totalPesoDia)} Kg',
-                  style: TextStyle(
-                    color: Colors.grey.shade700,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                children: [
-                  const Divider(height: 1),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      vertical: 8,
-                      horizontal: 16,
-                    ),
-                    child: Column(
-                      children: [
-                        // Cabeçalho da sub-lista
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 8.0),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: const [
-                              Text(
-                                'Artigo',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.black54,
-                                  fontSize: 12,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // =======================================================
+                    // CABEÇALHO BONITO
+                    // =======================================================
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            _kPrimaryColorEmbalagem,
+                            _kPrimaryColorEmbalagem.withOpacity(0.85),
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(16),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.15),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: const Icon(
+                                  Icons.calendar_month,
+                                  color: Colors.white,
+                                  size: 20,
                                 ),
                               ),
-                              Text(
-                                'Peso Total',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.black54,
-                                  fontSize: 12,
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  DateFormat(
+                                    'dd/MM/yyyy',
+                                    'pt_BR',
+                                  ).format(DateTime.parse(dateKeyStr)),
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.15),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Text(
+                                  DateFormat('EEEE', 'pt_BR')
+                                      .format(DateTime.parse(dateKeyStr))
+                                      .toUpperCase(),
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 0.6,
+                                  ),
                                 ),
                               ),
                             ],
                           ),
-                        ),
-                        // Lista de Artigos
-                        ...sortedArtigos.map((entry) {
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 6.0),
+                          const SizedBox(height: 12),
+
+                          // Totais em Cards
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _buildTotalCard(
+                                  title: "TOTAL CORES",
+                                  value: totalCores,
+                                  icon: Icons.palette,
+                                  color: Colors.orangeAccent,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: _buildTotalCard(
+                                  title: "TOTAL PRETO 2",
+                                  value: totalPreto,
+                                  icon: Icons.dark_mode,
+                                  color: Colors.white,
+                                  textColor: Colors.black,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+
+                          // Total Geral
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 10,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Expanded(
-                                  child: Text(
-                                    entry.key, // Nome do Artigo
-                                    style: const TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w500,
-                                    ),
+                                const Text(
+                                  "TOTAL GERAL",
+                                  style: TextStyle(
+                                    color: Colors.white70,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                    letterSpacing: 0.8,
                                   ),
                                 ),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.grey.shade100,
-                                    borderRadius: BorderRadius.circular(4),
-                                    border: Border.all(
-                                      color: Colors.grey.shade300,
-                                    ),
-                                  ),
-                                  child: Text(
-                                    '${_kBrThreeDecimalFormatter.format(entry.value)} Kg',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      color: _kPrimaryColorEmbalagem.darken(10),
-                                      fontSize: 13,
-                                    ),
+                                Text(
+                                  "${_kBrThreeDecimalFormatter.format(totalGeral)} Kg",
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 14,
                                   ),
                                 ),
                               ],
                             ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // =======================================================
+                    // LISTAGEM DAS CATEGORIAS
+                    // =======================================================
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 14, 14, 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: categoriasMap.entries.map((catEntry) {
+                          final categoria = catEntry.key;
+                          final artigosMap = catEntry.value;
+
+                          final isPreto2 = categoria == 'PRETO 2';
+
+                          final sortedArtigos = artigosMap.entries.toList()
+                            ..sort((a, b) => b.value.compareTo(a.value));
+
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 16),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: isPreto2
+                                  ? Colors.black.withOpacity(0.04)
+                                  : Colors.red.withOpacity(0.04),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: isPreto2
+                                    ? Colors.black.withOpacity(0.15)
+                                    : Colors.red.withOpacity(0.15),
+                              ),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // Cabeçalho Categoria
+                                Row(
+                                  children: [
+                                    Icon(
+                                      isPreto2
+                                          ? Icons.dark_mode
+                                          : Icons.color_lens,
+                                      color: isPreto2
+                                          ? Colors.black
+                                          : Colors.red[800],
+                                      size: 18,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        categoria,
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w900,
+                                          fontSize: 14,
+                                          color: isPreto2
+                                              ? Colors.black
+                                              : Colors.red[900],
+                                          letterSpacing: 0.5,
+                                        ),
+                                      ),
+                                    ),
+                                    Text(
+                                      "${sortedArtigos.length} itens",
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.black.withOpacity(0.55),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+
+                                const SizedBox(height: 10),
+                                const Divider(height: 12),
+
+                                // Artigos listados
+                                ...sortedArtigos.map((artigoEntry) {
+                                  return Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 6,
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            artigoEntry.key,
+                                            style: const TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w600,
+                                              color: Colors.black87,
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 10,
+                                            vertical: 6,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Colors.white,
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
+                                            border: Border.all(
+                                              color: Colors.black.withOpacity(
+                                                0.08,
+                                              ),
+                                            ),
+                                          ),
+                                          child: Text(
+                                            "${_kBrThreeDecimalFormatter.format(artigoEntry.value)} Kg",
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w900,
+                                              color: _kPrimaryColorEmbalagem,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }).toList(),
+                              ],
+                            ),
                           );
                         }).toList(),
-                      ],
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                ],
+                  ],
+                ),
               ),
             );
           },
         );
       },
+    );
+  }
+
+  // =======================================================
+  // CARD DE TOTAL MAIS BONITO
+  // =======================================================
+  Widget _buildTotalCard({
+    required String title,
+    required double value,
+    required IconData icon,
+    required Color color,
+    Color textColor = Colors.white,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white.withOpacity(0.18)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: color, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 0.6,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            "${_kBrThreeDecimalFormatter.format(value)} Kg",
+            style: TextStyle(
+              color: textColor,
+              fontSize: 14,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1777,24 +2070,33 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
     }
   }
 
-  // ABA EMABALAGEM
+  // =========================================================================
+  // EMBALAGEM TAB - VISUAL APRIMORADO (mais organizado e legível)
+  // Mantém formato em LINHA, mas melhora cores, fontes e espaçamentos
+  // =========================================================================
   Widget _buildEmbalagemTab() {
     return FutureBuilder<Map<String, List<Registro>>>(
-      future: _embalagemFuture, // Usa o future pré-carregado
+      future: _embalagemFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         } else if (snapshot.hasError) {
           return Center(
-            child: Text(
-              'Erro ao carregar registros: ${snapshot.error}',
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.red),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                'Erro ao carregar registros:\n${snapshot.error}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.red),
+              ),
             ),
           );
         } else if (!snapshot.hasData || snapshot.data!['Embalagem']!.isEmpty) {
           return const Center(
-            child: Text('Nenhum registro de embalagem encontrado.'),
+            child: Text(
+              'Nenhum registro de embalagem encontrado.',
+              style: TextStyle(color: _kTextSecondary),
+            ),
           );
         }
 
@@ -1807,6 +2109,7 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
               padding: EdgeInsets.all(16.0),
               child: Text(
                 'Nenhum resultado encontrado com os filtros aplicados.',
+                style: TextStyle(color: _kTextSecondary),
               ),
             ),
           );
@@ -1820,107 +2123,137 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
           agrupados.putIfAbsent(chave, () => []).add(r);
         }
 
-        // Converte para lista e ordena por data decrescente
+        // Ordena grupos por data desc
         final sortedGrupos = agrupados.entries.toList();
         sortedGrupos.sort((a, b) {
-          // Extrai a data da chave (ex: "30/10/25 - T1" -> "30/10/25")
           final dateStrA = a.key.split(' - ')[0];
           final dateStrB = b.key.split(' - ')[0];
 
-          // Converte para DateTime (dd/MM/yy) para comparação
           final dateA = DateFormat('dd/MM/yy').parse(dateStrA);
           final dateB = DateFormat('dd/MM/yy').parse(dateStrB);
 
-          // Compara de forma decrescente (b.compareTo(a))
           return dateB.compareTo(dateA);
         });
 
         return ListView.builder(
-          padding: const EdgeInsets.only(bottom: 80, top: 8),
+          padding: const EdgeInsets.only(bottom: 90, top: 10),
           itemCount: sortedGrupos.length,
           itemBuilder: (context, index) {
-            final grupo = sortedGrupos.elementAt(index);
+            final grupo = sortedGrupos[index];
+
             final totalPeso = grupo.value.fold<double>(0, (s, r) => s + r.peso);
             final totalQuantidade = grupo.value.fold<int>(
               0,
               (s, r) => s + r.quantidade,
             );
 
-            // Verifica se todos os itens no grupo estão selecionados
             final groupKeys = grupo.value.map(_getRegistroKey).toSet();
             final allGroupSelected = groupKeys.every(
               _selectedEmbalagemKeys.contains,
             );
 
-            return Card(
-              margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 10),
-              elevation: 4,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+            return Container(
+              margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: _kSurface,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: _kBorderSoft),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.25),
+                    blurRadius: 18,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
               ),
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: ExpansionTile(
-                  tilePadding: const EdgeInsets.symmetric(horizontal: 16),
-                  iconColor: _kPrimaryColorEmbalagem,
-                  collapsedIconColor: Colors.black54,
-                  // Título com Checkbox de Seleção em Massa
-                  title: Row(
-                    children: [
-                      SizedBox(
-                        width: 24,
-                        height: 24, // Ajusta a altura do checkbox
-                        child: Checkbox(
-                          value: allGroupSelected,
-                          activeColor: _kPrimaryColorEmbalagem,
-                          onChanged: (bool? newValue) {
-                            _toggleGroupSelection(grupo.value);
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      // Título do Grupo (Data - Turno)
-                      Flexible(
-                        child: Text(
-                          grupo.key,
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.black87,
+                borderRadius: BorderRadius.circular(18),
+                child: Theme(
+                  data: Theme.of(
+                    context,
+                  ).copyWith(dividerColor: Colors.transparent),
+                  child: ExpansionTile(
+                    collapsedBackgroundColor: _kSurface,
+                    backgroundColor: _kSurface,
+                    tilePadding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 8,
+                    ),
+                    childrenPadding: const EdgeInsets.only(
+                      left: 12,
+                      right: 12,
+                      bottom: 14,
+                    ),
+                    iconColor: _kPrimaryColorEmbalagem,
+                    collapsedIconColor: _kTextSecondary,
+
+                    title: Row(
+                      children: [
+                        SizedBox(
+                          width: 26,
+                          height: 26,
+                          child: Checkbox(
+                            value: allGroupSelected,
+                            activeColor: _kPrimaryColorEmbalagem,
+                            side: const BorderSide(color: _kBorderSoft),
+                            onChanged: (_) =>
+                                _toggleGroupSelection(grupo.value),
                           ),
-                          overflow: TextOverflow.ellipsis,
                         ),
-                      ),
-                    ],
-                  ),
-                  // Subtítulo com Totais
-                  subtitle: Padding(
-                    padding: const EdgeInsets.only(left: 32.0),
-                    child: Text(
-                      // ATUALIZADO: Usando o formatador brasileiro de 3 decimais e inteiro
-                      'Peso: ${_kBrThreeDecimalFormatter.format(totalPeso)} Kg | Tambores: ${_kBrIntegerFormatter.format(totalQuantidade)}',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.black54,
-                        fontWeight: FontWeight.w500,
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            grupo.key,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w900,
+                              color: _kTextPrimary,
+                              letterSpacing: 0.2,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    subtitle: Padding(
+                      padding: const EdgeInsets.only(left: 36, top: 8),
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _buildInfoChip(
+                            icon: Icons.scale_outlined,
+                            label:
+                                "${_kBrThreeDecimalFormatter.format(totalPeso)} Kg",
+                          ),
+                          _buildInfoChip(
+                            icon: Icons.inventory_2_outlined,
+                            label:
+                                "${_kBrIntegerFormatter.format(totalQuantidade)} tambores",
+                          ),
+                          _buildInfoChip(
+                            icon: Icons.list_alt_outlined,
+                            label: "${grupo.value.length} registros",
+                          ),
+                        ],
                       ),
                     ),
+
+                    children: [
+                      const SizedBox(height: 10),
+
+                      // Cabeçalho mais bonito e maior
+                      _buildEmbalagemHeaderRowModern(),
+
+                      const SizedBox(height: 12),
+
+                      ...grupo.value.asMap().entries.map((entry) {
+                        final r = entry.value;
+                        return _buildRegistroEmbalagemCard(r);
+                      }).toList(),
+                    ],
                   ),
-                  childrenPadding: const EdgeInsets.only(
-                    left: 16,
-                    right: 16,
-                    bottom: 12,
-                  ),
-                  children: [
-                    const Divider(height: 1, thickness: 1),
-                    // Cabeçalho da Tabela
-                    _buildEmbalagemHeaderRow(),
-                    ...grupo.value.asMap().entries.map((entry) {
-                      final r = entry.value;
-                      final isEven = entry.key % 2 == 0;
-                      return _buildRegistroEmbalagemRow(r, isEven);
-                    }).toList(),
-                  ],
                 ),
               ),
             );
@@ -1930,36 +2263,87 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
     );
   }
 
-  // Cabeçalho com distribuição otimizada para mais colunas
-  Widget _buildEmbalagemHeaderRow() {
-    return const Padding(
-      padding: EdgeInsets.symmetric(vertical: 8),
+  //
+  // =========================================================================
+  // CHIP MODERNO
+  // =========================================================================
+  Widget _buildInfoChip({required IconData icon, required String label}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: _kSurface2,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _kBorderSoft),
+      ),
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          SizedBox(width: 30), // Espaço para o checkbox
-          Expanded(flex: 2, child: Text('OP', style: _kHeaderStyle)),
-          Expanded(flex: 4, child: Text('Artigo/Cor', style: _kHeaderStyle)),
-          Expanded(flex: 2, child: Text('Qtd', style: _kHeaderStyle)),
-          Expanded(flex: 3, child: Text('Peso (Kg)', style: _kHeaderStyle)),
-          Expanded(flex: 3, child: Text('Conf.', style: _kHeaderStyle)),
-          Expanded(flex: 4, child: Text('Ting./Corte', style: _kHeaderStyle)),
+          Icon(icon, size: 16, color: _kAccentColor),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w800,
+              color: _kTextPrimary,
+            ),
+          ),
         ],
       ),
     );
   }
 
-  // Row da Tabela mais limpa
-  Widget _buildRegistroEmbalagemRow(Registro r, bool isEven) {
+  //
+  // =========================================================================
+  // CABEÇALHO MODERNO (SEM APAGAR NO FUNDO ESCURO)
+  // =========================================================================
+  Widget _buildEmbalagemHeaderRowModern() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: _kSurface2,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: _kBorderSoft),
+      ),
+      child: const Row(
+        children: [
+          Expanded(
+            flex: 2,
+            child: Text(
+              "OP",
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+                color: _kTextPrimary,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 6,
+            child: Text(
+              "Artigo / Cor",
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+                color: _kTextPrimary,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  //
+  // =========================================================================
+  // CARD DE REGISTRO (VISUAL TOP E LEGÍVEL)
+  // =========================================================================
+  Widget _buildRegistroEmbalagemCard(Registro r) {
     final key = _getRegistroKey(r);
     final isSelected = _selectedEmbalagemKeys.contains(key);
 
-    final style = TextStyle(
-      fontSize: 10.5,
-      color: isSelected
-          ? _kPrimaryColorEmbalagem.darken(10)
-          : (isEven ? Colors.black87 : Colors.black54),
-      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-    );
     final dataTingimentoStr =
         (r.dataTingimento != null && r.dataTingimento!.isNotEmpty)
         ? _formatarData(DateTime.parse(r.dataTingimento!))
@@ -1969,35 +2353,49 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
     final artigoCor = '${r.artigo} / ${r.cor}';
 
     return Container(
-      // Fundo em destaque quando selecionado
-      color: isSelected
-          ? _kPrimaryColorEmbalagem.withOpacity(0.1)
-          : (isEven ? Colors.white : Colors.grey.shade50),
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: isSelected
+            ? _kPrimaryColorEmbalagem.withOpacity(0.18)
+            : _kSurface2,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isSelected ? _kAccentColor.withOpacity(0.8) : _kBorderSoft,
+          width: 1,
+        ),
+      ),
       child: InkWell(
-        onTap: () => _toggleEmbalagemSelection(
-          r,
-        ), // Permite selecionar pelo toque na linha
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => _toggleEmbalagemSelection(r),
         onLongPress: () {
-          // Menu ao fazer long-press
           showModalBottomSheet(
             context: context,
-            builder: (context) => Container(
-              padding: const EdgeInsets.symmetric(vertical: 20),
+            backgroundColor: _kSurface,
+            shape: const RoundedRectangleBorder(
+              borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+            ),
+            builder: (context) => Padding(
+              padding: const EdgeInsets.symmetric(vertical: 14),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   ListTile(
-                    leading: const Icon(Icons.edit, color: Colors.blue),
-                    title: const Text('Editar'),
+                    leading: const Icon(Icons.edit, color: _kAccentColor),
+                    title: const Text(
+                      'Editar',
+                      style: TextStyle(color: _kTextPrimary),
+                    ),
                     onTap: () {
                       Navigator.pop(context);
                       _editarRegistro(r, 0);
                     },
                   ),
                   ListTile(
-                    leading: const Icon(Icons.delete, color: Colors.red),
-                    title: const Text('Excluir'),
+                    leading: const Icon(Icons.delete, color: Colors.redAccent),
+                    title: const Text(
+                      'Excluir',
+                      style: TextStyle(color: _kTextPrimary),
+                    ),
                     onTap: () {
                       Navigator.pop(context);
                       _deletarRegistro(r);
@@ -2008,59 +2406,123 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
             ),
           );
         },
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Checkbox
-            SizedBox(
-              width: 30,
-              height: 18,
-              child: Checkbox(
-                value: isSelected,
-                activeColor: _kPrimaryColorEmbalagem,
-                onChanged: (bool? newValue) {
-                  _toggleEmbalagemSelection(r);
-                },
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Linha principal (OP + Artigo/Cor)
+              Row(
+                children: [
+                  SizedBox(
+                    width: 26,
+                    height: 26,
+                    child: Checkbox(
+                      value: isSelected,
+                      activeColor: _kPrimaryColorEmbalagem,
+                      side: const BorderSide(color: _kBorderSoft),
+                      onChanged: (_) => _toggleEmbalagemSelection(r),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: _kPrimaryColorEmbalagem.withOpacity(0.18),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: _kBorderSoft),
+                    ),
+                    child: Text(
+                      "OP ${r.ordemProducao}",
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w900,
+                        color: _kTextPrimary,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      artigoCor,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        color: _kTextPrimary,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
               ),
-            ),
-            Expanded(flex: 2, child: Text('${r.ordemProducao}', style: style)),
-            Expanded(
-              flex: 4,
-              child: Text(
-                artigoCor,
-                style: style,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+
+              const SizedBox(height: 12),
+
+              // Linha secundária em chips
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  _buildMiniChip(
+                    icon: Icons.inventory_2_outlined,
+                    label: "Qtd: ${_kBrIntegerFormatter.format(r.quantidade)}",
+                  ),
+                  _buildMiniChip(
+                    icon: Icons.scale_outlined,
+                    label:
+                        "Peso: ${_kBrThreeDecimalFormatter.format(r.peso)} Kg",
+                  ),
+                  _buildMiniChip(
+                    icon: Icons.person_outline,
+                    label: "Conf.: ${r.conferente}",
+                  ),
+                  _buildMiniChip(
+                    icon: Icons.cut_outlined,
+                    label: "Ting/Corte: $tingimentoCorte",
+                  ),
+                ],
               ),
-            ),
-            Expanded(
-              flex: 2,
-              // ATUALIZADO: Usando o formatador brasileiro de inteiro para quantidade
-              child: Text(
-                _kBrIntegerFormatter.format(r.quantidade),
-                style: style,
-              ),
-            ),
-            Expanded(
-              flex: 3,
-              child: Text(
-                // ATUALIZADO: Usando o formatador brasileiro de 3 decimais
-                _kBrThreeDecimalFormatter.format(r.peso),
-                style: style,
-              ),
-            ),
-            Expanded(
-              flex: 3,
-              child: Text(
-                r.conferente,
-                style: style,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            Expanded(flex: 4, child: Text(tingimentoCorte, style: style)),
-          ],
+            ],
+          ),
         ),
+      ),
+    );
+  }
+
+  //
+  // =========================================================================
+  // MINI CHIP (INFORMAÇÕES SECUNDÁRIAS)
+  // =========================================================================
+  Widget _buildMiniChip({required IconData icon, required String label}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: _kSurface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _kBorderSoft),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 15, color: _kAccentColor),
+          const SizedBox(width: 8),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 220),
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+                color: _kTextPrimary,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -2068,32 +2530,40 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
   // ABA TINTURARIA
   Widget _buildTinturariaTab() {
     return FutureBuilder<List<RegistroTinturaria>>(
-      future: _tinturariaFuture, // Usa o future pré-carregado
+      future: _tinturariaFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         } else if (snapshot.hasError) {
           return Center(
-            child: Text(
-              'Erro na Tinturaria: ${snapshot.error}',
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.red),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                'Erro na Tinturaria:\n${snapshot.error}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.red),
+              ),
             ),
           );
         } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
           return const Center(
-            child: Text('Nenhum registro de tinturaria encontrado.'),
+            child: Text(
+              'Nenhum registro de tinturaria encontrado.',
+              style: TextStyle(color: _kTextSecondary),
+            ),
           );
         }
 
         final registros = snapshot.data!;
+
+        // Agrupa por "Data - Turno"
         final agrupados = <String, List<RegistroTinturaria>>{};
         for (var r in registros) {
           final chave = '${r.dataCorte} - ${r.turno}';
           agrupados.putIfAbsent(chave, () => []).add(r);
         }
 
-        // Converte para lista e ordena por data de corte decrescente
+        // Ordena grupos por data desc
         final sortedGrupos = agrupados.entries.toList();
         sortedGrupos.sort((a, b) {
           final dateStrA = a.key.split(' - ')[0];
@@ -2104,83 +2574,107 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
         });
 
         return ListView.builder(
-          padding: const EdgeInsets.only(bottom: 80, top: 8),
+          padding: const EdgeInsets.only(bottom: 90, top: 10),
           itemCount: sortedGrupos.length,
           itemBuilder: (context, index) {
-            final grupo = sortedGrupos.elementAt(index);
+            final grupo = sortedGrupos[index];
 
-            // Verifica se todos os itens no grupo estão selecionados
             final groupKeys = grupo.value.map(_getTinturariaKey).toSet();
             final allGroupSelected = groupKeys.every(
               _selectedTinturariaKeys.contains,
             );
 
-            return Card(
-              margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 10),
-              elevation: 4,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+            return Container(
+              margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: _kSurface,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: _kBorderSoft),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.25),
+                    blurRadius: 18,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
               ),
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: ExpansionTile(
-                  tilePadding: const EdgeInsets.symmetric(horizontal: 16),
-                  iconColor: _kPrimaryColorTinturaria,
-                  collapsedIconColor: Colors.black54,
-                  // Título com Checkbox de Seleção em Massa
-                  title: Row(
-                    children: [
-                      SizedBox(
-                        width: 24,
-                        height: 24, // Ajusta a altura do checkbox
-                        child: Checkbox(
-                          value: allGroupSelected,
-                          activeColor: _kPrimaryColorTinturaria,
-                          onChanged: (bool? newValue) {
-                            _toggleTinturariaGroupSelection(grupo.value);
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      // Título do Grupo (Data - Turno)
-                      Flexible(
-                        child: Text(
-                          grupo.key,
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.black87,
+                borderRadius: BorderRadius.circular(18),
+                child: Theme(
+                  data: Theme.of(
+                    context,
+                  ).copyWith(dividerColor: Colors.transparent),
+                  child: ExpansionTile(
+                    collapsedBackgroundColor: _kSurface,
+                    backgroundColor: _kSurface,
+                    tilePadding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 8,
+                    ),
+                    childrenPadding: const EdgeInsets.only(
+                      left: 12,
+                      right: 12,
+                      bottom: 14,
+                    ),
+                    iconColor: _kPrimaryColorTinturaria,
+                    collapsedIconColor: _kTextSecondary,
+
+                    title: Row(
+                      children: [
+                        SizedBox(
+                          width: 26,
+                          height: 26,
+                          child: Checkbox(
+                            value: allGroupSelected,
+                            activeColor: _kPrimaryColorTinturaria,
+                            side: const BorderSide(color: _kBorderSoft),
+                            onChanged: (_) =>
+                                _toggleTinturariaGroupSelection(grupo.value),
                           ),
-                          overflow: TextOverflow.ellipsis,
                         ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            grupo.key,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w900,
+                              color: _kTextPrimary,
+                              letterSpacing: 0.2,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    subtitle: Padding(
+                      padding: const EdgeInsets.only(left: 36, top: 8),
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _buildInfoChip(
+                            icon: Icons.list_alt_outlined,
+                            label: "${grupo.value.length} registros",
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    children: [
+                      const SizedBox(height: 10),
+
+                      // Cabeçalho moderno
+                      _buildTinturariaHeaderRowModern(),
+
+                      const SizedBox(height: 12),
+
+                      ...grupo.value.map(
+                        (r) => _buildRegistroTinturariaCard(r),
                       ),
                     ],
                   ),
-                  subtitle: Padding(
-                    padding: const EdgeInsets.only(left: 32.0),
-                    child: Text(
-                      'Registros: ${_kBrIntegerFormatter.format(grupo.value.length)}',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.black54,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                  childrenPadding: const EdgeInsets.only(
-                    left: 16,
-                    right: 16,
-                    bottom: 12,
-                  ),
-                  children: [
-                    const Divider(height: 1, thickness: 1),
-                    _buildTinturariaHeaderRow(),
-                    ...grupo.value.asMap().entries.map((entry) {
-                      final r = entry.value;
-                      final isEven = entry.key % 2 == 0;
-                      return _buildRegistroTinturariaRow(r, isEven);
-                    }).toList(),
-                  ],
                 ),
               ),
             );
@@ -2190,96 +2684,160 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
     );
   }
 
-  // Cabeçalho com distribuição otimizada para Tinturaria
-  Widget _buildTinturariaHeaderRow() {
-    return const Padding(
-      padding: EdgeInsets.symmetric(vertical: 8),
-      child: Row(
+  //
+  // =========================================================================
+  // CABEÇALHO MODERNO (TINTURARIA)
+  // =========================================================================
+  Widget _buildTinturariaHeaderRowModern() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: _kSurface2,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: _kBorderSoft),
+      ),
+      child: const Row(
         children: [
-          SizedBox(width: 30), // Espaço para o checkbox
-          Expanded(flex: 3, child: Text('Material', style: _kHeaderStyle)),
-          Expanded(flex: 2, child: Text('Larg./Elast.', style: _kHeaderStyle)),
-          Expanded(flex: 2, child: Text('Máq.', style: _kHeaderStyle)),
-          Expanded(flex: 3, child: Text('Lote Elástico', style: _kHeaderStyle)),
-          Expanded(flex: 2, child: Text('Conf.', style: _kHeaderStyle)),
-          Expanded(flex: 3, child: Text('Data/Turno', style: _kHeaderStyle)),
+          Expanded(
+            flex: 5,
+            child: Text(
+              "Material",
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+                color: _kTextPrimary,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 3,
+            child: Text(
+              "Máquina",
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+                color: _kTextPrimary,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
 
-  // Row da Tabela mais limpa com Checkbox e destaque
-  Widget _buildRegistroTinturariaRow(RegistroTinturaria r, bool isEven) {
+  //
+  // =========================================================================
+  // CARD DO REGISTRO (TINTURARIA PREMIUM)
+  // =========================================================================
+  Widget _buildRegistroTinturariaCard(RegistroTinturaria r) {
     final key = _getTinturariaKey(r);
     final isSelected = _selectedTinturariaKeys.contains(key);
-
-    final style = TextStyle(
-      fontSize: 10.5,
-      color: isSelected
-          ? _kPrimaryColorTinturaria.darken(10)
-          : (isEven ? Colors.black87 : Colors.black54),
-      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-    );
 
     final larguraElast = '${r.larguraCrua}/${r.elasticidadeCrua}';
     final dataTurno = '${r.dataCorte} / ${r.turno}';
 
     return Container(
-      // Fundo em destaque quando selecionado
-      color: isSelected
-          ? _kPrimaryColorTinturaria.withOpacity(0.1)
-          : (isEven ? Colors.white : Colors.grey.shade50),
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: isSelected
+            ? _kPrimaryColorTinturaria.withOpacity(0.18)
+            : _kSurface2,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isSelected ? _kAccentColor.withOpacity(0.8) : _kBorderSoft,
+          width: 1,
+        ),
+      ),
       child: InkWell(
-        onTap: () => _toggleTinturariaSelection(
-          r,
-        ), // Permite selecionar pelo toque na linha
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Checkbox
-            SizedBox(
-              width: 30,
-              height: 18,
-              child: Checkbox(
-                value: isSelected,
-                activeColor: _kPrimaryColorTinturaria,
-                onChanged: (bool? newValue) {
-                  _toggleTinturariaSelection(r);
-                },
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => _toggleTinturariaSelection(r),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Linha principal
+              Row(
+                children: [
+                  SizedBox(
+                    width: 26,
+                    height: 26,
+                    child: Checkbox(
+                      value: isSelected,
+                      activeColor: _kPrimaryColorTinturaria,
+                      side: const BorderSide(color: _kBorderSoft),
+                      onChanged: (_) => _toggleTinturariaSelection(r),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+
+                  Expanded(
+                    child: Text(
+                      r.nomeMaterial,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                        color: _kTextPrimary,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+
+                  const SizedBox(width: 10),
+
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: _kPrimaryColorTinturaria.withOpacity(0.18),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: _kBorderSoft),
+                    ),
+                    child: Text(
+                      "Maq. ${r.nMaquina}",
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w900,
+                        color: _kTextPrimary,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ),
-            Expanded(
-              flex: 3,
-              child: Text(
-                r.nomeMaterial,
-                style: style,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+
+              const SizedBox(height: 12),
+
+              // Linha secundária com chips
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  _buildMiniChip(
+                    icon: Icons.straighten_outlined,
+                    label: "Larg/Elast: $larguraElast",
+                  ),
+                  _buildMiniChip(
+                    icon: Icons.confirmation_number_outlined,
+                    label: "Lote: ${r.loteElastico}",
+                  ),
+                  _buildMiniChip(
+                    icon: Icons.person_outline,
+                    label: "Conf.: ${r.conferente}",
+                  ),
+                  _buildMiniChip(
+                    icon: Icons.calendar_today_outlined,
+                    label: dataTurno,
+                  ),
+                ],
               ),
-            ),
-            Expanded(flex: 2, child: Text(larguraElast, style: style)),
-            Expanded(flex: 2, child: Text(r.nMaquina, style: style)),
-            Expanded(
-              flex: 3,
-              child: Text(
-                r.loteElastico,
-                style: style,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            Expanded(
-              flex: 2,
-              child: Text(
-                r.conferente,
-                style: style,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            Expanded(flex: 3, child: Text(dataTurno, style: style)),
-          ],
+            ],
+          ),
         ),
       ),
     );

@@ -1,18 +1,27 @@
 import 'package:flutter/material.dart';
-// Certifique-se de que os caminhos de importação estão corretos em seu projeto.
 import '../views/RegistroEmbalagem.dart' as embalagem;
-import '../views/RegistroTinturaria.dart'; // Importação ajustada conforme solicitado
+import '../views/RegistroTinturaria.dart';
 
 // =========================================================================
-// CORES E CONSTANTES (Mantidas para um visual limpo)
+// 🎨 PALETA OFICIAL (PADRÃO HOME + SPLASH)
 // =========================================================================
-const Color _kPrimaryColor = Color(0xFFCD1818); // Vermelho Principal
-const Color _kBackgroundColor = Color(0xFFF5F5F5); // Fundo Cinza Claro
+const Color _kPrimaryColor = Color(0xFF2563EB);
+const Color _kAccentColor = Color(0xFF60A5FA);
+
+const Color _kBgTop = Color(0xFF050A14);
+const Color _kBgBottom = Color(0xFF0B1220);
+
+const Color _kSurface = Color(0xFF101B34);
+const Color _kSurface2 = Color(0xFF0F172A);
+
+const Color _kTextPrimary = Color(0xFFF9FAFB);
+const Color _kTextSecondary = Color(0xFF9CA3AF);
+
+const Color _kBorderSoft = Color(0x33FFFFFF);
 
 // =========================================================================
-// TELA PRINCIPAL DE REGISTRO COM ABAS (Organizada e Simples)
+// TELA PRINCIPAL DE REGISTRO COM ABAS
 // =========================================================================
-
 class RegistroPrincipalScreen extends StatefulWidget {
   final String conferente;
   const RegistroPrincipalScreen({required this.conferente, super.key});
@@ -29,7 +38,6 @@ class _RegistroPrincipalScreenState extends State<RegistroPrincipalScreen>
   @override
   void initState() {
     super.initState();
-    // Inicializa o TabController com 2 abas
     _tabController = TabController(length: 2, vsync: this);
   }
 
@@ -42,69 +50,77 @@ class _RegistroPrincipalScreenState extends State<RegistroPrincipalScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _kBackgroundColor, // Define um fundo leve
+      backgroundColor: _kBgBottom,
+
       appBar: AppBar(
-        // AppBar Principal: Fundo Vermelho
-        backgroundColor: _kPrimaryColor,
-        foregroundColor: Colors.white,
+        elevation: 0,
         centerTitle: true,
+        foregroundColor: _kTextPrimary,
+        backgroundColor: _kBgBottom,
+
         title: const Text(
           'Registrar',
-          style: TextStyle(fontWeight: FontWeight.w600), // Fonte mais forte
+          style: TextStyle(
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0.2,
+            fontSize: 18,
+          ),
         ),
-        // Botão de voltar branco
+
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded),
           onPressed: () => Navigator.pop(context),
         ),
 
-        // TabBar: Estilo mais minimalista e integrado
+        // 🔥 Fundo em gradiente igual Home/Splash
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [_kBgTop, _kSurface2, _kBgBottom],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+          ),
+        ),
+
+        // ✅ TabBar correta (sem quebrar o cabeçalho)
         bottom: TabBar(
           controller: _tabController,
 
-          // Indicador: Apenas uma linha branca, simples e limpa.
-          // Este é o principal ajuste para simplificar a estética da aba.
           indicator: const UnderlineTabIndicator(
-            borderSide: BorderSide(color: Colors.white, width: 3.0),
-            insets: EdgeInsets.symmetric(
-              horizontal: 16.0,
-            ), // Centraliza a linha
+            borderSide: BorderSide(color: _kAccentColor, width: 3),
           ),
-          indicatorSize:
-              TabBarIndicatorSize.label, // Linha apenas no texto/ícone
 
-          labelColor: Colors.white, // Cor do texto/ícone selecionado (Branco)
-          unselectedLabelColor: Colors
-              .white70, // Cor do texto/ícone não selecionado (Branco mais claro)
+          labelColor: _kTextPrimary,
+          unselectedLabelColor: _kTextSecondary,
+
+          labelStyle: const TextStyle(
+            fontWeight: FontWeight.w800,
+            fontSize: 13,
+          ),
+          unselectedLabelStyle: const TextStyle(
+            fontWeight: FontWeight.w700,
+            fontSize: 13,
+          ),
 
           tabs: const [
-            // Aba 2: Embalagem
             Tab(
+              icon: Icon(Icons.inventory_2_outlined, size: 20),
               text: 'Embalagem',
-              icon: Icon(
-                Icons.inventory_2_outlined,
-              ), // Ícone Outlined mais moderno
             ),
-            // Aba 1: Tinturaria
             Tab(
+              icon: Icon(Icons.color_lens_outlined, size: 20),
               text: 'Raschelina',
-              icon: Icon(
-                Icons.color_lens_outlined,
-              ), // Ícone Outlined mais moderno
             ),
           ],
         ),
       ),
-      // TabBarView para exibir o conteúdo das abas
+
       body: TabBarView(
         controller: _tabController,
         children: [
-          // Conteúdo da aba Tinturaria (vindo de RegistroRaschelina.dart)
           embalagem.RegistroScreen(conferente: widget.conferente),
-
           RegistroScreenTinturaria(conferente: widget.conferente),
-
-          // Conteúdo da aba Embalagem (vindo de RegistroEmbalagem.dart)
         ],
       ),
     );

@@ -14,9 +14,23 @@ const String _kTopManagerUrl = "visions.topmanager.com.br";
 const String _kPathConsulta =
     "/Servidor_2.7.0_api/forcadevendas/lancamentodeestoque/consultar";
 
-const Color _kPrimaryRed = Color(0xFFD32F2F);
-const Color _kBackground = Color(0xFFF8F9FA);
-const Color _kWhite = Colors.white;
+// =========================================================================
+// 🎨 PALETA OFICIAL (PADRÃO HOME + SPLASH)
+// =========================================================================
+const Color _kPrimaryColor = Color(0xFF2563EB); // Azul principal (moderno)
+const Color _kAccentColor = Color(0xFF60A5FA); // Azul claro premium
+
+const Color _kBgTop = Color(0xFF050A14);
+const Color _kBgBottom = Color(0xFF0B1220);
+
+const Color _kSurface = Color(0xFF101B34);
+const Color _kSurface2 = Color(0xFF0F172A);
+
+const Color _kTextPrimary = Color(0xFFF9FAFB);
+const Color _kTextSecondary = Color(0xFF9CA3AF);
+
+// borda mais visível
+const Color _kBorderSoft = Color(0x33FFFFFF);
 
 // =========================================================================
 // DATABASE SERVICE (SQLITE)
@@ -149,10 +163,8 @@ class DatabaseService {
       String? token = await AuthService.obterToken();
       if (token == null) return false;
 
-      // Lista de objetoIDs conhecidos ou você pode fazer uma busca mais ampla
-      // Para simplificar, vamos buscar sem filtro específico
       final uri = Uri.https(_kTopManagerUrl, _kPathConsulta, {
-        "objetoID": "", // Busca todos
+        "objetoID": "",
         "detalheID": "",
         "empresaID": "2",
         "centroDeCustosID": "13",
@@ -196,6 +208,7 @@ class AuthService {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString(_tokenKey);
     final expiry = prefs.getString(_expiryKey);
+
     if (token != null &&
         expiry != null &&
         DateTime.now().isBefore(DateTime.parse(expiry))) {
@@ -246,7 +259,14 @@ class AuthService {
 void main() => runApp(
   MaterialApp(
     debugShowCheckedModeBanner: false,
-    theme: ThemeData(useMaterial3: true, colorSchemeSeed: _kPrimaryRed),
+    theme: ThemeData(
+      useMaterial3: true,
+      scaffoldBackgroundColor: _kBgBottom,
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: _kPrimaryColor,
+        brightness: Brightness.dark,
+      ),
+    ),
     home: const SplashScreen(),
   ),
 );
@@ -320,40 +340,50 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _kPrimaryRed,
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(40.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(
-                Icons.factory_outlined,
-                size: 100,
-                color: Colors.white,
-              ),
-              const SizedBox(height: 30),
-              const Text(
-                'STIK APONTAMENTOS',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [_kBgTop, _kSurface2, _kBgBottom],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+        ),
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(40.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(
+                  Icons.factory_outlined,
+                  size: 100,
+                  color: _kTextPrimary,
                 ),
-              ),
-              const SizedBox(height: 50),
-              LinearProgressIndicator(
-                value: _progress,
-                backgroundColor: Colors.white24,
-                valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
-              ),
-              const SizedBox(height: 20),
-              Text(
-                _status,
-                style: const TextStyle(color: Colors.white70, fontSize: 14),
-                textAlign: TextAlign.center,
-              ),
-            ],
+                const SizedBox(height: 30),
+                const Text(
+                  'Apontamentos',
+                  style: TextStyle(
+                    color: _kTextPrimary,
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 50),
+                LinearProgressIndicator(
+                  value: _progress,
+                  backgroundColor: Colors.white12,
+                  valueColor: const AlwaysStoppedAnimation<Color>(
+                    _kAccentColor,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  _status,
+                  style: const TextStyle(color: _kTextSecondary, fontSize: 14),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -361,6 +391,9 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 }
 
+// =========================================================================
+// TABS PRINCIPAL
+// =========================================================================
 class ProducaoTabsScreen extends StatefulWidget {
   const ProducaoTabsScreen({super.key});
   @override
@@ -375,6 +408,37 @@ class _ProducaoTabsScreenState extends State<ProducaoTabsScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+
+    // ✅ Sincronização automática ao abrir (se passou 24h)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _sincronizacaoAutomatica();
+    });
+  }
+
+  Future<void> _sincronizacaoAutomatica() async {
+    try {
+      final precisaSync = await DatabaseService.precisaSincronizar();
+      final totalProdutos = await DatabaseService.contarProdutos();
+
+      if (precisaSync || totalProdutos == 0) {
+        final sucesso = await DatabaseService.sincronizarTodosProdutos();
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                sucesso
+                    ? "Sincronização automática concluída!"
+                    : "Erro na sincronização automática",
+              ),
+              backgroundColor: sucesso ? Colors.green : Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint("Erro sincronização automática: $e");
+    }
   }
 
   @override
@@ -392,7 +456,7 @@ class _ProducaoTabsScreenState extends State<ProducaoTabsScreen>
     if (lastSync != null) {
       final date = DateTime.parse(lastSync);
       ultimaSync =
-          '${date.day}/${date.month}/${date.year} ${date.hour}:${date.minute}';
+          '${date.day}/${date.month}/${date.year} ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
     }
 
     if (!mounted) return;
@@ -400,18 +464,28 @@ class _ProducaoTabsScreenState extends State<ProducaoTabsScreen>
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Configurações'),
+        backgroundColor: _kSurface,
+        title: const Text(
+          'Configurações',
+          style: TextStyle(color: _kTextPrimary),
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Produtos em cache: $totalProdutos'),
+            Text(
+              'Produtos em cache: $totalProdutos',
+              style: const TextStyle(color: _kTextSecondary),
+            ),
             const SizedBox(height: 8),
-            Text('Última sincronização: $ultimaSync'),
+            Text(
+              'Última sincronização: $ultimaSync',
+              style: const TextStyle(color: _kTextSecondary),
+            ),
             const SizedBox(height: 20),
             const Text(
               'Sincronização automática a cada 24h',
-              style: TextStyle(fontSize: 12, color: Colors.grey),
+              style: TextStyle(fontSize: 12, color: _kTextSecondary),
             ),
           ],
         ),
@@ -421,7 +495,10 @@ class _ProducaoTabsScreenState extends State<ProducaoTabsScreen>
               Navigator.pop(ctx);
               _forcarSincronizacao();
             },
-            child: const Text('Sincronizar Agora'),
+            child: const Text(
+              'Sincronizar Agora',
+              style: TextStyle(color: _kAccentColor),
+            ),
           ),
           TextButton(
             onPressed: () async {
@@ -429,16 +506,29 @@ class _ProducaoTabsScreenState extends State<ProducaoTabsScreen>
               final confirm = await showDialog<bool>(
                 context: context,
                 builder: (ctx2) => AlertDialog(
-                  title: const Text('Confirmar'),
-                  content: const Text('Deseja limpar todo o cache local?'),
+                  backgroundColor: _kSurface,
+                  title: const Text(
+                    'Confirmar',
+                    style: TextStyle(color: _kTextPrimary),
+                  ),
+                  content: const Text(
+                    'Deseja limpar todo o cache local?',
+                    style: TextStyle(color: _kTextSecondary),
+                  ),
                   actions: [
                     TextButton(
                       onPressed: () => Navigator.pop(ctx2, false),
-                      child: const Text('Cancelar'),
+                      child: const Text(
+                        'Cancelar',
+                        style: TextStyle(color: _kTextSecondary),
+                      ),
                     ),
                     TextButton(
                       onPressed: () => Navigator.pop(ctx2, true),
-                      child: const Text('Limpar'),
+                      child: const Text(
+                        'Limpar',
+                        style: TextStyle(color: Colors.redAccent),
+                      ),
                     ),
                   ],
                 ),
@@ -456,11 +546,17 @@ class _ProducaoTabsScreenState extends State<ProducaoTabsScreen>
                 }
               }
             },
-            child: const Text('Limpar Cache'),
+            child: const Text(
+              'Limpar Cache',
+              style: TextStyle(color: Colors.redAccent),
+            ),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Fechar'),
+            child: const Text(
+              'Fechar',
+              style: TextStyle(color: _kTextSecondary),
+            ),
           ),
         ],
       ),
@@ -473,14 +569,18 @@ class _ProducaoTabsScreenState extends State<ProducaoTabsScreen>
       barrierDismissible: false,
       builder: (ctx) => const Center(
         child: Card(
+          color: _kSurface,
           child: Padding(
             padding: EdgeInsets.all(20.0),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                CircularProgressIndicator(),
+                CircularProgressIndicator(color: _kAccentColor),
                 SizedBox(height: 16),
-                Text('Sincronizando...'),
+                Text(
+                  'Sincronizando...',
+                  style: TextStyle(color: _kTextPrimary),
+                ),
               ],
             ),
           ),
@@ -512,27 +612,48 @@ class _ProducaoTabsScreenState extends State<ProducaoTabsScreen>
         ? 9
         : 10;
     String turnoLetra = turnoNum == 8 ? 'A' : (turnoNum == 9 ? 'B' : 'C');
+
     return Scaffold(
+      backgroundColor: _kBgBottom,
       appBar: AppBar(
-        backgroundColor: _kPrimaryRed,
-        title: const Text(
-          'STIK APONTAMENTOS',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-        ),
+        elevation: 0,
         centerTitle: true,
+        backgroundColor: _kBgBottom,
+        foregroundColor: _kTextPrimary,
+
+        // ✅ garante o botão voltar branco
+        iconTheme: const IconThemeData(color: _kTextPrimary),
+
+        title: const Text(
+          'Apontamentos',
+          style: TextStyle(color: _kTextPrimary, fontWeight: FontWeight.bold),
+        ),
+
         actions: [
           IconButton(
-            icon: const Icon(Icons.settings, color: Colors.white),
+            icon: const Icon(Icons.settings, color: _kTextPrimary),
             onPressed: _mostrarMenuOpcoes,
           ),
         ],
+
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [_kBgTop, _kSurface2, _kBgBottom],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+          ),
+        ),
+
         bottom: TabBar(
           controller: _tabController,
-          labelColor: Colors.white,
-          indicatorColor: Colors.white,
+          labelColor: _kTextPrimary,
+          unselectedLabelColor: _kTextSecondary,
+          indicatorColor: _kAccentColor,
           tabs: const [
-            Tab(text: 'PRODUÇÃO (A)', icon: Icon(Icons.factory_outlined)),
-            Tab(text: 'QUALIDADE (B)', icon: Icon(Icons.high_quality_outlined)),
+            Tab(text: 'Tipo A', icon: Icon(Icons.factory_outlined)),
+            Tab(text: 'Tipo B', icon: Icon(Icons.high_quality_outlined)),
           ],
         ),
       ),
@@ -547,16 +668,21 @@ class _ProducaoTabsScreenState extends State<ProducaoTabsScreen>
   }
 }
 
+// =========================================================================
+// FORMULÁRIO GERAL
+// =========================================================================
 class FormularioGeral extends StatefulWidget {
   final String tipo;
   final int turno;
   final String turnoLetra;
+
   const FormularioGeral({
     required this.tipo,
     required this.turno,
     required this.turnoLetra,
     super.key,
   });
+
   @override
   State<FormularioGeral> createState() => _FormularioGeralState();
 }
@@ -586,14 +712,12 @@ class _FormularioGeralState extends State<FormularioGeral> {
     super.dispose();
   }
 
-  /// BUSCA NO BANCO LOCAL (SQLITE)
   Future<void> _processarBuscaProduto(String code) async {
     setState(() => _isLoading = true);
     try {
       String buscadoObjID = "";
       String buscadoDetID = "";
 
-      // 1. Extração do JSON do QR Code
       if (code.startsWith('{')) {
         final decoded = jsonDecode(code);
         buscadoObjID = decoded['CdObj']?.toString() ?? "";
@@ -607,7 +731,6 @@ class _FormularioGeralState extends State<FormularioGeral> {
         return;
       }
 
-      // 2. BUSCA NO BANCO LOCAL
       final produto = await DatabaseService.buscarProduto(
         buscadoObjID,
         buscadoDetID,
@@ -620,12 +743,9 @@ class _FormularioGeralState extends State<FormularioGeral> {
           _cdObjReal = produto['objetoID'] ?? "";
           _detalheReal = produto['detalheID'] ?? "";
         });
-        debugPrint(
-          '✅ Produto encontrado no cache: $_cdObjReal - $_detalheReal',
-        );
+
         _showSnack("Produto encontrado!", Colors.green);
       } else {
-        // Se não encontrou no cache, tenta buscar na API como fallback
         await _buscarNaAPI(buscadoObjID, buscadoDetID);
       }
     } catch (e) {
@@ -636,7 +756,6 @@ class _FormularioGeralState extends State<FormularioGeral> {
     }
   }
 
-  /// Fallback: Busca na API se não encontrou no cache
   Future<void> _buscarNaAPI(String objetoID, String detalheID) async {
     try {
       String? token = await AuthService.obterToken();
@@ -648,7 +767,6 @@ class _FormularioGeralState extends State<FormularioGeral> {
         "localizacao": "Expedicao Etq",
       });
 
-      debugPrint('[API REQ] $uri');
       final response = await http.get(
         uri,
         headers: {'Authorization': 'Bearer $token'},
@@ -665,7 +783,6 @@ class _FormularioGeralState extends State<FormularioGeral> {
         );
 
         if (itemCorreto != null) {
-          // Salva no cache para próximas consultas
           await DatabaseService.salvarProdutos([itemCorreto]);
 
           setState(() {
@@ -674,7 +791,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
             _cdObjReal = itemCorreto['objetoID'].toString();
             _detalheReal = itemCorreto['detalheID'].toString();
           });
-          debugPrint('✅ Produto encontrado na API e salvo no cache');
+
           _showSnack("Produto encontrado e salvo!", Colors.green);
         } else {
           _showSnack("Produto não encontrado", Colors.orange);
@@ -713,9 +830,11 @@ class _FormularioGeralState extends State<FormularioGeral> {
     }
 
     setState(() => _isLoading = true);
+
     final endpoint = widget.tipo == 'A'
         ? '/apontamento/tipoA'
         : '/apontamento/tipoB';
+
     final payload = widget.tipo == 'A'
         ? {
             "Setor": _setorController.text,
@@ -733,12 +852,14 @@ class _FormularioGeralState extends State<FormularioGeral> {
             "Qtde": int.tryParse(_qtdeController.text) ?? 0,
             "turno": widget.turno,
           };
+
     try {
       final resp = await http.post(
         Uri.parse("$_kBaseUrlFlask$endpoint"),
         headers: {"Content-Type": "application/json"},
         body: jsonEncode(payload),
       );
+
       if (resp.statusCode == 201) {
         _showSnack("Salvo com sucesso!", Colors.green);
         _limpar();
@@ -757,9 +878,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
     _artigoController.clear();
     _detalheController.clear();
     _qtdeController.clear();
-    if (widget.tipo == 'B') {
-      _defeitoController.clear();
-    }
+    if (widget.tipo == 'B') _defeitoController.clear();
     _cdObjReal = "";
     _detalheReal = "";
   }
@@ -772,76 +891,93 @@ class _FormularioGeralState extends State<FormularioGeral> {
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        children: [
-          _buildTurnoHeader(widget.turnoLetra),
-          if (widget.tipo == 'A')
-            _buildCardSection('Identificação', [
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [_kBgTop, _kSurface2, _kBgBottom],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+        ),
+      ),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          children: [
+            _buildTurnoHeader(widget.turnoLetra),
+            if (widget.tipo == 'A')
+              _buildCardSection('Identificação', [
+                _buildScannerField(
+                  context,
+                  _operadorController,
+                  'Bipe o Operador',
+                  Icons.badge,
+                ),
+                _buildTextField(_setorController, 'Setor', Icons.apartment),
+                _buildTextField(_maqController, 'Máquina', Icons.settings),
+              ]),
+            _buildCardSection(widget.tipo == 'A' ? 'Produção' : 'Qualidade', [
               _buildScannerField(
                 context,
-                _operadorController,
-                'Bipe o Operador',
-                Icons.badge,
+                _artigoController,
+                'Bipe o Artigo',
+                Icons.qr_code,
+                onRead: _processarBuscaProduto,
               ),
-              _buildTextField(_setorController, 'Setor', Icons.apartment),
-              _buildTextField(_maqController, 'Máquina', Icons.settings),
-            ]),
-          _buildCardSection(widget.tipo == 'A' ? 'Produção' : 'Qualidade', [
-            _buildScannerField(
-              context,
-              _artigoController,
-              'Bipe o Artigo',
-              Icons.qr_code,
-              onRead: _processarBuscaProduto,
-            ),
-            if (_isLoading) const LinearProgressIndicator(color: _kPrimaryRed),
-            _buildTextField(
-              _detalheController,
-              'Detalhe (Lote)',
-              Icons.info_outline,
-              readOnly: true,
-            ),
-            if (widget.tipo == 'B')
+              if (_isLoading)
+                const LinearProgressIndicator(color: _kAccentColor),
               _buildTextField(
-                _defeitoController,
-                'Defeito',
-                Icons.warning_amber_outlined,
+                _detalheController,
+                'Detalhe (Lote)',
+                Icons.info_outline,
+                readOnly: true,
               ),
-            _buildTextField(
-              _qtdeController,
-              'Quantidade',
-              Icons.add_task,
-              isNumeric: true,
-            ),
-          ]),
-          const SizedBox(height: 20),
-          SizedBox(
-            width: double.infinity,
-            height: 50,
-            child: ElevatedButton(
-              onPressed: _isLoading ? null : _enviar,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _kPrimaryRed,
-                disabledBackgroundColor: Colors.grey,
+              if (widget.tipo == 'B')
+                _buildTextField(
+                  _defeitoController,
+                  'Defeito',
+                  Icons.warning_amber_outlined,
+                ),
+              _buildTextField(
+                _qtdeController,
+                'Quantidade',
+                Icons.add_task,
+                isNumeric: true,
               ),
-              child: _isLoading
-                  ? const SizedBox(
-                      height: 20,
-                      width: 20,
-                      child: CircularProgressIndicator(
-                        color: Colors.white,
-                        strokeWidth: 2,
+            ]),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: ElevatedButton(
+                onPressed: _isLoading ? null : _enviar,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _kPrimaryColor,
+                  disabledBackgroundColor: Colors.grey,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                child: _isLoading
+                    ? const SizedBox(
+                        height: 22,
+                        width: 22,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : const Text(
+                        'CONFIRMAR',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 0.6,
+                        ),
                       ),
-                    )
-                  : const Text(
-                      'CONFIRMAR',
-                      style: TextStyle(color: Colors.white),
-                    ),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -850,20 +986,27 @@ class _FormularioGeralState extends State<FormularioGeral> {
     padding: const EdgeInsets.all(15),
     margin: const EdgeInsets.only(bottom: 20),
     decoration: BoxDecoration(
-      color: _kWhite,
-      borderRadius: BorderRadius.circular(15),
-      boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4)],
+      color: _kSurface,
+      borderRadius: BorderRadius.circular(18),
+      border: Border.all(color: _kBorderSoft),
+      boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 8)],
     ),
     child: Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         const Text(
           'TURNO ATUAL',
-          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black54),
+          style: TextStyle(fontWeight: FontWeight.w800, color: _kTextSecondary),
         ),
         Chip(
-          label: Text(letra, style: const TextStyle(color: Colors.white)),
-          backgroundColor: _kPrimaryRed,
+          label: Text(
+            letra,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          backgroundColor: _kPrimaryColor,
         ),
       ],
     ),
@@ -873,11 +1016,9 @@ class _FormularioGeralState extends State<FormularioGeral> {
     padding: const EdgeInsets.all(16),
     margin: const EdgeInsets.only(bottom: 16),
     decoration: BoxDecoration(
-      color: _kWhite,
+      color: _kSurface2,
       borderRadius: BorderRadius.circular(20),
-      boxShadow: [
-        BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10),
-      ],
+      border: Border.all(color: _kBorderSoft),
     ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -887,7 +1028,8 @@ class _FormularioGeralState extends State<FormularioGeral> {
           style: const TextStyle(
             fontSize: 11,
             fontWeight: FontWeight.bold,
-            color: Colors.grey,
+            color: _kTextSecondary,
+            letterSpacing: 0.6,
           ),
         ),
         const SizedBox(height: 15),
@@ -931,7 +1073,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
           },
           icon: const Icon(Icons.qr_code_scanner),
           style: IconButton.styleFrom(
-            backgroundColor: _kPrimaryRed,
+            backgroundColor: _kPrimaryColor,
             minimumSize: const Size(55, 55),
           ),
         ),
@@ -965,15 +1107,25 @@ class _FormularioGeralState extends State<FormularioGeral> {
   }) => TextFormField(
     controller: controller,
     readOnly: readOnly,
+    style: const TextStyle(color: _kTextPrimary),
     keyboardType: isNumeric ? TextInputType.number : TextInputType.text,
     decoration: InputDecoration(
       labelText: label,
-      prefixIcon: Icon(icon, color: _kPrimaryRed),
+      labelStyle: const TextStyle(color: _kTextSecondary),
+      prefixIcon: Icon(icon, color: _kAccentColor),
       filled: true,
-      fillColor: readOnly ? Colors.grey[200] : _kBackground,
+      fillColor: readOnly ? _kSurface : _kSurface2,
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide.none,
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: _kBorderSoft),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: _kBorderSoft),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: _kAccentColor, width: 2),
       ),
     ),
   );
@@ -1007,11 +1159,21 @@ class _ScannerPageState extends State<ScannerPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: _kBgBottom,
       appBar: AppBar(
-        title: const Text('Scanner'),
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
+        backgroundColor: _kBgBottom,
+        foregroundColor: _kTextPrimary,
+        iconTheme: const IconThemeData(color: _kTextPrimary),
+        title: const Text('Scanner', style: TextStyle(color: _kTextPrimary)),
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [_kBgTop, _kSurface2, _kBgBottom],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+          ),
+        ),
       ),
       body: MobileScanner(
         controller: controller,

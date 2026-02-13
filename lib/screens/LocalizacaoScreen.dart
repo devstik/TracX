@@ -6,6 +6,24 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:tracx/models/HistoricoMov.dart';
 
+// =========================================================================
+// 🎨 PALETA OFICIAL (PADRÃO HOME + SPLASH)
+// =========================================================================
+const Color _kPrimaryColor = Color(0xFF2563EB); // Azul principal (moderno)
+const Color _kAccentColor = Color(0xFF60A5FA); // Azul claro premium
+
+const Color _kBgTop = Color(0xFF050A14);
+const Color _kBgBottom = Color(0xFF0B1220);
+
+const Color _kSurface = Color(0xFF101B34);
+const Color _kSurface2 = Color(0xFF0F172A);
+
+const Color _kTextPrimary = Color(0xFFF9FAFB);
+const Color _kTextSecondary = Color(0xFF9CA3AF);
+
+// borda mais visível (antes tava apagada demais)
+const Color _kBorderSoft = Color(0x33FFFFFF);
+
 class Localizacaoscreen extends StatefulWidget {
   final String conferente;
   final bool isAdmin;
@@ -26,11 +44,9 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
 
   late TabController _tabController;
 
-  // Variáveis de estado para o filtro
-  String _searchQuery = ''; // Filtro de OP ou Artigo
-  DateTime? _filterDate; // Filtro de Data
+  String _searchQuery = '';
+  DateTime? _filterDate;
 
-  // Mapa para guardar o Future de cada aba e forçar recarregamento
   final Map<String, Future<List<Registro>>> _futureMap = {};
 
   static const Map<String, int> _locOrder = {
@@ -73,6 +89,7 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: _tabNames.length, vsync: this);
+
     _tabController.addListener(() {
       if (!_tabController.indexIsChanging) {
         setState(() {});
@@ -86,7 +103,6 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
     super.dispose();
   }
 
-  // Inicializa/Recarrega o Future para a aba
   Future<List<Registro>> _getFutureForTab(String tabLocation) {
     if (!_futureMap.containsKey(tabLocation)) {
       _futureMap[tabLocation] = _buscarRegistrosPorLocalizacao(tabLocation);
@@ -94,29 +110,28 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
     return _futureMap[tabLocation]!;
   }
 
-  // Recarrega todos os Futures quando os filtros mudam
   void _reloadAllFutures() {
     _futureMap.clear();
     setState(() {});
   }
 
-  // Função para obter a cor com base no nome da Tab/Localização
   Color _getTabColor(String tabLocation) {
+    // Mantendo cores por aba, mas puxando o padrão mais "premium"
     switch (tabLocation) {
       case 'Loc 3':
-        return const Color(0xFF2E7D32);
+        return const Color(0xFF22C55E);
       case 'Loc 4':
-        return const Color(0xFFE65100);
+        return const Color(0xFFF97316);
       case 'Loc 5':
-        return const Color(0xFF42A5F5);
+        return const Color(0xFF38BDF8);
       case 'Loc 6':
-        return const Color(0xFF1565C0);
+        return const Color(0xFF3B82F6);
       case 'Loc 7':
-        return const Color(0xFF6A1B9A);
+        return const Color(0xFFA855F7);
       case 'Loc 8':
-        return const Color(0xFF00695C);
+        return const Color(0xFF14B8A6);
       default:
-        return const Color(0xFFCD1818);
+        return _kPrimaryColor;
     }
   }
 
@@ -127,7 +142,6 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
     return password == _ADMIN_MOVE_PASSWORD;
   }
 
-  // CORRIGIDO: Busca de registros com filtros
   Future<List<Registro>> _buscarRegistrosPorLocalizacao(
     String tabLocation,
   ) async {
@@ -139,18 +153,13 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
         : null;
 
     try {
-      // Monta os parâmetros da query
       final queryParams = <String, String>{};
-
-      // Sempre adiciona a localização
       queryParams['localizacao'] = targetLocation;
 
-      // Adiciona filtro de busca se existir
       if (_searchQuery.isNotEmpty) {
         queryParams['filtro'] = _searchQuery;
       }
 
-      // Adiciona filtro de data se existir
       if (dataFormatada != null) {
         queryParams['data'] = dataFormatada;
       }
@@ -159,18 +168,12 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
         'http://168.190.90.2:5000/consulta/movimentacao',
       ).replace(queryParameters: queryParams);
 
-      print('🔍 Buscando registros: $uri'); // Debug
-
       final response = await http.get(uri);
 
       if (response.statusCode == 200) {
         final List<dynamic> jsonList = jsonDecode(response.body);
 
-        print(
-          '📦 Registros encontrados para $targetLocation: ${jsonList.length}',
-        ); // Debug
-
-        return jsonList.map((jsonItem) {
+        final lista = jsonList.map((jsonItem) {
           return Registro(
             ordemProducao: jsonItem['NrOrdem'] ?? 0,
             artigo: jsonItem['Artigo'] ?? '',
@@ -196,17 +199,24 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
             dataMovimentacao: jsonItem['DataMovimentacao'] != null
                 ? DateTime.parse(jsonItem['DataMovimentacao'])
                 : null,
-            caixa: jsonItem['Caixa'] ?? '', // Garantido ser String ou ''
+            caixa: jsonItem['Caixa'] ?? '',
           );
         }).toList();
+
+        // ✅ MAIS RECENTES PRIMEIRO
+        lista.sort((a, b) {
+          final da = a.dataMovimentacao ?? a.data;
+          final db = b.dataMovimentacao ?? b.data;
+          return db.compareTo(da);
+        });
+
+        return lista;
       } else {
-        print('❌ Erro na API: ${response.statusCode}'); // Debug
         throw Exception(
           'Falha ao buscar registros da API: ${response.statusCode}',
         );
       }
     } catch (e) {
-      print('❌ Erro ao buscar registros: $e'); // Debug
       return [];
     }
   }
@@ -249,7 +259,6 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
       final localizacaoOrigem = registro.localizacao ?? 'N/A';
       final isRollback =
           _locOrder[newLocation]! < _locOrder[registro.localizacao]!;
-
       final isAdminMove =
           _locOrder[newLocation]! > _locOrder[registro.localizacao]! &&
           !_getValidNextOptions(registro.localizacao).contains(newLocation);
@@ -285,7 +294,7 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
           content: Text(
             'Pedido ${registro.ordemProducao} movido COMPLETO para $newLocation!',
           ),
-          backgroundColor: const Color(0xFF3A59D1),
+          backgroundColor: _kPrimaryColor,
         ),
       );
 
@@ -310,7 +319,7 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Erro: Metros a mover maior que o total do pedido.'),
-            backgroundColor: Color(0xFFE65100),
+            backgroundColor: Color(0xFFF97316),
           ),
         );
         return;
@@ -339,7 +348,7 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
           content: Text(
             'Pedido ${registro.ordemProducao}: $metrosMovidos m movidos parcialmente para $newLocation!',
           ),
-          backgroundColor: const Color(0xFF00695C),
+          backgroundColor: const Color(0xFF14B8A6),
         ),
       );
 
@@ -355,14 +364,22 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
   }
 
   Future<void> _showParcialMoveDialog(Registro registro, String nextLoc) async {
-    final _metrosController = TextEditingController();
+    final metrosController = TextEditingController();
     final double maxMetros = registro.metros ?? 0.0;
 
     await showDialog(
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: Text('Mover Parcialmente - OP ${registro.ordemProducao}'),
+          backgroundColor: _kSurface,
+          surfaceTintColor: _kSurface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Text(
+            'Mover Parcialmente - OP ${registro.ordemProducao}',
+            style: const TextStyle(color: _kTextPrimary),
+          ),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -370,60 +387,79 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
               children: [
                 Text(
                   'Localização: ${registro.localizacao ?? 'N/A'}',
-                  style: const TextStyle(fontWeight: FontWeight.w600),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: _kTextSecondary,
+                  ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 8),
                 Container(
-                  padding: const EdgeInsets.all(8),
+                  padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: Colors.blue.shade50,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.blue.shade200),
+                    color: _kSurface2,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: _kBorderSoft),
                   ),
                   child: Row(
                     children: [
-                      Icon(
+                      const Icon(
                         Icons.straighten,
-                        size: 20,
-                        color: Colors.blue.shade700,
+                        size: 18,
+                        color: _kAccentColor,
                       ),
                       const SizedBox(width: 8),
                       Text(
                         'Total disponível: ${maxMetros.toStringAsFixed(3)} m',
-                        style: TextStyle(
+                        style: const TextStyle(
                           fontWeight: FontWeight.bold,
-                          color: Colors.blue.shade900,
-                          fontSize: 15,
+                          color: _kTextPrimary,
+                          fontSize: 14,
                         ),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 12),
                 Text(
                   'Destino: $nextLoc',
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
-                    color: Color(0xFF00695C),
+                    color: _kAccentColor,
                   ),
                 ),
                 const SizedBox(height: 15),
                 TextField(
-                  controller: _metrosController,
+                  controller: metrosController,
                   autofocus: true,
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
+                  style: const TextStyle(color: _kTextPrimary),
                   decoration: InputDecoration(
                     labelText: 'Metros a Mover',
+                    labelStyle: const TextStyle(color: _kTextSecondary),
                     hintText: 'Ex: ${(maxMetros / 2).toStringAsFixed(3)}',
-                    border: const OutlineInputBorder(),
+                    hintStyle: TextStyle(
+                      color: _kTextSecondary.withOpacity(0.7),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: _kBorderSoft),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: _kAccentColor),
+                    ),
                     suffixText: 'm',
-                    prefixIcon: const Icon(Icons.straighten),
+                    suffixStyle: const TextStyle(color: _kTextSecondary),
+                    prefixIcon: const Icon(
+                      Icons.straighten,
+                      color: _kAccentColor,
+                    ),
                     helperText: 'Máx: ${maxMetros.toStringAsFixed(3)} m',
                     helperStyle: const TextStyle(
                       fontWeight: FontWeight.w500,
-                      color: Colors.black54,
+                      color: _kTextSecondary,
                     ),
                   ),
                 ),
@@ -433,18 +469,21 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('Cancelar'),
+              child: const Text(
+                'Cancelar',
+                style: TextStyle(color: _kTextSecondary),
+              ),
             ),
             ElevatedButton(
               onPressed: () {
-                final metrosText = _metrosController.text.replaceAll(',', '.');
+                final metrosText = metrosController.text.replaceAll(',', '.');
                 final metrosMovidos = double.tryParse(metrosText) ?? 0.0;
 
                 if (metrosMovidos <= 0.0) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                       content: Text('Digite um valor válido de metros.'),
-                      backgroundColor: Color(0xFFE65100),
+                      backgroundColor: Color(0xFFF97316),
                     ),
                   );
                   return;
@@ -456,7 +495,7 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
                       content: Text(
                         'O valor de $metrosMovidos m excede o total disponível de ${maxMetros.toStringAsFixed(3)} m.',
                       ),
-                      backgroundColor: const Color(0xFFE65100),
+                      backgroundColor: const Color(0xFFF97316),
                     ),
                   );
                   return;
@@ -466,7 +505,7 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
                 _handlePartialMove(registro, nextLoc, metrosMovidos);
               },
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF00695C),
+                backgroundColor: _kPrimaryColor,
                 foregroundColor: Colors.white,
               ),
               child: const Text('Mover Parcialmente'),
@@ -481,20 +520,30 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
     final confirmAction = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Confirmar Retorno de Pedido'),
+        backgroundColor: _kSurface,
+        surfaceTintColor: _kSurface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text(
+          'Confirmar Retorno de Pedido',
+          style: TextStyle(color: _kTextPrimary),
+        ),
         content: Text(
           'Ao retornar o pedido ${registro.ordemProducao ?? 'N/A'}, ele será movido para $previousLoc. Deseja continuar?',
+          style: const TextStyle(color: _kTextSecondary),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancelar'),
+            child: const Text(
+              'Cancelar',
+              style: TextStyle(color: _kTextSecondary),
+            ),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
             child: const Text(
               'Retornar',
-              style: TextStyle(color: Color(0xFFE65100)),
+              style: TextStyle(color: Color(0xFFF97316)),
             ),
           ),
         ],
@@ -510,14 +559,24 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
     final confirmAction = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Confirmar Exclusão (Admin)'),
+        backgroundColor: _kSurface,
+        surfaceTintColor: _kSurface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text(
+          'Confirmar Exclusão (Admin)',
+          style: TextStyle(color: _kTextPrimary),
+        ),
         content: Text(
           'Tem certeza que deseja EXCLUIR permanentemente o pedido ${registro.ordemProducao ?? 'N/A'}? Esta ação não pode ser desfeita.',
+          style: const TextStyle(color: _kTextSecondary),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancelar'),
+            child: const Text(
+              'Cancelar',
+              style: TextStyle(color: _kTextSecondary),
+            ),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
@@ -571,7 +630,7 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
   }
 
   Future<void> _showAdminMoveDialog(Registro registro) async {
-    final _passwordController = TextEditingController();
+    final passwordController = TextEditingController();
     String? currentSelectedLoc;
 
     await showDialog(
@@ -584,7 +643,15 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
                 .toList();
 
             return AlertDialog(
-              title: const Text('Movimentação Admin'),
+              backgroundColor: _kSurface,
+              surfaceTintColor: _kSurface,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              title: const Text(
+                'Movimentação Admin',
+                style: TextStyle(color: _kTextPrimary),
+              ),
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -592,21 +659,38 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
                   children: [
                     Text(
                       'Mover o Pedido ${registro.ordemProducao} de ${registro.localizacao ?? 'N/A'} para:',
-                      style: const TextStyle(fontWeight: FontWeight.bold),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: _kTextSecondary,
+                      ),
                     ),
+                    const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
-                      decoration: const InputDecoration(
+                      dropdownColor: _kSurface2,
+                      decoration: InputDecoration(
                         labelText: 'Destino',
-                        contentPadding: EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 0,
+                        labelStyle: const TextStyle(color: _kTextSecondary),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                        border: const OutlineInputBorder(),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: _kBorderSoft),
+                        ),
                       ),
                       value: currentSelectedLoc,
-                      hint: const Text('Selecione a Loc de destino'),
+                      hint: const Text(
+                        'Selecione a Loc de destino',
+                        style: TextStyle(color: _kTextSecondary),
+                      ),
                       items: availableLocations.map((loc) {
-                        return DropdownMenuItem(value: loc, child: Text(loc));
+                        return DropdownMenuItem(
+                          value: loc,
+                          child: Text(
+                            loc,
+                            style: const TextStyle(color: _kTextPrimary),
+                          ),
+                        );
                       }).toList(),
                       onChanged: (value) {
                         dialogSetState(() {
@@ -614,14 +698,26 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
                         });
                       },
                     ),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 16),
                     TextField(
-                      controller: _passwordController,
+                      controller: passwordController,
                       obscureText: true,
-                      decoration: const InputDecoration(
+                      style: const TextStyle(color: _kTextPrimary),
+                      decoration: InputDecoration(
                         labelText: 'Sua Senha Admin',
-                        border: const OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.lock),
+                        labelStyle: const TextStyle(color: _kTextSecondary),
+                        prefixIcon: const Icon(
+                          Icons.lock,
+                          color: _kAccentColor,
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: _kBorderSoft),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: _kAccentColor),
+                        ),
                       ),
                     ),
                   ],
@@ -630,13 +726,16 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(context),
-                  child: const Text('Cancelar'),
+                  child: const Text(
+                    'Cancelar',
+                    style: TextStyle(color: _kTextSecondary),
+                  ),
                 ),
                 ElevatedButton(
                   onPressed: currentSelectedLoc == null
                       ? null
                       : () async {
-                          final password = _passwordController.text;
+                          final password = passwordController.text;
 
                           if (password.isEmpty) {
                             ScaffoldMessenger.of(context).showSnackBar(
@@ -644,13 +743,11 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
                                 content: Text(
                                   'Por favor, digite a senha de Admin.',
                                 ),
-                                backgroundColor: Color(0xFFE65100),
+                                backgroundColor: Color(0xFFF97316),
                               ),
                             );
                             return;
                           }
-
-                          if (currentSelectedLoc == null) return;
 
                           final isVerified = await _verifyPassword(
                             widget.conferente,
@@ -669,19 +766,16 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
                                 content: Text(
                                   'Senha Admin inválida. Tente novamente.',
                                 ),
-                                backgroundColor: Color(0xFFB71C1C),
+                                backgroundColor: Color(0xFFEF4444),
                               ),
                             );
                           }
                         },
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFB71C1C),
+                    backgroundColor: const Color(0xFFEF4444),
                     foregroundColor: Colors.white,
                   ),
-                  child: const Text(
-                    'Mover (Admin)',
-                    style: TextStyle(color: Colors.white),
-                  ),
+                  child: const Text('Mover (Admin)'),
                 ),
               ],
             );
@@ -706,10 +800,19 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
 
     Navigator.pop(context);
 
+    // ✅ MAIS RECENTES PRIMEIRO
+    historico.sort((a, b) => b.dataMovimentacao.compareTo(a.dataMovimentacao));
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Histórico - OP ${registro.ordemProducao}'),
+        backgroundColor: _kSurface,
+        surfaceTintColor: _kSurface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          'Histórico - OP ${registro.ordemProducao}',
+          style: const TextStyle(color: _kTextPrimary),
+        ),
         content: SizedBox(
           width: double.maxFinite,
           height: 400,
@@ -719,15 +822,11 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(
-                        Icons.history,
-                        size: 48,
-                        color: Colors.grey.shade400,
-                      ),
+                      Icon(Icons.history, size: 48, color: _kTextSecondary),
                       const SizedBox(height: 10),
                       const Text(
                         'Nenhuma movimentação registrada.',
-                        style: TextStyle(color: Colors.grey),
+                        style: TextStyle(color: _kTextSecondary),
                       ),
                     ],
                   ),
@@ -742,90 +841,95 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
                       'dd/MM/yy HH:mm',
                     ).format(mov.dataMovimentacao.toLocal());
 
+                    final tipoColor = _getColorForTipo(mov.tipoMovimentacao);
+
                     return Card(
-                      margin: const EdgeInsets.symmetric(
-                        vertical: 4,
-                        horizontal: 0,
-                      ),
-                      elevation: 1,
+                      margin: const EdgeInsets.symmetric(vertical: 6),
+                      elevation: 0,
+                      color: _kSurface2,
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: BorderRadius.circular(12),
+                        side: const BorderSide(color: _kBorderSoft, width: 1),
                       ),
                       child: ListTile(
                         leading: Icon(
                           _getIconForTipo(mov.tipoMovimentacao),
-                          color: _getColorForTipo(mov.tipoMovimentacao),
-                          size: 24,
+                          color: tipoColor,
+                          size: 26,
                         ),
                         title: Text(
                           '${mov.localizacaoOrigem} → ${mov.localizacaoDestino}',
                           style: const TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 15,
+                            color: _kTextPrimary,
                           ),
                         ),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const SizedBox(height: 4),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Row(
-                                  children: [
-                                    Icon(
-                                      Icons.calendar_today,
-                                      size: 12,
-                                      color: Colors.grey.shade600,
+                        subtitle: Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.calendar_today,
+                                    size: 12,
+                                    color: _kTextSecondary,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    dataFormatada,
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: _kTextSecondary,
                                     ),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      dataFormatada,
-                                      style: const TextStyle(fontSize: 12),
-                                    ),
-                                  ],
-                                ),
-                                Row(
-                                  children: [
-                                    Icon(
-                                      Icons.person,
-                                      size: 12,
-                                      color: Colors.grey.shade600,
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      mov.conferente,
-                                      style: const TextStyle(fontSize: 12),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 2,
+                                  ),
+                                ],
                               ),
-                              decoration: BoxDecoration(
-                                color: _getColorForTipo(
+                              const SizedBox(height: 6),
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.person,
+                                    size: 12,
+                                    color: _kTextSecondary,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    mov.conferente,
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: _kTextSecondary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 10),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: tipoColor.withOpacity(0.15),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: tipoColor.withOpacity(0.4),
+                                  ),
+                                ),
+                                child: Text(
                                   mov.tipoMovimentacao,
-                                ).withOpacity(0.15),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                mov.tipoMovimentacao,
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                  color: _getColorForTipo(mov.tipoMovimentacao),
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: tipoColor,
+                                  ),
                                 ),
                               ),
-                            ),
-                            const SizedBox(height: 4),
-                          ],
+                            ],
+                          ),
                         ),
-                        isThreeLine: false,
                       ),
                     );
                   },
@@ -834,7 +938,7 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Fechar'),
+            child: const Text('Fechar', style: TextStyle(color: _kAccentColor)),
           ),
         ],
       ),
@@ -861,17 +965,17 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
   Color _getColorForTipo(String tipo) {
     switch (tipo) {
       case 'NORMAL':
-        return const Color(0xFF2E7D32);
+        return const Color(0xFF22C55E);
       case 'ROLLBACK':
-        return const Color(0xFFE65100);
+        return const Color(0xFFF97316);
       case 'ADMIN':
-        return const Color(0xFFB71C1C);
+        return const Color(0xFFEF4444);
       case 'EXCLUSAO':
         return Colors.red.shade900;
       case 'PARCIAL':
-        return const Color(0xFF00695C);
+        return const Color(0xFF14B8A6);
       default:
-        return Colors.grey.shade600;
+        return _kTextSecondary;
     }
   }
 
@@ -884,19 +988,19 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
   }) {
     return InkWell(
       onTap: onPressed,
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(12),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 12.0, horizontal: 10.0),
         child: Row(
           children: [
-            Icon(icon, size: 24, color: color),
-            const SizedBox(width: 15),
+            Icon(icon, size: 22, color: color),
+            const SizedBox(width: 12),
             Expanded(
               child: Text(
                 title,
                 style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: isDestructive ? FontWeight.bold : FontWeight.w500,
+                  fontSize: 15,
+                  fontWeight: isDestructive ? FontWeight.bold : FontWeight.w600,
                   color: color,
                 ),
               ),
@@ -915,6 +1019,7 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
 
     showModalBottomSheet(
       context: context,
+      backgroundColor: _kSurface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
       ),
@@ -935,16 +1040,18 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
                   'Ações do Pedido ${registro.ordemProducao ?? 'N/A'}',
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                     fontWeight: FontWeight.w800,
-                    color: Colors.black,
+                    color: _kTextPrimary,
                   ),
                   textAlign: TextAlign.center,
                 ),
+                const SizedBox(height: 6),
                 Text(
                   'Localização Atual: ${currentLoc ?? 'N/A'} (Metros: ${(registro.metros ?? 0.0).toStringAsFixed(3)})',
-                  style: const TextStyle(color: Colors.black54, fontSize: 14),
+                  style: const TextStyle(color: _kTextSecondary, fontSize: 13),
                   textAlign: TextAlign.center,
                 ),
-                const Divider(height: 30),
+                const SizedBox(height: 10),
+                const Divider(height: 25, color: _kBorderSoft),
 
                 if (nextOptions.isNotEmpty)
                   Column(
@@ -954,11 +1061,12 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
                         'Próximas Etapas:',
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
-                          color: Colors.black54,
+                          color: _kTextSecondary,
                           fontSize: 15,
                         ),
                       ),
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 12),
+
                       ...nextOptions.map(
                         (nextLoc) => Padding(
                           padding: const EdgeInsets.only(bottom: 10),
@@ -969,60 +1077,56 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
                             ),
                             label: Text(
                               'MOVER PARCIAL P/ ${nextLoc.toUpperCase()}',
-                              style: const TextStyle(fontSize: 16),
+                              style: const TextStyle(fontSize: 15),
                             ),
                             onPressed: () {
                               Navigator.pop(context);
                               _showParcialMoveDialog(registro, nextLoc);
                             },
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF00695C),
+                              backgroundColor: const Color(0xFF14B8A6),
                               foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              padding: const EdgeInsets.symmetric(vertical: 14),
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
+                                borderRadius: BorderRadius.circular(14),
                               ),
-                              elevation: 3,
+                              elevation: 0,
                             ),
                           ),
                         ),
                       ),
 
-                      ...nextOptions
-                          .map(
-                            (nextLoc) => Padding(
-                              padding: const EdgeInsets.only(bottom: 10),
-                              child: ElevatedButton.icon(
-                                icon: const Icon(
-                                  Icons.arrow_forward_ios_rounded,
-                                  size: 20,
-                                ),
-                                label: Text(
-                                  'MOVER COMPLETO P/ ${nextLoc.toUpperCase()}',
-                                  style: const TextStyle(fontSize: 16),
-                                ),
-                                onPressed: () {
-                                  Navigator.pop(context);
-                                  _updateRegistroLocationCompleta(
-                                    registro,
-                                    nextLoc,
-                                  );
-                                },
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF3A59D1),
-                                  foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 16,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  elevation: 5,
-                                ),
-                              ),
+                      ...nextOptions.map(
+                        (nextLoc) => Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: ElevatedButton.icon(
+                            icon: const Icon(
+                              Icons.arrow_forward_ios_rounded,
+                              size: 20,
                             ),
-                          )
-                          .toList(),
+                            label: Text(
+                              'MOVER COMPLETO P/ ${nextLoc.toUpperCase()}',
+                              style: const TextStyle(fontSize: 15),
+                            ),
+                            onPressed: () {
+                              Navigator.pop(context);
+                              _updateRegistroLocationCompleta(
+                                registro,
+                                nextLoc,
+                              );
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: _kPrimaryColor,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              elevation: 0,
+                            ),
+                          ),
+                        ),
+                      ),
                     ],
                   )
                 else if (currentLoc == 'Expedição')
@@ -1032,19 +1136,21 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
                       icon: const Icon(Icons.check_circle_outline_rounded),
                       label: const Text(
                         'MOVIMENTO FINALIZADO (EXPEDIDO)',
-                        style: TextStyle(fontSize: 16),
+                        style: TextStyle(fontSize: 15),
                       ),
                       onPressed: null,
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green.shade50,
-                        foregroundColor: Colors.green.shade800,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        backgroundColor: Colors.green.shade900.withOpacity(
+                          0.15,
+                        ),
+                        foregroundColor: Colors.green.shade200,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(14),
                         ),
                         elevation: 0,
                         side: BorderSide(
-                          color: Colors.green.shade300,
+                          color: Colors.green.shade700,
                           width: 1,
                         ),
                       ),
@@ -1055,33 +1161,32 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
                     padding: EdgeInsets.symmetric(vertical: 10.0),
                     child: Text(
                       'Nenhuma movimentação de fluxo normal disponível.',
-                      style: TextStyle(color: Colors.black54),
+                      style: TextStyle(color: _kTextSecondary),
                       textAlign: TextAlign.center,
                     ),
                   ),
 
                 const SizedBox(height: 15),
-                const Divider(height: 1),
+                const Divider(height: 20, color: _kBorderSoft),
 
                 if (canRollback || widget.isAdmin)
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const SizedBox(height: 15),
                       const Text(
                         'Ações Especiais:',
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
-                          color: Colors.black54,
+                          color: _kTextSecondary,
                           fontSize: 15,
                         ),
                       ),
-                      const SizedBox(height: 5),
+                      const SizedBox(height: 8),
 
                       _buildActionTile(
                         icon: Icons.history_rounded,
                         title: 'Ver Histórico de Movimentações',
-                        color: const Color(0xFF1565C0),
+                        color: _kAccentColor,
                         onPressed: () {
                           Navigator.pop(context);
                           _showHistoricoMovimentacao(registro);
@@ -1092,7 +1197,7 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
                         _buildActionTile(
                           icon: Icons.undo_rounded,
                           title: 'Retornar para ${previousLoc!.toUpperCase()}',
-                          color: const Color(0xFFE65100),
+                          color: const Color(0xFFF97316),
                           onPressed: () {
                             Navigator.pop(context);
                             _handleRollback(registro, previousLoc);
@@ -1102,12 +1207,11 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
                       if (widget.isAdmin)
                         Column(
                           children: [
-                            const Divider(height: 1),
-                            const SizedBox(height: 10),
+                            const Divider(height: 20, color: _kBorderSoft),
                             _buildActionTile(
                               icon: Icons.security_rounded,
                               title: 'MOVIMENTAÇÃO ADMIN (Direta)',
-                              color: Colors.red.shade700,
+                              color: const Color(0xFFEF4444),
                               isDestructive: true,
                               onPressed: () {
                                 Navigator.pop(context);
@@ -1142,11 +1246,11 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
     required Color color,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withOpacity(0.12),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withOpacity(0.5), width: 0.5),
+        border: Border.all(color: color.withOpacity(0.35), width: 1),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -1156,9 +1260,9 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
           Text(
             label,
             style: TextStyle(
-              fontSize: 13,
+              fontSize: 12,
               color: color,
-              fontWeight: FontWeight.w600,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ],
@@ -1166,9 +1270,8 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
     );
   }
 
-  // CORRIGIDO: Diálogo de Busca com melhor feedback
   void _showSearchDialog() {
-    final _searchController = TextEditingController(text: _searchQuery);
+    final searchController = TextEditingController(text: _searchQuery);
     DateTime? tempFilterDate = _filterDate;
 
     Future<void> _selectDate(StateSetter dialogSetState) async {
@@ -1191,41 +1294,73 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
         return StatefulBuilder(
           builder: (BuildContext context, StateSetter dialogSetState) {
             return AlertDialog(
-              title: const Text('Filtrar Pedidos'),
+              backgroundColor: _kSurface,
+              surfaceTintColor: _kSurface,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              title: const Text(
+                'Filtrar Pedidos',
+                style: TextStyle(color: _kTextPrimary),
+              ),
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     TextField(
-                      controller: _searchController,
+                      controller: searchController,
                       autofocus: true,
                       keyboardType: TextInputType.text,
-                      decoration: const InputDecoration(
+                      style: const TextStyle(color: _kTextPrimary),
+                      decoration: InputDecoration(
                         hintText: 'Digite Nr Ordem ou Artigo...',
-                        prefixIcon: Icon(Icons.search),
-                        border: OutlineInputBorder(),
+                        hintStyle: TextStyle(
+                          color: _kTextSecondary.withOpacity(0.7),
+                        ),
+                        prefixIcon: const Icon(
+                          Icons.search,
+                          color: _kAccentColor,
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: _kBorderSoft),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: _kAccentColor),
+                        ),
                       ),
                     ),
                     const SizedBox(height: 15),
                     ListTile(
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(5),
-                        side: const BorderSide(color: Colors.grey),
+                        borderRadius: BorderRadius.circular(12),
+                        side: const BorderSide(color: _kBorderSoft),
                       ),
-                      leading: const Icon(Icons.calendar_today),
+                      leading: const Icon(
+                        Icons.calendar_today,
+                        color: _kAccentColor,
+                      ),
                       title: Text(
                         tempFilterDate == null
                             ? 'Filtrar por Data'
                             : 'Data: ${DateFormat('dd/MM/yyyy').format(tempFilterDate!)}',
+                        style: const TextStyle(color: _kTextPrimary),
                       ),
                       trailing: tempFilterDate != null
                           ? IconButton(
-                              icon: const Icon(Icons.clear, color: Colors.red),
+                              icon: const Icon(
+                                Icons.clear,
+                                color: Color(0xFFEF4444),
+                              ),
                               onPressed: () => dialogSetState(() {
                                 tempFilterDate = null;
                               }),
                             )
-                          : const Icon(Icons.arrow_drop_down),
+                          : const Icon(
+                              Icons.arrow_drop_down,
+                              color: _kTextSecondary,
+                            ),
                       onTap: () => _selectDate(dialogSetState),
                     ),
                   ],
@@ -1234,21 +1369,21 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(context),
-                  child: const Text('Cancelar'),
+                  child: const Text(
+                    'Cancelar',
+                    style: TextStyle(color: _kTextSecondary),
+                  ),
                 ),
                 ElevatedButton(
                   onPressed: () {
                     setState(() {
-                      _searchQuery = _searchController.text.trim();
+                      _searchQuery = searchController.text.trim();
                       _filterDate = tempFilterDate;
                     });
 
-                    // IMPORTANTE: Força o recarregamento de TODAS as abas
                     _reloadAllFutures();
-
                     Navigator.pop(context);
 
-                    // Feedback visual melhorado
                     String filterMsg = 'Filtro aplicado';
                     if (_searchQuery.isNotEmpty && _filterDate != null) {
                       filterMsg =
@@ -1264,12 +1399,12 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
                       SnackBar(
                         content: Text(filterMsg),
                         duration: const Duration(seconds: 2),
-                        backgroundColor: const Color(0xFF3A59D1),
+                        backgroundColor: _kPrimaryColor,
                       ),
                     );
                   },
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF3A59D1),
+                    backgroundColor: _kPrimaryColor,
                     foregroundColor: Colors.white,
                   ),
                   child: const Text('Aplicar Filtro'),
@@ -1284,84 +1419,95 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
 
   @override
   Widget build(BuildContext context) {
-    const appBarColor = Color(0xFFCD1818);
     final currentTabIndex = _tabController.index;
     final currentTabName = _tabNames[currentTabIndex];
     final selectedTabColor = _getTabColor(currentTabName);
-    const unselectedLabelColor = Color(0xFFF0F0F0);
+
     final isFilterActive = _searchQuery.isNotEmpty || _filterDate != null;
 
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: appBarColor,
-        surfaceTintColor: appBarColor,
-        title: const Text(
-          'Localização de Pedidos',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-        ),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
-        ),
-        actions: [
-          IconButton(
-            icon: Icon(
-              isFilterActive ? Icons.filter_alt : Icons.search,
-              color: Colors.white,
-            ),
-            onPressed: _showSearchDialog,
-            tooltip: isFilterActive
-                ? 'Filtro ativo: ${_searchQuery.isNotEmpty ? "OP/Artigo" : ""}${_searchQuery.isNotEmpty && _filterDate != null ? " + " : ""}${_filterDate != null ? "Data" : ""}'
-                : 'Filtrar por OP, Artigo ou Data',
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [_kBgTop, _kBgBottom],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
           ),
-          IconButton(
-            icon: const Icon(Icons.refresh, color: Colors.white),
-            onPressed: () {
-              setState(() {
-                _searchQuery = '';
-                _filterDate = null;
-              });
-
-              _reloadAllFutures();
-
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Atualizando...'),
-                  duration: Duration(seconds: 1),
-                  backgroundColor: Color(0xFF2E7D32),
-                ),
-              );
-            },
-            tooltip: 'Remover Filtros e Atualizar',
-          ),
-        ],
-        bottom: TabBar(
-          controller: _tabController,
-          indicatorColor: selectedTabColor,
-          indicatorWeight: 4,
-          isScrollable: false,
-          labelColor: selectedTabColor,
-          unselectedLabelColor: unselectedLabelColor.withOpacity(0.8),
-          dividerColor: Colors.transparent,
-          padding: EdgeInsets.zero,
-          tabs: _tabNames.map((tabName) {
-            return Tab(
-              child: Text(
-                tabName,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                ),
+        ),
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          appBar: AppBar(
+            elevation: 0,
+            centerTitle: true,
+            backgroundColor: _kBgBottom,
+            foregroundColor: _kTextPrimary,
+            title: const Text(
+              'Localização de Pedidos',
+              style: TextStyle(
+                color: _kTextPrimary,
+                fontWeight: FontWeight.bold,
               ),
-            );
-          }).toList(),
+            ),
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back, color: Colors.white),
+              onPressed: () => Navigator.pop(context),
+            ),
+            actions: [
+              IconButton(
+                icon: Icon(
+                  isFilterActive ? Icons.filter_alt : Icons.search,
+                  color: Colors.white,
+                ),
+                onPressed: _showSearchDialog,
+              ),
+              IconButton(
+                icon: const Icon(Icons.refresh, color: Colors.white),
+                onPressed: () {
+                  setState(() {
+                    _searchQuery = '';
+                    _filterDate = null;
+                  });
+
+                  _reloadAllFutures();
+
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Atualizando...'),
+                      duration: Duration(seconds: 1),
+                      backgroundColor: Color(0xFF22C55E),
+                    ),
+                  );
+                },
+              ),
+            ],
+            bottom: TabBar(
+              controller: _tabController,
+              indicatorColor: selectedTabColor,
+              indicatorWeight: 4,
+              isScrollable: false,
+              labelColor: Colors.white,
+              unselectedLabelColor: Colors.white.withOpacity(0.7),
+              dividerColor: Colors.transparent,
+              tabs: _tabNames.map((tabName) {
+                return Tab(
+                  child: Text(
+                    tabName,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          body: TabBarView(
+            controller: _tabController,
+            children: _tabNames
+                .map((tabName) => _buildRegistroTab(tabName))
+                .toList(),
+          ),
         ),
-      ),
-      body: TabBarView(
-        controller: _tabController,
-        children: _tabNames
-            .map((tabName) => _buildRegistroTab(tabName))
-            .toList(),
       ),
     );
   }
@@ -1375,7 +1521,9 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
       future: _getFutureForTab(tabLocation),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
+          return const Center(
+            child: CircularProgressIndicator(color: _kAccentColor),
+          );
         }
 
         if (snapshot.hasError) {
@@ -1392,7 +1540,7 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
                 const SizedBox(height: 5),
                 Text(
                   '${snapshot.error}',
-                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                  style: const TextStyle(fontSize: 12, color: _kTextSecondary),
                   textAlign: TextAlign.center,
                 ),
               ],
@@ -1416,12 +1564,15 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
                   Icon(
                     isFilterActive ? Icons.search_off : Icons.layers_clear,
                     size: 60,
-                    color: headerColor.withOpacity(0.5),
+                    color: headerColor.withOpacity(0.7),
                   ),
                   const SizedBox(height: 10),
                   Text(
                     msg,
-                    style: TextStyle(color: headerColor, fontSize: 16),
+                    style: const TextStyle(
+                      color: _kTextSecondary,
+                      fontSize: 15,
+                    ),
                     textAlign: TextAlign.center,
                   ),
                   if (isFilterActive) ...[
@@ -1449,10 +1600,11 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
         }
 
         return ListView.builder(
-          padding: const EdgeInsets.symmetric(vertical: 10),
+          padding: const EdgeInsets.symmetric(vertical: 12),
           itemCount: registros.length,
           itemBuilder: (context, index) {
             final r = registros[index];
+
             final dateFormat = DateFormat('dd/MM HH:mm');
             final dataEntradaFormatada = dateFormat.format(r.data.toLocal());
             final dataMovimentacaoFormatada = r.dataMovimentacao != null
@@ -1460,18 +1612,26 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
                 : dataEntradaFormatada;
 
             return Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Card(
-                elevation: 6,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(18),
+                  gradient: LinearGradient(
+                    colors: [
+                      _kSurface.withOpacity(0.95),
+                      _kSurface2.withOpacity(0.95),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  border: Border.all(color: _kBorderSoft, width: 1),
                 ),
                 child: InkWell(
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(18),
                   onTap: () => _showMoveAndDeleteSheet(r),
                   onLongPress: () => _showMoveAndDeleteSheet(r),
                   child: Padding(
-                    padding: const EdgeInsets.all(18.0),
+                    padding: const EdgeInsets.all(16.0),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -1481,10 +1641,10 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
                             Flexible(
                               child: Text(
                                 'OP ${r.ordemProducao}',
-                                style: TextStyle(
+                                style: const TextStyle(
                                   fontWeight: FontWeight.w900,
                                   fontSize: 20,
-                                  color: headerColor,
+                                  color: _kTextPrimary,
                                 ),
                                 overflow: TextOverflow.ellipsis,
                               ),
@@ -1495,124 +1655,117 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
                                 vertical: 6,
                               ),
                               decoration: BoxDecoration(
-                                color: headerColor,
-                                borderRadius: BorderRadius.circular(15),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: headerColor.withOpacity(0.5),
-                                    blurRadius: 6,
-                                    offset: const Offset(0, 3),
-                                  ),
-                                ],
+                                color: headerColor.withOpacity(0.25),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: headerColor.withOpacity(0.6),
+                                  width: 1,
+                                ),
                               ),
                               child: Text(
                                 r.localizacao ?? 'N/A',
-                                style: const TextStyle(
-                                  color: Colors.white,
+                                style: TextStyle(
+                                  color: headerColor,
                                   fontWeight: FontWeight.bold,
-                                  fontSize: 14,
+                                  fontSize: 13,
                                 ),
                               ),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 10),
                         Text(
                           r.artigo ?? 'N/A',
                           style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.black87,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: _kTextPrimary,
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),
+                        const SizedBox(height: 2),
                         Text(
                           'Cor: ${r.cor ?? 'N/A'}',
                           style: const TextStyle(
-                            fontSize: 14,
-                            color: Colors.black54,
+                            fontSize: 13,
+                            color: _kTextSecondary,
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),
                         const SizedBox(height: 12),
-                        const Divider(height: 1),
-                        const SizedBox(height: 10),
+                        const Divider(height: 1, color: _kBorderSoft),
+                        const SizedBox(height: 12),
+
                         Wrap(
                           spacing: 8,
                           runSpacing: 8,
                           children: [
-                            // 🔥 CORREÇÃO APLICADA AQUI:
                             _buildDetailChip(
                               icon: Icons.inventory_2_outlined,
                               label:
                                   'Caixa: ${r.caixa != null && r.caixa!.isNotEmpty ? r.caixa : '0'}',
-                              color: Colors.teal.shade700,
+                              color: const Color(0xFF14B8A6),
                             ),
                             _buildDetailChip(
                               icon: Icons.cut,
                               label: 'Corte: ${r.numCorte ?? 'N/A'}',
-                              color: Colors.deepOrange,
+                              color: const Color(0xFFF97316),
                             ),
                             _buildDetailChip(
                               icon: Icons.straighten,
                               label:
                                   'Metros: ${(r.metros ?? 0.0).toStringAsFixed(3)} m',
-                              color: Colors.indigo.shade600,
+                              color: const Color(0xFF3B82F6),
                             ),
                             _buildDetailChip(
                               icon: Icons.scale,
                               label:
                                   'Peso: ${(r.peso != null ? double.parse(r.peso.toString()) : 0.0).toStringAsFixed(3)} kg',
-                              color: Colors.blueGrey.shade600,
+                              color: const Color(0xFF64748B),
                             ),
                             _buildDetailChip(
                               icon: Icons.unarchive_rounded,
                               label:
                                   'Volume: ${(r.volumeProg != null ? double.parse(r.volumeProg.toString()) : 0.0).toStringAsFixed(3)}',
-                              color: Colors
-                                  .purple
-                                  .shade600, // Alterei a cor para diferenciar de Peso
+                              color: const Color(0xFFA855F7),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 15),
+
+                        const SizedBox(height: 16),
                         Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Flexible(
+                            Expanded(
                               child: _buildInfoRow(
                                 Icons.person_outline,
                                 'Conf.: ${r.conferente ?? 'N/A'}',
-                                color: Colors.grey.shade600,
+                                color: _kTextSecondary,
                               ),
                             ),
-                            const SizedBox(width: 10),
-                            Flexible(
+                            Expanded(
                               child: _buildInfoRow(
                                 Icons.layers_outlined,
                                 'Qtd: ${r.quantidade ?? 0}',
-                                color: Colors.grey.shade600,
+                                color: _kTextSecondary,
                               ),
                             ),
                           ],
                         ),
                         const SizedBox(height: 8),
                         Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Flexible(
+                            Expanded(
                               child: _buildInfoRow(
                                 Icons.access_time_filled,
                                 'Entrada: $dataEntradaFormatada',
-                                color: Colors.green.shade700,
+                                color: const Color(0xFF22C55E),
                               ),
                             ),
-                            const SizedBox(width: 10),
-                            Flexible(
+                            Expanded(
                               child: _buildInfoRow(
                                 Icons.update_rounded,
-                                'Saída.: $dataMovimentacaoFormatada',
-                                color: Colors.red.shade700,
+                                'Saída: $dataMovimentacaoFormatada',
+                                color: const Color(0xFFEF4444),
                               ),
                             ),
                           ],
@@ -1634,11 +1787,11 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
       mainAxisSize: MainAxisSize.min,
       children: [
         Icon(icon, size: 16, color: color),
-        const SizedBox(width: 5),
+        const SizedBox(width: 6),
         Flexible(
           child: Text(
             label,
-            style: TextStyle(fontSize: 13, color: color),
+            style: TextStyle(fontSize: 12, color: color),
             overflow: TextOverflow.ellipsis,
           ),
         ),
