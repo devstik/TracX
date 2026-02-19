@@ -2,7 +2,7 @@ name: tracx
 description: "A new Flutter project."
 publish_to: "none"
 
-version: 1.0.7+7
+version: 2.0.0+1
 
 environment:
   sdk: ^3.8.1
@@ -44,6 +44,7 @@ dependencies:
   flutter_animate: ^4.5.0
   google_fonts: ^6.2.1
   shimmer: ^3.0.0
+  flutter_barcode_scanner_plus: ^3.0.8
 
   flutter_localizations:
     sdk: flutter
