@@ -13,7 +13,7 @@ import 'package:tracx/screens/ConsultaMapaProducaoScreen.dart';
 import 'package:tracx/screens/ApontamentoProdutividadeScreen.dart';
 import 'package:tracx/screens/RegistrosApontamento.dart';
 import 'package:tracx/services/estoque_db_helper.dart';
-import 'package:tracx/widgets/widgets_dados_integrados.dart';
+//import 'package:tracx/widgets/widgets_dados_integrados.dart';
 import 'package:tracx/services/update_service.dart';
 import 'dart:math' as math;
 import 'dart:convert';
@@ -35,7 +35,7 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _fadeAnimation;
-  late Future<List<DadosProducaoDiaria>> _futureHistoricoProducao;
+  //late Future<List<DadosProducaoDiaria>> _futureHistoricoProducao;
 
   int _currentIndex = 0;
 
@@ -69,15 +69,15 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
     
   }
 
-  void _carregarDadosProducao() {
-    _futureHistoricoProducao = DadosAnalyticsAPI.buscarHistoricoProducao();
-  }
+  // void _carregarDadosProducao() {
+  //   _futureHistoricoProducao = DadosAnalyticsAPI.buscarHistoricoProducao();
+  // }
 
-  void _refreshDadosProducao() {
-    setState(() {
-      _carregarDadosProducao();
-    });
-  }
+  // void _refreshDadosProducao() {
+  //   setState(() {
+  //     _carregarDadosProducao();
+  //   });
+  // }
 
   Widget _buildLoadingCard() {
     return Container(

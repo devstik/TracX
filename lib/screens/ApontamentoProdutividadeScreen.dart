@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:http/http.dart' as http;
@@ -6,7 +7,6 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart' as path_helper;
-import 'package:flutter_barcode_scanner_plus/flutter_barcode_scanner_plus.dart';
 
 // =========================================================================
 // CONFIGURAÇÃO DE REDE
@@ -966,31 +966,6 @@ class _FormularioGeralState extends State<FormularioGeral> {
     );
   }
 
-  Future<void> _lerOperadorCamera() async {
-    try {
-      // Chama o scanner configurado para ler diversos códigos, incluindo ITF
-      String barcodeScanRes = await FlutterBarcodeScanner.scanBarcode(
-        "#ff2563eb", // Cor da linha de scan (Primary Color)
-        "Cancelar", // Botão de cancelar
-        true, // Mostrar ícone de flash
-        ScanMode.BARCODE,
-      );
-
-      if (!mounted) return;
-
-      // O scanner retorna "-1" se o usuário cancelar
-      if (barcodeScanRes != "-1") {
-        setState(() {
-          _operadorController.text = barcodeScanRes;
-          _coletorOperadorAtivo = false;
-        });
-        _showSnack("Operador identificado!", Colors.green);
-      }
-    } catch (e) {
-      _showSnack("Erro ao abrir câmera: $e", Colors.red);
-    }
-  }
-
   // -----------------------------------------------------------------------
   // SETOR / MÁQUINA
   // -----------------------------------------------------------------------
@@ -1692,7 +1667,6 @@ class _FormularioGeralState extends State<FormularioGeral> {
                         color: _kAccentColor,
                         size: 22,
                       ),
-                      tooltip: 'Câmera',
                       onPressed: () async {
                         final String? code = await Navigator.push(
                           context,
@@ -1831,7 +1805,6 @@ class _FormularioGeralState extends State<FormularioGeral> {
                         color: _kAccentColor,
                         size: 22,
                       ),
-                      tooltip: 'Câmera',
                       onPressed: () async {
                         final String? code = await Navigator.push(
                           context,
@@ -2141,6 +2114,7 @@ class _ScannerPageState extends State<ScannerPage>
   late MobileScannerController _controller;
   bool _hasScanned = false;
   bool _torchOn = false;
+  bool? _cameraPermissionGranted;
   late AnimationController _laserAnim;
   late Animation<double> _laserPos;
 
@@ -2148,14 +2122,18 @@ class _ScannerPageState extends State<ScannerPage>
   void initState() {
     super.initState();
 
-    // AJUSTE: Configurando para ler Interleaved 2 of 5 explicitamente
     _controller = MobileScannerController(
-      detectionSpeed: DetectionSpeed.normal,
+      detectionSpeed: defaultTargetPlatform == TargetPlatform.macOS
+          ? DetectionSpeed.unrestricted
+          : DetectionSpeed.normal,
       autoStart: true,
-      formats: [
-        BarcodeFormat.itf, // ITF é o Interleaved 2 of 5
-        BarcodeFormat.code128, // Opcional: comum em outros tipos de etiquetas
-      ],
+      facing: CameraFacing.back,
+      onPermissionSet: (granted) {
+        if (!mounted) return;
+        setState(() => _cameraPermissionGranted = granted);
+      },
+      // Sem filtro de formato: aumenta a chance de leitura em webcams no macOS.
+      formats: null,
     );
 
     _laserAnim = AnimationController(
@@ -2178,34 +2156,131 @@ class _ScannerPageState extends State<ScannerPage>
 
   void _onDetect(BarcodeCapture capture) {
     if (_hasScanned) return;
+    final isBarcodeMode = widget.modo == 'barcode';
 
     for (final barcode in capture.barcodes) {
-      final String raw = barcode.rawValue ?? '';
+      final String raw = _extrairTextoCodigo(barcode);
+      if (raw.isEmpty) continue;
 
-      // LOG PARA DEPURAÇÃO
-      print('--- CÓDIGO DETECTADO ---');
-      print('Conteúdo: $raw');
-      print('Tamanho: ${raw.length}');
-      print('Formato: ${barcode.format.name}');
+      final String somenteNumeros = raw.replaceAll(RegExp(r'\D'), '');
+      final bool manterBruto =
+          !isBarcodeMode &&
+          (barcode.format == BarcodeFormat.qrCode || raw.startsWith('{'));
+      final String valorLido = manterBruto
+          ? raw
+          : (somenteNumeros.isNotEmpty ? somenteNumeros : raw);
 
-      if (raw.isNotEmpty) {
-        if (raw.length != 4) continue;
+      _hasScanned = true;
+      _controller.stop();
 
-        print('Lido com sucesso: $raw');
-        _hasScanned = true;
-
-        // Use o Future.delayed para garantir que o Navigator não conflite com o ciclo da câmera
-        Future.delayed(Duration.zero, () {
-          if (mounted) Navigator.pop(context, raw);
-        });
-        break;
-      }
+      Future.delayed(Duration.zero, () {
+        if (mounted) Navigator.pop(context, valorLido);
+      });
+      break;
     }
+  }
+
+  String _extrairTextoCodigo(Barcode barcode) {
+    final fromRaw = (barcode.rawValue ?? '').trim();
+    if (fromRaw.isNotEmpty) return fromRaw;
+
+    final fromDisplay = (barcode.displayValue ?? '').trim();
+    if (fromDisplay.isNotEmpty) return fromDisplay;
+
+    final bytes = barcode.rawBytes;
+    if (bytes != null && bytes.isNotEmpty) {
+      try {
+        final decoded = utf8.decode(bytes, allowMalformed: true).trim();
+        if (decoded.isNotEmpty) return decoded;
+      } catch (_) {}
+      try {
+        final decoded = latin1.decode(bytes).trim();
+        if (decoded.isNotEmpty) return decoded;
+      } catch (_) {}
+    }
+
+    return '';
+  }
+
+  Widget _buildScannerError(MobileScannerException error) {
+    final isMacOs = defaultTargetPlatform == TargetPlatform.macOS;
+    final details = error.errorDetails;
+    final message = details?.message ?? '';
+
+    String titulo = 'Falha ao iniciar a câmera';
+    String descricao = 'Não foi possível abrir a câmera.';
+
+    switch (error.errorCode) {
+      case MobileScannerErrorCode.permissionDenied:
+        titulo = 'Permissão de câmera negada';
+        descricao = isMacOs
+            ? 'Ative em Ajustes do macOS > Privacidade e Segurança > Câmera.'
+            : 'Conceda permissão de câmera para continuar.';
+        break;
+      case MobileScannerErrorCode.unsupported:
+        titulo = 'Câmera não suportada';
+        descricao = 'Este dispositivo não suporta leitura por câmera.';
+        break;
+      case MobileScannerErrorCode.controllerUninitialized:
+      case MobileScannerErrorCode.genericError:
+        break;
+    }
+
+    return Container(
+      color: Colors.black,
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.error_outline, color: Colors.white, size: 44),
+          const SizedBox(height: 12),
+          Text(
+            titulo,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            descricao,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.white70),
+          ),
+          if (message.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white54, fontSize: 12),
+            ),
+          ],
+          const SizedBox(height: 14),
+          TextButton.icon(
+            onPressed: () async {
+              try {
+                await _controller.stop();
+                await _controller.start();
+              } catch (_) {}
+            },
+            icon: const Icon(Icons.refresh, color: _kAccentColor),
+            label: const Text(
+              'Tentar novamente',
+              style: TextStyle(color: _kAccentColor),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final isBarcode = widget.modo == 'barcode';
+    final isMacOs = defaultTargetPlatform == TargetPlatform.macOS;
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -2215,14 +2290,26 @@ class _ScannerPageState extends State<ScannerPage>
         title: Text(widget.titulo),
         actions: [
           IconButton(
+            icon: const Icon(Icons.cameraswitch),
+            tooltip: 'Trocar câmera',
+            onPressed: _controller.switchCamera,
+          ),
+          IconButton(
             icon: Icon(
-              _torchOn ? Icons.flashlight_off : Icons.flashlight_on,
-              color: _torchOn ? _kAccentColor : _kTextSecondary,
+              isMacOs
+                  ? Icons.lightbulb_outline
+                  : _torchOn
+                  ? Icons.flashlight_off
+                  : Icons.flashlight_on,
             ),
-            onPressed: () {
-              _controller.toggleTorch();
-              setState(() => _torchOn = !_torchOn);
-            },
+            color: _torchOn ? _kAccentColor : _kTextSecondary,
+            tooltip: isMacOs ? 'Flash indisponível no Mac' : 'Flash',
+            onPressed: isMacOs
+                ? null
+                : () {
+                    _controller.toggleTorch();
+                    setState(() => _torchOn = !_torchOn);
+                  },
           ),
         ],
       ),
@@ -2239,7 +2326,23 @@ class _ScannerPageState extends State<ScannerPage>
 
           return Stack(
             children: [
-              MobileScanner(controller: _controller, onDetect: _onDetect),
+              MobileScanner(
+                controller: _controller,
+                onDetect: _onDetect,
+                onScannerStarted: (_) {
+                  if (_cameraPermissionGranted != true && mounted) {
+                    setState(() => _cameraPermissionGranted = true);
+                  }
+                },
+                errorBuilder: (context, error, child) =>
+                    _buildScannerError(error),
+                placeholderBuilder: (context, child) => const ColoredBox(
+                  color: Colors.black,
+                  child: Center(
+                    child: CircularProgressIndicator(color: _kAccentColor),
+                  ),
+                ),
+              ),
               // Overlay escuro
               CustomPaint(
                 size: Size(w, h),

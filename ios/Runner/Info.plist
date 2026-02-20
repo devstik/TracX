@@ -60,5 +60,7 @@
 			</dict>
 		</dict>
 	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>Este app usa a camera para ler codigos de barras e QR Codes.</string>
 </dict>
 </plist>

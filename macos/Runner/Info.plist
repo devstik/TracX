@@ -26,6 +26,8 @@
 	<string>$(PRODUCT_COPYRIGHT)</string>
 	<key>NSMainNibFile</key>
 	<string>MainMenu</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Este app usa a camera para ler codigos de barras e QR Codes.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 </dict>
