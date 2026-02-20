@@ -966,6 +966,31 @@ class _FormularioGeralState extends State<FormularioGeral> {
     );
   }
 
+  Future<void> _lerOperadorCamera() async {
+    try {
+      // Chama o scanner configurado para ler diversos códigos, incluindo ITF
+      String barcodeScanRes = await FlutterBarcodeScanner.scanBarcode(
+        "#ff2563eb", // Cor da linha de scan (Primary Color)
+        "Cancelar", // Botão de cancelar
+        true, // Mostrar ícone de flash
+        ScanMode.BARCODE,
+      );
+
+      if (!mounted) return;
+
+      // O scanner retorna "-1" se o usuário cancelar
+      if (barcodeScanRes != "-1") {
+        setState(() {
+          _operadorController.text = barcodeScanRes;
+          _coletorOperadorAtivo = false;
+        });
+        _showSnack("Operador identificado!", Colors.green);
+      }
+    } catch (e) {
+      _showSnack("Erro ao abrir câmera: $e", Colors.red);
+    }
+  }
+
   // -----------------------------------------------------------------------
   // SETOR / MÁQUINA
   // -----------------------------------------------------------------------

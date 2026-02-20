@@ -18,10 +18,10 @@ class EstoqueDbHelper {
 
   Future<Database> _initDB() async {
     String path = join(await getDatabasesPath(), 'estoque_database.db');
-    // ATENÇÃO: Alterado para versão 5 para disparar o _onUpgrade
+    // ATENÇÃO: Alterado para versão 6 para disparar o _onUpgrade com limpeza melhorada
     return await openDatabase(
       path,
-      version: 5,
+      version: 6,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -95,7 +95,6 @@ class EstoqueDbHelper {
         'CREATE TABLE usuarios_autorizados (username TEXT PRIMARY KEY, ultima_autenticacao TEXT)',
       );
     }
-    // O SEGREDO ESTÁ AQUI: Se a versão for menor que 5, cria a tabela que está faltando
     if (oldVersion < 5) {
       await db.execute('''
         CREATE TABLE IF NOT EXISTS catalogo_produtos (
@@ -104,6 +103,13 @@ class EstoqueDbHelper {
           detalhe TEXT
         )
       ''');
+    }
+    // 🆕 VERSÃO 6: Limpa dados corrompidos/antigos da cache
+    if (oldVersion < 6) {
+      print('✓ Migrando para v6: Limpando cache de dados antigos...');
+      // Remove todos os registros antigos da cache_grafico para evitar conflitos
+      await db.delete('cache_grafico');
+      print('✓ Cache legado removida com sucesso');
     }
   }
 
@@ -223,9 +229,11 @@ class EstoqueDbHelper {
         },
     };
   }
+
   // --- MÉTODOS DO GRÁFICO DE PRODUÇÃO (CACHE & AUTO-UPDATE) ---
 
   /// Salva todos os pontos do gráfico de uma vez (Batch)
+  /// AGORA com limpeza agressiva de dados antigos e nomes incorretos
   Future<void> salvarCacheGrafico(
     List<Map<String, dynamic>> dados,
     String tipo,
@@ -233,28 +241,77 @@ class EstoqueDbHelper {
     final db = await database;
     final batch = db.batch();
 
-    // Limpa o cache anterior do tipo específico (ex: 'diario' ou 'mensal')
+    // 🔧 PASSO 1: Limpa TODOS os dados antigos do tipo (remove dados corrompidos também)
     batch.delete('cache_grafico', where: 'tipo_grafico = ?', whereArgs: [tipo]);
 
+    // 🔧 PASSO 2: Insere os novos dados
     for (var item in dados) {
+      final periodo = item['periodo']?.toString() ?? '';
+      final valor = (item['valor'] ?? 0.0);
+
+      print('💾 Salvando no DB: periodo=$periodo, valor=$valor, tipo=$tipo');
+
       batch.insert('cache_grafico', {
-        'periodo': item['periodo'], // Data ou Nome do Eixo X
-        'valor': item['valor'], // Valor do Eixo Y
+        'periodo': periodo,
+        'valor': valor,
         'tipo_grafico': tipo,
         'atualizado_em': DateTime.now().toIso8601String(),
       });
     }
+
     await batch.commit(noResult: true);
+
+    // 🔧 PASSO 3: Verifica se salvou corretamente
+    final verificacao = await db.query(
+      'cache_grafico',
+      where: 'tipo_grafico = ?',
+      whereArgs: [tipo],
+    );
+    print(
+      '✓ Verificação pós-salvamento: ${verificacao.length} registros salvos',
+    );
+    for (var reg in verificacao) {
+      print('  - ${reg['periodo']}: ${reg['valor']}');
+    }
+  }
+
+  /// 🆕 NOVO MÉTODO: Limpa APENAS o cache de um tipo específico
+  /// Útil para remover dados antigos/corrompidos antes de salvar novos
+  Future<void> limparCacheGrafico(String tipo) async {
+    final db = await database;
+    final deletados = await db.delete(
+      'cache_grafico',
+      where: 'tipo_grafico = ?',
+      whereArgs: [tipo],
+    );
+    print('✓ Cache do tipo "$tipo" foi limpo: $deletados registros removidos');
+  }
+
+  /// 🔥 NOVO MÉTODO: Limpeza AGRESSIVA - Remove TUDO e recria limpo
+  /// Use este método se tiver dados corrompidos na cache
+  Future<void> limparCacheGraficoCompleto() async {
+    final db = await database;
+    final deletados = await db.delete('cache_grafico');
+    print('🔥 CACHE COMPLETA FOI LIMPA: $deletados registros removidos');
   }
 
   /// Recupera os dados do gráfico salvos localmente
   Future<List<Map<String, dynamic>>> buscarCacheGrafico(String tipo) async {
     final db = await database;
-    return await db.query(
+    final resultado = await db.query(
       'cache_grafico',
       where: 'tipo_grafico = ?',
       whereArgs: [tipo],
     );
+
+    print(
+      '📊 Cache recuperada para tipo "$tipo": ${resultado.length} registros',
+    );
+    for (var item in resultado) {
+      print('  - ${item['periodo']}: ${item['valor']}');
+    }
+
+    return resultado;
   }
 
   // --- LIMPEZA DE CACHE ---

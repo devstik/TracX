@@ -13,6 +13,7 @@ import 'package:tracx/screens/ConsultaMapaProducaoScreen.dart';
 import 'package:tracx/screens/ApontamentoProdutividadeScreen.dart';
 import 'package:tracx/screens/RegistrosApontamento.dart';
 import 'package:tracx/services/estoque_db_helper.dart';
+import 'package:tracx/widgets/widgets_dados_integrados.dart';
 import 'package:tracx/services/update_service.dart';
 import 'dart:math' as math;
 import 'dart:convert';
@@ -34,6 +35,7 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _fadeAnimation;
+  late Future<List<DadosProducaoDiaria>> _futureHistoricoProducao;
 
   int _currentIndex = 0;
 
@@ -64,6 +66,38 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
 
     _controller.forward();
     _gerenciarDadosProducao();
+    
+  }
+
+  void _carregarDadosProducao() {
+    _futureHistoricoProducao = DadosAnalyticsAPI.buscarHistoricoProducao();
+  }
+
+  void _refreshDadosProducao() {
+    setState(() {
+      _carregarDadosProducao();
+    });
+  }
+
+  Widget _buildLoadingCard() {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        color: const Color(0xFF101B34),
+        border: Border.all(color: const Color(0x33FFFFFF)),
+      ),
+      child: const Center(
+        child: SizedBox(
+          height: 40,
+          width: 40,
+          child: CircularProgressIndicator(
+            valueColor: AlwaysStoppedAnimation(Color(0xFF60A5FA)),
+            strokeWidth: 2,
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -96,6 +130,8 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
     }
   }
 
+  // Trecho corrigido do método _buscarDadosAPIeSalvar (substitua o método existente)
+
   Future<void> _buscarDadosAPIeSalvar(String tipo) async {
     try {
       final response = await http
@@ -106,49 +142,135 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
           )
           .timeout(const Duration(seconds: 7));
 
+      print("STATUS CODE: ${response.statusCode}");
+      print("BODY RAW: ${response.body}");
+
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
 
+        print("JSON DECODIFICADO: $data");
+        print("PrevisaoFechamento recebido: ${data['PrevisaoFechamento']}");
+
+        // Função robusta para converter qualquer valor para double
+        double toDouble(dynamic value) {
+          if (value == null) {
+            print("⚠️ Valor nulo recebido, retornando 0.0");
+            return 0.0;
+          }
+          if (value is int) return value.toDouble();
+          if (value is double) {
+            print("✓ Double recebido: $value");
+            return value;
+          }
+
+          final resultado = double.tryParse(value.toString()) ?? 0.0;
+          print("✓ Convertido para double: $resultado (de $value)");
+          return resultado;
+        }
+
+        final previsao = toDouble(data['PrevisaoFechamento']);
+        final dias = toDouble(data['DiasProduzidosMes']);
+        final total = toDouble(data['TotalProducao']);
+
+        print("✓ Conversões realizadas:");
+        print("  - DiasProduzidosMes: $dias");
+        print("  - PrevisaoFechamento: $previsao");
+        print("  - TotalProducao: $total");
+
         List<Map<String, dynamic>> paraSalvar = [
+          {'periodo': 'DiasProduzidosMes', 'valor': dias},
           {
-            'periodo': 'DiasProduzidosMes',
-            'valor': (data['DiasProduzidosMes'] ?? 0).toDouble(),
+            'periodo': 'PrevisaoFechamento', // ✓ CORRETO - Nova chave
+            'valor': previsao, // ✓ Aqui vai o valor correto da API
           },
-          {
-            'periodo': 'PrevisaoProducao',
-            'valor': (data['PrevisaoProducao'] ?? 0).toDouble(),
-          },
-          {
-            'periodo': 'TotalProducao',
-            'valor': (data['TotalProducao'] ?? 0).toDouble(),
-          },
+          {'periodo': 'TotalProducao', 'valor': total},
         ];
 
+        print("🔄 DADOS QUE SERÃO SALVOS NO BANCO:");
+        for (var item in paraSalvar) {
+          print("  - ${item['periodo']}: ${item['valor']}");
+        }
+
+        // PASSO 1: Limpar dados antigos E CORROMPIDOS
+        print("🧹 LIMPANDO CACHE ANTIGA...");
+        await _dbHelper.limparCacheGrafico(tipo);
+        print("✓ Cache antigo limpo para tipo: $tipo");
+
+        // PASSO 2: Salvar dados novos
+        print("💾 SALVANDO DADOS NOVOS...");
         await _dbHelper.salvarCacheGrafico(paraSalvar, tipo);
 
+        // PASSO 3: Recuperar e verificar
+        print("📊 VERIFICANDO O QUE FOI SALVO...");
         final novoCache = await _dbHelper.buscarCacheGrafico(tipo);
+
+        print("✓ CACHE RECUPERADA DO BANCO (${novoCache.length} registros):");
+        for (var item in novoCache) {
+          print("  - ${item['periodo']}: ${item['valor']}");
+        }
+
         _atualizarInterfaceComCache(novoCache);
       }
     } catch (e) {
+      print("❌ ERRO NA REQUISIÇÃO: $e");
       debugPrint('Rede indisponível. Mantendo dados locais.');
       if (mounted) setState(() => _isLoadingProducao = false);
     }
   }
 
   void _atualizarInterfaceComCache(List<Map<String, dynamic>> cache) {
-    if (!mounted) return;
+    if (!mounted || cache.isEmpty) return;
+
+    print("═══════════════════════════════════════");
+    print("ATUALIZANDO INTERFACE COM CACHE");
+    print("═══════════════════════════════════════");
+    print("CACHE RECEBIDO: ${cache.length} registros");
+    for (var item in cache) {
+      print(
+        "  - ${item['periodo']}: ${item['valor']} (tipo: ${item['tipo_grafico']})",
+      );
+    }
+
+    double buscarValor(List<String> periodos) {
+      print("🔍 Procurando por: $periodos");
+
+      for (var periodo in periodos) {
+        final item = cache.where((e) => e['periodo'] == periodo).toList();
+        if (item.isNotEmpty) {
+          final valor = (item.first['valor'] ?? 0).toDouble();
+          print("✓ Encontrado '$periodo' -> $valor");
+          return valor;
+        }
+      }
+
+      print("❌ NENHUM DOS PERÍODOS $periodos ENCONTRADO");
+      print("   Períodos disponíveis na cache:");
+      for (var item in cache) {
+        print("   - '${item['periodo']}'");
+      }
+      return 0.0;
+    }
 
     setState(() {
+      final dias = buscarValor(['DiasProduzidosMes']);
+      final previsao = buscarValor([
+        'PrevisaoFechamento', // ✓ NOVO - Chave correta
+        'PrevisaoProducao', // Compatibilidade com cache antigo
+      ]);
+      final total = buscarValor(['TotalProducao']);
+
+      print("\n═══════════════════════════════════════");
+      print("VALORES FINAIS PARA A INTERFACE:");
+      print("═══════════════════════════════════════");
+      print("Dias: $dias");
+      print("Previsao: $previsao");
+      print("Total: $total");
+      print("═══════════════════════════════════════\n");
+
       _dadosProducao = {
-        "DiasProduzidosMes": cache.firstWhere(
-          (e) => e['periodo'] == 'DiasProduzidosMes',
-        )['valor'],
-        "PrevisaoProducao": cache.firstWhere(
-          (e) => e['periodo'] == 'PrevisaoProducao',
-        )['valor'],
-        "TotalProducao": cache.firstWhere(
-          (e) => e['periodo'] == 'TotalProducao',
-        )['valor'],
+        "DiasProduzidosMes": dias,
+        "PrevisaoProducao": previsao,
+        "TotalProducao": total,
       };
 
       final DateTime dataDb = DateTime.parse(cache.first['atualizado_em']);
@@ -366,10 +488,6 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
 
           const SizedBox(height: 16),
 
-          _buildQuickActionsRow(),
-
-          const SizedBox(height: 18),
-
           _buildMainModules(),
 
           const SizedBox(height: 18),
@@ -475,79 +593,6 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
     );
   }
 
-  Widget _buildQuickActionsRow() {
-    return SizedBox(
-      height: 100,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        physics: const BouncingScrollPhysics(),
-        children: [
-          _QuickCircleAction(
-            icon: Icons.add_location_alt_outlined,
-            title: "Registrar",
-            accent: const Color(0xFF4DA3FF),
-            onTap: () {
-              _navigateWithTransition(
-                context,
-                RegistroPrincipalScreen(conferente: widget.conferente),
-              );
-            },
-          ),
-          _QuickCircleAction(
-            icon: Icons.list_alt_outlined,
-            title: "Registros",
-            accent: const Color(0xFF5EF7C5),
-            onTap: () {
-              _navigateWithTransition(
-                context,
-                ListaRegistrosScreen(conferente: widget.conferente),
-              );
-            },
-          ),
-          _QuickCircleAction(
-            icon: Icons.my_location_outlined,
-            title: "Localizar",
-            accent: const Color(0xFFFFD166),
-            onTap: () {
-              _navigateWithTransition(
-                context,
-                Localizacaoscreen(
-                  conferente: widget.conferente,
-                  isAdmin: _isAdmin,
-                ),
-              );
-            },
-          ),
-          _QuickCircleAction(
-            icon: Icons.sync_alt_rounded,
-            title: "Fluxo",
-            accent: const Color(0xFFFF5C8A),
-            onTap: () {
-              _navigateWithTransition(
-                context,
-                HistoricoMovimentacaoScreen(
-                  nrOrdem: 0,
-                  titulo: "Movimentação Geral",
-                ),
-              );
-            },
-          ),
-          _QuickCircleAction(
-            icon: Icons.analytics_outlined,
-            title: "Mapas",
-            accent: const Color(0xFFA78BFA),
-            onTap: () {
-              _navigateWithTransition(
-                context,
-                const ConsultaMapaProducaoScreen(),
-              );
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildMainModules() {
     return Column(
       children: [
@@ -562,43 +607,6 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
               RegistroPrincipalScreen(conferente: widget.conferente),
             );
           },
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: _MiniModuleCard(
-                title: "Localização",
-                subtitle: "Buscar posição",
-                icon: Icons.location_searching_outlined,
-                accent: const Color(0xFFFFD166),
-                onTap: () {
-                  _navigateWithTransition(
-                    context,
-                    Localizacaoscreen(
-                      conferente: widget.conferente,
-                      isAdmin: _isAdmin,
-                    ),
-                  );
-                },
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _MiniModuleCard(
-                title: "Registros",
-                subtitle: "Consultar lista",
-                icon: Icons.fact_check_outlined,
-                accent: const Color(0xFF5EF7C5),
-                onTap: () {
-                  _navigateWithTransition(
-                    context,
-                    ListaRegistrosScreen(conferente: widget.conferente),
-                  );
-                },
-              ),
-            ),
-          ],
         ),
       ],
     );
@@ -701,7 +709,7 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
           const SizedBox(width: 12),
           const Expanded(
             child: Text(
-              "Mapa de Produção disponível",
+              "Apontamento disponível",
               style: TextStyle(
                 color: Colors.white,
                 fontWeight: FontWeight.w800,
@@ -710,7 +718,7 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
           ),
           TextButton(
             onPressed: () {
-              _navigateWithTransition(context, MapaProducaoScreen());
+              _navigateWithTransition(context, ProducaoTabsScreen());
             },
             child: const Text("Abrir"),
           ),
