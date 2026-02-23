@@ -2189,17 +2189,45 @@ class _ScannerPageState extends State<ScannerPage>
 
     final bytes = barcode.rawBytes;
     if (bytes != null && bytes.isNotEmpty) {
-      try {
-        final decoded = utf8.decode(bytes, allowMalformed: true).trim();
-        if (decoded.isNotEmpty) return decoded;
-      } catch (_) {}
-      try {
-        final decoded = latin1.decode(bytes).trim();
-        if (decoded.isNotEmpty) return decoded;
-      } catch (_) {}
+      final decodedUtf8 = _decodificarTextoConfiavel(bytes, utf8);
+      if (decodedUtf8 != null) return decodedUtf8;
+
+      final decodedLatin1 = _decodificarTextoConfiavel(bytes, latin1);
+      if (decodedLatin1 != null) return decodedLatin1;
     }
 
     return '';
+  }
+
+  String? _decodificarTextoConfiavel(List<int> bytes, Encoding encoding) {
+    try {
+      final decoded = encoding.decode(bytes).trim();
+      if (decoded.isEmpty) return null;
+
+      const int minCharCodeImprimivel = 32;
+      const int maxCharCodeImprimivel = 126;
+      int total = 0;
+      int imprimiveis = 0;
+
+      for (final rune in decoded.runes) {
+        total++;
+        final bool isWhitespace = rune == 9 || rune == 10 || rune == 13;
+        final bool isPrintableAscii =
+            rune >= minCharCodeImprimivel && rune <= maxCharCodeImprimivel;
+        if (isWhitespace || isPrintableAscii) {
+          imprimiveis++;
+        }
+      }
+
+      if (total == 0) return null;
+
+      final confiabilidade = imprimiveis / total;
+      if (confiabilidade < 0.95) return null;
+
+      return decoded;
+    } catch (_) {
+      return null;
+    }
   }
 
   Widget _buildScannerError(MobileScannerException error) {
