@@ -789,6 +789,7 @@ class _ProducaoTabsScreenState extends State<ProducaoTabsScreen>
   @override
   Widget build(BuildContext context) {
     final hour = DateTime.now().hour;
+    final isMacOs = defaultTargetPlatform == TargetPlatform.macOS;
     int turnoNum = (hour >= 6 && hour < 14)
         ? 8
         : (hour >= 14 && hour < 22)
@@ -796,50 +797,53 @@ class _ProducaoTabsScreenState extends State<ProducaoTabsScreen>
         : 10;
     String turnoLetra = turnoNum == 8 ? 'A' : (turnoNum == 9 ? 'B' : 'C');
 
-    return Scaffold(
-      backgroundColor: _kBgBottom,
-      appBar: AppBar(
-        elevation: 0,
-        centerTitle: true,
+    return TooltipVisibility(
+      visible: !isMacOs,
+      child: Scaffold(
         backgroundColor: _kBgBottom,
-        foregroundColor: _kTextPrimary,
-        iconTheme: const IconThemeData(color: _kTextPrimary),
-        title: const Text(
-          'Apontamentos',
-          style: TextStyle(color: _kTextPrimary, fontWeight: FontWeight.bold),
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.settings, color: _kTextPrimary),
-            onPressed: _mostrarMenuOpcoes,
+        appBar: AppBar(
+          elevation: 0,
+          centerTitle: true,
+          backgroundColor: _kBgBottom,
+          foregroundColor: _kTextPrimary,
+          iconTheme: const IconThemeData(color: _kTextPrimary),
+          title: const Text(
+            'Apontamentos',
+            style: TextStyle(color: _kTextPrimary, fontWeight: FontWeight.bold),
           ),
-        ],
-        flexibleSpace: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              colors: [_kBgTop, _kSurface2, _kBgBottom],
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.settings, color: _kTextPrimary),
+              onPressed: _mostrarMenuOpcoes,
+            ),
+          ],
+          flexibleSpace: Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [_kBgTop, _kSurface2, _kBgBottom],
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+              ),
             ),
           ),
+          bottom: TabBar(
+            controller: _tabController,
+            labelColor: _kTextPrimary,
+            unselectedLabelColor: _kTextSecondary,
+            indicatorColor: _kAccentColor,
+            tabs: const [
+              Tab(text: 'Tipo A', icon: Icon(Icons.factory_outlined)),
+              Tab(text: 'Tipo B', icon: Icon(Icons.high_quality_outlined)),
+            ],
+          ),
         ),
-        bottom: TabBar(
+        body: TabBarView(
           controller: _tabController,
-          labelColor: _kTextPrimary,
-          unselectedLabelColor: _kTextSecondary,
-          indicatorColor: _kAccentColor,
-          tabs: const [
-            Tab(text: 'Tipo A', icon: Icon(Icons.factory_outlined)),
-            Tab(text: 'Tipo B', icon: Icon(Icons.high_quality_outlined)),
+          children: [
+            FormularioGeral(tipo: 'A', turno: turnoNum, turnoLetra: turnoLetra),
+            FormularioGeral(tipo: 'B', turno: turnoNum, turnoLetra: turnoLetra),
           ],
         ),
-      ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          FormularioGeral(tipo: 'A', turno: turnoNum, turnoLetra: turnoLetra),
-          FormularioGeral(tipo: 'B', turno: turnoNum, turnoLetra: turnoLetra),
-        ],
       ),
     );
   }
@@ -2099,17 +2103,32 @@ class _FormularioGeralState extends State<FormularioGeral> {
   );
 }
 
-class ScannerPage extends StatefulWidget {
+class ScannerPage extends StatelessWidget {
   final String modo;
   final String titulo;
 
   const ScannerPage({super.key, this.modo = 'all', this.titulo = 'Scanner'});
 
   @override
-  State<ScannerPage> createState() => _ScannerPageState();
+  Widget build(BuildContext context) {
+    if (defaultTargetPlatform == TargetPlatform.macOS) {
+      return _MacScannerPage(modo: modo, titulo: titulo);
+    }
+    return _AndroidScannerPage(modo: modo, titulo: titulo);
+  }
 }
 
-class _ScannerPageState extends State<ScannerPage>
+class _MacScannerPage extends StatefulWidget {
+  final String modo;
+  final String titulo;
+
+  const _MacScannerPage({required this.modo, required this.titulo});
+
+  @override
+  State<_MacScannerPage> createState() => _MacScannerPageState();
+}
+
+class _MacScannerPageState extends State<_MacScannerPage>
     with SingleTickerProviderStateMixin {
   late MobileScannerController _controller;
   bool _hasScanned = false;
@@ -2121,18 +2140,15 @@ class _ScannerPageState extends State<ScannerPage>
   @override
   void initState() {
     super.initState();
-
     _controller = MobileScannerController(
-      detectionSpeed: defaultTargetPlatform == TargetPlatform.macOS
-          ? DetectionSpeed.unrestricted
-          : DetectionSpeed.normal,
+      detectionSpeed: DetectionSpeed.unrestricted,
       autoStart: true,
       facing: CameraFacing.back,
       onPermissionSet: (granted) {
         if (!mounted) return;
         setState(() => _cameraPermissionGranted = granted);
       },
-      // Sem filtro de formato: aumenta a chance de leitura em webcams no macOS.
+      // macOS: aceita qualquer formato
       formats: null,
     );
 
@@ -2435,6 +2451,386 @@ class _ScannerPageState extends State<ScannerPage>
                 ),
               ),
               // Instrução inferior
+              Positioned(
+                bottom: 52,
+                left: 0,
+                right: 0,
+                child: Column(
+                  children: [
+                    Icon(
+                      isBarcode ? Icons.barcode_reader : Icons.qr_code_scanner,
+                      color: Colors.white60,
+                      size: 26,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      isBarcode
+                          ? 'Centralize o código de barras longo na área'
+                          : 'Aponte para o QR Code ou código de barras',
+                      style: const TextStyle(
+                        color: Colors.white60,
+                        fontSize: 13,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _AndroidScannerPage extends StatefulWidget {
+  final String modo;
+  final String titulo;
+
+  const _AndroidScannerPage({required this.modo, required this.titulo});
+
+  @override
+  State<_AndroidScannerPage> createState() => _AndroidScannerPageState();
+}
+
+class _AndroidScannerPageState extends State<_AndroidScannerPage>
+    with SingleTickerProviderStateMixin {
+  late MobileScannerController _controller;
+  bool _hasScanned = false;
+  bool _torchOn = false;
+  bool? _cameraPermissionGranted;
+  late AnimationController _laserAnim;
+  late Animation<double> _laserPos;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = MobileScannerController(
+      detectionSpeed: DetectionSpeed.noDuplicates,
+      detectionTimeoutMs: 400,
+      autoStart: true,
+      facing: CameraFacing.back,
+      cameraResolution: const Size(1280, 720),
+      onPermissionSet: (granted) {
+        if (!mounted) return;
+        setState(() => _cameraPermissionGranted = granted);
+      },
+      formats: _resolverFormatosMobile(),
+    );
+
+    _laserAnim = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2),
+    )..repeat(reverse: true);
+
+    _laserPos = Tween<double>(
+      begin: 0.0,
+      end: 1.0,
+    ).animate(CurvedAnimation(parent: _laserAnim, curve: Curves.easeInOut));
+  }
+
+  List<BarcodeFormat>? _resolverFormatosMobile() {
+    if (widget.modo == 'barcode') {
+      return const [
+        BarcodeFormat.code128,
+        BarcodeFormat.code39,
+        BarcodeFormat.code93,
+        BarcodeFormat.codabar,
+        BarcodeFormat.ean13,
+        BarcodeFormat.ean8,
+        BarcodeFormat.itf,
+        BarcodeFormat.upcA,
+        BarcodeFormat.upcE,
+        BarcodeFormat.pdf417,
+      ];
+    }
+    if (widget.modo == 'all') {
+      return const [
+        BarcodeFormat.qrCode,
+        BarcodeFormat.code128,
+        BarcodeFormat.code39,
+        BarcodeFormat.code93,
+        BarcodeFormat.codabar,
+        BarcodeFormat.ean13,
+        BarcodeFormat.ean8,
+        BarcodeFormat.itf,
+        BarcodeFormat.upcA,
+        BarcodeFormat.upcE,
+        BarcodeFormat.pdf417,
+      ];
+    }
+    return null;
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _laserAnim.dispose();
+    super.dispose();
+  }
+
+  void _onDetect(BarcodeCapture capture) {
+    if (_hasScanned) return;
+
+    for (final barcode in capture.barcodes) {
+      final raw = _extrairTextoCodigo(barcode);
+      final valorLido = _normalizarCodigoLido(raw);
+      if (valorLido.isEmpty) continue;
+
+      _hasScanned = true;
+      _controller.stop();
+
+      Future.delayed(Duration.zero, () {
+        if (mounted) Navigator.pop(context, valorLido);
+      });
+      break;
+    }
+  }
+
+  String _normalizarCodigoLido(String value) {
+    return value.replaceAll(RegExp(r'[\u0000-\u001F\u007F]'), '').trim();
+  }
+
+  String _extrairTextoCodigo(Barcode barcode) {
+    final fromRaw = (barcode.rawValue ?? '').trim();
+    if (fromRaw.isNotEmpty) return fromRaw;
+
+    final fromDisplay = (barcode.displayValue ?? '').trim();
+    if (fromDisplay.isNotEmpty) return fromDisplay;
+
+    final bytes = barcode.rawBytes;
+    if (bytes != null && bytes.isNotEmpty) {
+      final decodedUtf8 = _decodificarTextoConfiavel(bytes, utf8);
+      if (decodedUtf8 != null) return decodedUtf8;
+
+      final decodedLatin1 = _decodificarTextoConfiavel(bytes, latin1);
+      if (decodedLatin1 != null) return decodedLatin1;
+    }
+
+    return '';
+  }
+
+  String? _decodificarTextoConfiavel(List<int> bytes, Encoding encoding) {
+    try {
+      final decoded = encoding.decode(bytes).trim();
+      if (decoded.isEmpty) return null;
+
+      const int minCharCodeImprimivel = 32;
+      const int maxCharCodeImprimivel = 126;
+      int total = 0;
+      int imprimiveis = 0;
+
+      for (final rune in decoded.runes) {
+        total++;
+        final bool isWhitespace = rune == 9 || rune == 10 || rune == 13;
+        final bool isPrintableAscii =
+            rune >= minCharCodeImprimivel && rune <= maxCharCodeImprimivel;
+        if (isWhitespace || isPrintableAscii) {
+          imprimiveis++;
+        }
+      }
+
+      if (total == 0) return null;
+
+      final confiabilidade = imprimiveis / total;
+      if (confiabilidade < 0.95) return null;
+
+      return decoded;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Widget _buildScannerError(MobileScannerException error) {
+    final details = error.errorDetails;
+    final message = details?.message ?? '';
+
+    String titulo = 'Falha ao iniciar a câmera';
+    String descricao = 'Não foi possível abrir a câmera.';
+
+    switch (error.errorCode) {
+      case MobileScannerErrorCode.permissionDenied:
+        titulo = 'Permissão de câmera negada';
+        descricao = 'Conceda permissão de câmera para continuar.';
+        break;
+      case MobileScannerErrorCode.unsupported:
+        titulo = 'Câmera não suportada';
+        descricao = 'Este dispositivo não suporta leitura por câmera.';
+        break;
+      case MobileScannerErrorCode.controllerUninitialized:
+      case MobileScannerErrorCode.genericError:
+        break;
+    }
+
+    return Container(
+      color: Colors.black,
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.error_outline, color: Colors.white, size: 44),
+          const SizedBox(height: 12),
+          Text(
+            titulo,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            descricao,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.white70),
+          ),
+          if (message.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white54, fontSize: 12),
+            ),
+          ],
+          const SizedBox(height: 14),
+          TextButton.icon(
+            onPressed: () async {
+              try {
+                await _controller.stop();
+                await _controller.start();
+              } catch (_) {}
+            },
+            icon: const Icon(Icons.refresh, color: _kAccentColor),
+            label: const Text(
+              'Tentar novamente',
+              style: TextStyle(color: _kAccentColor),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isBarcode = widget.modo == 'barcode';
+
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        foregroundColor: _kTextPrimary,
+        title: Text(widget.titulo),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.cameraswitch),
+            onPressed: _controller.switchCamera,
+          ),
+          IconButton(
+            icon: Icon(
+              _torchOn ? Icons.flashlight_off : Icons.flashlight_on,
+            ),
+            color: _torchOn ? _kAccentColor : _kTextSecondary,
+            onPressed: () {
+              _controller.toggleTorch();
+              setState(() => _torchOn = !_torchOn);
+            },
+          ),
+        ],
+      ),
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final w = constraints.maxWidth;
+          final h = constraints.maxHeight;
+          final windowW = isBarcode ? w * 0.92 : w * 0.72;
+          final windowH = isBarcode ? w * 0.35 : w * 0.72;
+          final left = (w - windowW) / 2;
+          final top = (h - windowH) / 2 - 20;
+
+          return Stack(
+            children: [
+              MobileScanner(
+                controller: _controller,
+                fit: BoxFit.cover,
+                scanWindow: Rect.fromLTWH(left, top, windowW, windowH),
+                onDetect: _onDetect,
+                onScannerStarted: (_) {
+                  if (_cameraPermissionGranted != true && mounted) {
+                    setState(() => _cameraPermissionGranted = true);
+                  }
+                },
+                errorBuilder: (context, error, child) =>
+                    _buildScannerError(error),
+                placeholderBuilder: (context, child) => const ColoredBox(
+                  color: Colors.black,
+                  child: Center(
+                    child: CircularProgressIndicator(color: _kAccentColor),
+                  ),
+                ),
+              ),
+              CustomPaint(
+                size: Size(w, h),
+                painter: _ScanOverlayPainter(
+                  left: left,
+                  top: top,
+                  width: windowW,
+                  height: windowH,
+                  radius: isBarcode ? 8.0 : 14.0,
+                ),
+              ),
+              Positioned(
+                left: left,
+                top: top,
+                child: SizedBox(
+                  width: windowW,
+                  height: windowH,
+                  child: CustomPaint(
+                    painter: _CornerPainter(
+                      color: _kAccentColor,
+                      thickness: 3.5,
+                      cornerLength: 24.0,
+                      radius: isBarcode ? 8.0 : 14.0,
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                left: left + 8,
+                top: top + 6,
+                width: windowW - 16,
+                height: windowH - 12,
+                child: AnimatedBuilder(
+                  animation: _laserPos,
+                  builder: (_, __) {
+                    final laserY = _laserPos.value * (windowH - 12 - 2);
+                    return Stack(
+                      children: [
+                        Positioned(
+                          top: laserY,
+                          left: 0,
+                          right: 0,
+                          child: Container(
+                            height: 2,
+                            decoration: BoxDecoration(
+                              color: _kAccentColor,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: _kAccentColor.withOpacity(0.5),
+                                  blurRadius: 8,
+                                  spreadRadius: 2,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
               Positioned(
                 bottom: 52,
                 left: 0,
