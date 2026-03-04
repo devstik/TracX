@@ -871,12 +871,12 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
 
           const SizedBox(height: 12),
 
-          _InfoCard(
-            icon: Icons.lightbulb_outline,
-            title: "Sugestão",
-            subtitle:
-                "Para vender esse módulo, o ideal é adicionar filtros por setor e gráficos de evolução semanal/mensal.",
-          ),
+          // _InfoCard(
+          //   icon: Icons.lightbulb_outline,
+          //   title: "Sugestão",
+          //   subtitle:
+          //       "Para vender esse módulo, o ideal é adicionar filtros por setor e gráficos de evolução semanal/mensal.",
+          // ),
         ],
       ),
     );

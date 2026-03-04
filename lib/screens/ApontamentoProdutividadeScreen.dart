@@ -75,6 +75,26 @@ class Maquina {
   }
 }
 
+class UsuarioOperador {
+  final int id;
+  final String cdUser;
+  final String nmUser;
+
+  UsuarioOperador({
+    required this.id,
+    required this.cdUser,
+    required this.nmUser,
+  });
+
+  factory UsuarioOperador.fromJson(Map<String, dynamic> json) {
+    return UsuarioOperador(
+      id: json['Id'] is int ? json['Id'] : int.tryParse('${json['Id']}') ?? 0,
+      cdUser: json['CdUser']?.toString() ?? '',
+      nmUser: json['NmUser']?.toString() ?? '',
+    );
+  }
+}
+
 // =========================================================================
 // DATABASE SERVICE (SQLITE)
 // =========================================================================
@@ -440,6 +460,32 @@ class SetorMaquinaService {
     }
 
     if (temCache) return await DatabaseService.carregarMaquinasCache(setorId);
+    return [];
+  }
+}
+
+class UsuarioOperadorService {
+  static Future<List<UsuarioOperador>> buscarUsuarios() async {
+    try {
+      final response = await http.get(
+        Uri.parse("$_kBaseUrlFlask/consultar/usuarios"),
+        headers: {"Content-Type": "application/json"},
+      );
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(response.body);
+        return data
+            .map(
+              (e) => UsuarioOperador.fromJson(Map<String, dynamic>.from(e)),
+            )
+            .where((u) => u.cdUser.trim().isNotEmpty)
+            .toList();
+      }
+      debugPrint(
+        "Erro buscarUsuarios: ${response.statusCode} - ${response.body}",
+      );
+    } catch (e) {
+      debugPrint("Erro buscarUsuarios: $e");
+    }
     return [];
   }
 }
@@ -882,10 +928,9 @@ class _FormularioGeralState extends State<FormularioGeral> {
   final _qtdeController = TextEditingController();
   final _operadorController = TextEditingController();
   final _defeitoController = TextEditingController();
-
-  // ── Coletor HID – Operador ────────────────────────────────────────────
-  final _coletorOperadorController = TextEditingController();
-  final FocusNode _coletorOperadorFocus = FocusNode();
+  String? _operadorCdUserSelecionado;
+  List<UsuarioOperador> _usuariosOperadores = [];
+  bool _loadingUsuariosOperadores = false;
 
   // ── Coletor HID – Artigo ──────────────────────────────────────────────
   final _coletorArtigoController = TextEditingController();
@@ -905,7 +950,6 @@ class _FormularioGeralState extends State<FormularioGeral> {
   bool _isLoading = false;
 
   // ── Estado visual do coletor ──────────────────────────────────────────
-  bool _coletorOperadorAtivo = false;
   bool _coletorArtigoAtivo = false;
 
   bool get _isRevisao =>
@@ -914,7 +958,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
 
   // ── Verifica se a Etapa 1 está completa para habilitar "Avançar" ──────
   bool get _etapa1Completa {
-    if (_operadorController.text.trim().isEmpty) return false;
+    if ((_operadorCdUserSelecionado ?? '').trim().isEmpty) return false;
     if (_setorSelecionado == null) return false;
     if (!_isRevisao && _maquinaSelecionada == null) return false;
     return true;
@@ -925,10 +969,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
     super.initState();
     if (widget.tipo == 'A') {
       _carregarSetores();
-      // Foca automaticamente no coletor do operador ao abrir a tela
-      WidgetsBinding.instance.addPostFrameCallback(
-        (_) => _ativarColetorOperador(),
-      );
+      _carregarUsuariosOperadores();
     }
   }
 
@@ -939,8 +980,6 @@ class _FormularioGeralState extends State<FormularioGeral> {
     _qtdeController.dispose();
     _operadorController.dispose();
     _defeitoController.dispose();
-    _coletorOperadorController.dispose();
-    _coletorOperadorFocus.dispose();
     _coletorArtigoController.dispose();
     _coletorArtigoFocus.dispose();
     super.dispose();
@@ -950,16 +989,6 @@ class _FormularioGeralState extends State<FormularioGeral> {
   // COLETOR – ATIVAÇÃO
   // -----------------------------------------------------------------------
 
-  void _ativarColetorOperador() {
-    SystemChannels.textInput.invokeMethod('TextInput.hide');
-    setState(() => _coletorOperadorAtivo = true);
-    _coletorOperadorController.clear();
-    _coletorOperadorFocus.requestFocus();
-    Future.microtask(
-      () => SystemChannels.textInput.invokeMethod('TextInput.hide'),
-    );
-  }
-
   void _ativarColetorArtigo() {
     SystemChannels.textInput.invokeMethod('TextInput.hide');
     setState(() => _coletorArtigoAtivo = true);
@@ -968,6 +997,18 @@ class _FormularioGeralState extends State<FormularioGeral> {
     Future.microtask(
       () => SystemChannels.textInput.invokeMethod('TextInput.hide'),
     );
+  }
+
+  Future<void> _carregarUsuariosOperadores() async {
+    if (_loadingUsuariosOperadores) return;
+    setState(() => _loadingUsuariosOperadores = true);
+    try {
+      final usuarios = await UsuarioOperadorService.buscarUsuarios();
+      if (!mounted) return;
+      setState(() => _usuariosOperadores = usuarios);
+    } finally {
+      if (mounted) setState(() => _loadingUsuariosOperadores = false);
+    }
   }
 
   // -----------------------------------------------------------------------
@@ -1140,8 +1181,8 @@ class _FormularioGeralState extends State<FormularioGeral> {
       if (!_isRevisao && _maquinaSelecionada == null) {
         return _showSnack("Selecione a Máquina", Colors.orange);
       }
-      if (_operadorController.text.trim().isEmpty) {
-        return _showSnack("Preencha o campo Operador", Colors.orange);
+      if ((_operadorCdUserSelecionado ?? '').trim().isEmpty) {
+        return _showSnack("Selecione o Operador", Colors.orange);
       }
     }
 
@@ -1160,7 +1201,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
         ? {
             "Setor": _setorSelecionado!.codigo,
             "Maq": _isRevisao ? 0 : _maquinaSelecionada!.codigo,
-            "Operador": _operadorController.text,
+            "Operador": _operadorCdUserSelecionado,
             "Qtde": int.tryParse(_qtdeController.text) ?? 0,
             "Artigo": _cdObjReal,
             "Detalhe": _detalheReal,
@@ -1200,9 +1241,9 @@ class _FormularioGeralState extends State<FormularioGeral> {
     _detalheController.clear();
     _qtdeController.clear();
     _operadorController.clear();
-    _coletorOperadorController.clear();
     _coletorArtigoController.clear();
     _defeitoController.clear();
+    _operadorCdUserSelecionado = null;
     _cdObjReal = "";
     _detalheReal = "";
 
@@ -1212,13 +1253,8 @@ class _FormularioGeralState extends State<FormularioGeral> {
         _setorSelecionado = null;
         _maquinaSelecionada = null;
         _maquinas = [];
-        _coletorOperadorAtivo = false;
         _coletorArtigoAtivo = false;
       });
-      // Volta ao foco do coletor do operador
-      WidgetsBinding.instance.addPostFrameCallback(
-        (_) => _ativarColetorOperador(),
-      );
     } else {
       setState(() {
         _coletorArtigoAtivo = false;
@@ -1242,12 +1278,13 @@ class _FormularioGeralState extends State<FormularioGeral> {
   void _avancarParaProducao() {
     if (!_etapa1Completa) {
       String msg = "Preencha todos os campos da Identificação";
-      if (_operadorController.text.trim().isEmpty)
-        msg = "Bipe o Operador";
-      else if (_setorSelecionado == null)
+      if ((_operadorCdUserSelecionado ?? '').trim().isEmpty) {
+        msg = "Selecione o Operador";
+      } else if (_setorSelecionado == null) {
         msg = "Selecione o Setor";
-      else if (!_isRevisao && _maquinaSelecionada == null)
+      } else if (!_isRevisao && _maquinaSelecionada == null) {
         msg = "Selecione a Máquina";
+      }
       _showSnack(msg, Colors.orange);
       return;
     }
@@ -1261,10 +1298,6 @@ class _FormularioGeralState extends State<FormularioGeral> {
       _etapaA = _EtapaA.identificacao;
       _coletorArtigoAtivo = false;
     });
-    // Reativa coletor do operador ao voltar
-    WidgetsBinding.instance.addPostFrameCallback(
-      (_) => _ativarColetorOperador(),
-    );
   }
 
   // -----------------------------------------------------------------------
@@ -1343,7 +1376,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
 
           if (_etapaA == _EtapaA.identificacao) ...[
             _buildCardSection('Etapa 1 — Identificação', [
-              _buildOperadorFieldComColetor(),
+              _buildOperadorDropdown(),
               _buildSetorDropdown(),
               if (!_isRevisao) _buildMaquinaDropdown(),
             ]),
@@ -1557,142 +1590,102 @@ class _FormularioGeralState extends State<FormularioGeral> {
   }
 
   // -----------------------------------------------------------------------
-  // CAMPO OPERADOR (coletor HID – sem botão de ícone, foco automático)
+  // CAMPO OPERADOR (dropdown com nomes da API)
   // -----------------------------------------------------------------------
 
-  Widget _buildOperadorFieldComColetor() {
-    final temOperador = _operadorController.text.isNotEmpty;
+  Widget _buildOperadorDropdown() {
+    final temOperador =
+        (_operadorCdUserSelecionado ?? '').isNotEmpty &&
+        _operadorController.text.isNotEmpty;
+    final semUsuarios = _usuariosOperadores.isEmpty;
+    final valorSelecionado = _operadorCdUserSelecionado;
+    final valorValido =
+        valorSelecionado != null &&
+        _usuariosOperadores.any((u) => u.cdUser == valorSelecionado);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: Stack(
-        children: [
-          // Campo visual
-          TextFormField(
-            controller: _operadorController,
-            readOnly: true,
-            style: const TextStyle(color: _kTextPrimary),
-            decoration: InputDecoration(
-              labelText: 'Operador',
-              labelStyle: const TextStyle(color: _kTextSecondary),
-              hintText: _coletorOperadorAtivo
-                  ? 'Aguardando bipe...'
-                  : 'Toque em 🎯 para ativar coletor',
-              hintStyle: const TextStyle(color: _kTextSecondary, fontSize: 13),
-              prefixIcon: const Icon(Icons.badge, color: _kAccentColor),
-              suffixIcon: temOperador
-                  ? const Icon(Icons.check_circle, color: Colors.green)
-                  : _coletorOperadorAtivo
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: Padding(
-                        padding: EdgeInsets.all(12.0),
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: _kAccentColor,
-                        ),
-                      ),
-                    )
-                  : const Icon(Icons.sensors_off, color: _kTextSecondary),
-              filled: true,
-              fillColor: temOperador
-                  ? Colors.green.withOpacity(0.07)
-                  : _coletorOperadorAtivo
-                  ? _kAccentColor.withOpacity(0.07)
-                  : _kSurface2,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: const BorderSide(color: _kBorderSoft),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: BorderSide(
-                  color: temOperador
-                      ? Colors.green.withOpacity(0.5)
-                      : _coletorOperadorAtivo
-                      ? _kAccentColor
-                      : _kBorderSoft,
-                  width: _coletorOperadorAtivo ? 2 : 1,
+      child: _loadingUsuariosOperadores
+          ? const Center(
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: CircularProgressIndicator(
+                  color: _kAccentColor,
+                  strokeWidth: 2,
                 ),
               ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: const BorderSide(color: _kAccentColor, width: 2),
-              ),
-            ),
-            onTap: _coletorOperadorAtivo ? null : _ativarColetorOperador,
-          ),
-
-          // Campo HID invisível que captura o bipe
-          Positioned.fill(
-            child: Opacity(
-              opacity: 0,
-              child: TextField(
-                controller: _coletorOperadorController,
-                focusNode: _coletorOperadorFocus,
-                keyboardType: TextInputType.none,
-                textInputAction: TextInputAction.done,
-                onChanged: (_) {
-                  // garante que o teclado fique escondido
-                  SystemChannels.textInput.invokeMethod('TextInput.hide');
-                },
-                onSubmitted: (value) {
-                  final code = value.trim();
-                  _coletorOperadorController.clear();
-                  if (code.isNotEmpty) {
-                    setState(() {
-                      _operadorController.text = code;
-                      _coletorOperadorAtivo = false;
-                    });
-                    FocusScope.of(context).unfocus();
-                  }
-                },
-                onTap: () => setState(() => _coletorOperadorAtivo = true),
-              ),
-            ),
-          ),
-
-          // Botão de câmera (canto superior direito)
-          Positioned(
-            right: 0,
-            top: 0,
-            bottom: 0,
-            child: temOperador
-                ? const SizedBox.shrink()
-                : Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 4,
-                      vertical: 8,
-                    ),
-                    child: IconButton(
-                      icon: const Icon(
-                        Icons.qr_code_scanner,
-                        color: _kAccentColor,
-                        size: 22,
-                      ),
-                      onPressed: () async {
-                        final String? code = await Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const ScannerPage(
-                              modo: 'barcode',
-                              titulo: 'Ler Matrícula',
-                            ),
-                          ),
-                        );
-                        if (code != null && code.isNotEmpty) {
-                          setState(() {
-                            _operadorController.text = code;
-                            _coletorOperadorAtivo = false;
-                          });
-                        }
-                      },
-                    ),
+            )
+          : DropdownButtonFormField<String>(
+              value: valorValido ? valorSelecionado : null,
+              dropdownColor: _kSurface,
+              isExpanded: true,
+              style: const TextStyle(color: _kTextPrimary),
+              decoration: InputDecoration(
+                labelText: 'Operador',
+                labelStyle: const TextStyle(color: _kTextSecondary),
+                prefixIcon: const Icon(Icons.badge, color: _kAccentColor),
+                suffixIcon: temOperador
+                    ? const Icon(Icons.check_circle, color: Colors.green)
+                    : const Icon(Icons.arrow_drop_down, color: _kTextSecondary),
+                filled: true,
+                fillColor: temOperador
+                    ? Colors.green.withOpacity(0.07)
+                    : _kSurface2,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(color: _kBorderSoft),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(
+                    color: temOperador
+                        ? Colors.green.withOpacity(0.5)
+                        : _kBorderSoft,
                   ),
-          ),
-        ],
-      ),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(color: _kAccentColor, width: 2),
+                ),
+              ),
+              hint: Text(
+                semUsuarios ? 'Nenhum operador encontrado' : 'Selecione o operador',
+                style: const TextStyle(color: _kTextSecondary),
+              ),
+              items: _usuariosOperadores
+                  .map(
+                    (usuario) => DropdownMenuItem<String>(
+                      value: usuario.cdUser,
+                      child: Text(
+                        usuario.nmUser,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  )
+                  .toList(),
+              onChanged: semUsuarios
+                  ? null
+                  : (value) {
+                      if (value == null) {
+                        setState(() {
+                          _operadorCdUserSelecionado = null;
+                          _operadorController.clear();
+                        });
+                        return;
+                      }
+                      String nome = '';
+                      for (final usuario in _usuariosOperadores) {
+                        if (usuario.cdUser == value) {
+                          nome = usuario.nmUser;
+                          break;
+                        }
+                      }
+                      setState(() {
+                        _operadorCdUserSelecionado = value;
+                        _operadorController.text = nome;
+                      });
+                    },
+            ),
     );
   }
 
