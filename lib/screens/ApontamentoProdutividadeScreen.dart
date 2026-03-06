@@ -927,6 +927,9 @@ class _FormularioGeralState extends State<FormularioGeral> {
   final _detalheController = TextEditingController();
   final _qtdeController = TextEditingController();
   final _operadorController = TextEditingController();
+  final _setorController = TextEditingController();
+  final _maquinaController = TextEditingController();
+  final _maquina2Controller = TextEditingController();
   final _defeitoController = TextEditingController();
   String? _operadorCdUserSelecionado;
   List<UsuarioOperador> _usuariosOperadores = [];
@@ -941,6 +944,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
   List<Maquina> _maquinas = [];
   Setor? _setorSelecionado;
   Maquina? _maquinaSelecionada;
+  Maquina? _maquinaSelecionadaSecundaria;
   bool _loadingSetores = false;
   bool _loadingMaquinas = false;
 
@@ -956,6 +960,22 @@ class _FormularioGeralState extends State<FormularioGeral> {
       _setorSelecionado != null &&
       _setorSelecionado!.nome.toUpperCase().trim().contains(_kSetorSemMaquina);
 
+  bool get _maquinasSelecionadasDuplicadas =>
+      !_isRevisao &&
+      _maquinaSelecionada != null &&
+      _maquinaSelecionadaSecundaria != null &&
+      _maquinaSelecionada!.codigo == _maquinaSelecionadaSecundaria!.codigo;
+
+  String get _resumoMaquinas {
+    if (_isRevisao) return '';
+    final maqPrincipal = _maquinaSelecionada?.nome ?? '—';
+    final maqSecundaria = _maquinaSelecionadaSecundaria?.nome;
+    if (maqSecundaria == null || maqSecundaria.trim().isEmpty) {
+      return '  •  Máquina: $maqPrincipal';
+    }
+    return '  •  Máquinas: $maqPrincipal / $maqSecundaria';
+  }
+
   // ── Verifica se a Etapa 1 está completa para habilitar "Avançar" ──────
   bool get _etapa1Completa {
     if ((_operadorCdUserSelecionado ?? '').trim().isEmpty) return false;
@@ -967,7 +987,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
   @override
   void initState() {
     super.initState();
-    if (widget.tipo == 'A') {
+    if (widget.tipo == 'A' || widget.tipo == 'B') {
       _carregarSetores();
       _carregarUsuariosOperadores();
     }
@@ -979,10 +999,571 @@ class _FormularioGeralState extends State<FormularioGeral> {
     _detalheController.dispose();
     _qtdeController.dispose();
     _operadorController.dispose();
+    _setorController.dispose();
+    _maquinaController.dispose();
+    _maquina2Controller.dispose();
     _defeitoController.dispose();
     _coletorArtigoController.dispose();
     _coletorArtigoFocus.dispose();
     super.dispose();
+  }
+
+  int _compareAlpha(String a, String b) {
+    final aNorm = a.trim().toUpperCase();
+    final bNorm = b.trim().toUpperCase();
+    return aNorm.compareTo(bNorm);
+  }
+
+  List<UsuarioOperador> _ordenarUsuarios(List<UsuarioOperador> usuarios) {
+    final ordenados = List<UsuarioOperador>.from(usuarios);
+    ordenados.sort((a, b) {
+      final nomeCmp = _compareAlpha(a.nmUser, b.nmUser);
+      if (nomeCmp != 0) return nomeCmp;
+      return _compareAlpha(a.cdUser, b.cdUser);
+    });
+    return ordenados;
+  }
+
+  List<Setor> _ordenarSetores(List<Setor> setores) {
+    final ordenados = List<Setor>.from(setores);
+    ordenados.sort((a, b) => _compareAlpha(a.nome, b.nome));
+    return ordenados;
+  }
+
+  List<Maquina> _ordenarMaquinas(List<Maquina> maquinas) {
+    final ordenadas = List<Maquina>.from(maquinas);
+    ordenadas.sort((a, b) => _compareAlpha(a.nome, b.nome));
+    return ordenadas;
+  }
+
+  Widget _buildCampoSelecao({
+    required TextEditingController controller,
+    required String label,
+    required String hint,
+    required IconData icon,
+    required bool selecionado,
+    required bool habilitado,
+    required VoidCallback? onTap,
+    String? helperText,
+  }) {
+    return TextFormField(
+      controller: controller,
+      readOnly: true,
+      enabled: habilitado,
+      onTap: onTap,
+      style: TextStyle(
+        color: habilitado ? _kTextPrimary : _kTextSecondary,
+        fontWeight: selecionado ? FontWeight.w600 : FontWeight.w400,
+      ),
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: const TextStyle(color: _kTextSecondary),
+        hintText: hint,
+        hintStyle: const TextStyle(color: _kTextSecondary),
+        helperText: helperText,
+        helperStyle: const TextStyle(color: _kTextSecondary, fontSize: 11),
+        prefixIcon: Icon(icon, color: _kAccentColor),
+        suffixIcon: selecionado
+            ? const Icon(Icons.check_circle, color: Colors.green)
+            : const Icon(
+                Icons.keyboard_arrow_down_rounded,
+                color: _kTextSecondary,
+              ),
+        filled: true,
+        fillColor: !habilitado
+            ? _kSurface
+            : selecionado
+            ? Colors.green.withValues(alpha: 0.07)
+            : _kSurface2,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: _kBorderSoft),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(
+            color: selecionado
+                ? Colors.green.withValues(alpha: 0.5)
+                : _kBorderSoft,
+          ),
+        ),
+        disabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: _kBorderSoft),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: _kAccentColor, width: 2),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _abrirSeletorOperador() async {
+    if (_usuariosOperadores.isEmpty) return;
+
+    final String? selecionado = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: _kSurface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        String filtro = '';
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final listaFiltrada = _usuariosOperadores.where((u) {
+              final nome = u.nmUser.toUpperCase();
+              final id = u.cdUser.toUpperCase();
+              final termo = filtro.trim().toUpperCase();
+              if (termo.isEmpty) return true;
+              return nome.contains(termo) || id.contains(termo);
+            }).toList();
+
+            return SafeArea(
+              child: SizedBox(
+                height: MediaQuery.of(context).size.height * 0.78,
+                child: Column(
+                  children: [
+                    const SizedBox(height: 10),
+                    Container(
+                      width: 42,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.white24,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Selecionar operador',
+                      style: TextStyle(
+                        color: _kTextPrimary,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: TextField(
+                        onChanged: (value) =>
+                            setModalState(() => filtro = value),
+                        style: const TextStyle(color: _kTextPrimary),
+                        decoration: InputDecoration(
+                          hintText: 'Buscar por nome ou ID',
+                          hintStyle: const TextStyle(color: _kTextSecondary),
+                          prefixIcon: const Icon(
+                            Icons.search,
+                            color: _kTextSecondary,
+                          ),
+                          filled: true,
+                          fillColor: _kSurface2,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(color: _kBorderSoft),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(color: _kBorderSoft),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(
+                              color: _kAccentColor,
+                              width: 2,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Expanded(
+                      child: listaFiltrada.isEmpty
+                          ? const Center(
+                              child: Text(
+                                'Nenhum operador encontrado',
+                                style: TextStyle(color: _kTextSecondary),
+                              ),
+                            )
+                          : ListView.separated(
+                              itemCount: listaFiltrada.length,
+                              separatorBuilder: (_, __) =>
+                                  const Divider(height: 1, color: _kBorderSoft),
+                              itemBuilder: (_, i) {
+                                final usuario = listaFiltrada[i];
+                                return ListTile(
+                                  leading: Container(
+                                    width: 34,
+                                    height: 34,
+                                    decoration: BoxDecoration(
+                                      color: _kAccentColor.withValues(alpha: 0.14),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: const Icon(
+                                      Icons.person_outline,
+                                      color: _kAccentColor,
+                                      size: 18,
+                                    ),
+                                  ),
+                                  title: Text(
+                                    usuario.nmUser,
+                                    style: const TextStyle(
+                                      color: _kTextPrimary,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  subtitle: Text(
+                                    'ID ${usuario.cdUser}',
+                                    style: const TextStyle(
+                                      color: _kTextSecondary,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                  onTap: () => Navigator.of(ctx).pop(usuario.cdUser),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    if (!mounted || selecionado == null) return;
+
+    String nome = '';
+    for (final usuario in _usuariosOperadores) {
+      if (usuario.cdUser == selecionado) {
+        nome = usuario.nmUser;
+        break;
+      }
+    }
+
+    setState(() {
+      _operadorCdUserSelecionado = selecionado;
+      _operadorController.text = nome;
+    });
+  }
+
+  Future<void> _abrirSeletorSetor() async {
+    if (_setores.isEmpty) return;
+
+    final Setor? selecionado = await showModalBottomSheet<Setor>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: _kSurface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        String filtro = '';
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final listaFiltrada = _setores.where((s) {
+              final nome = s.nome.toUpperCase();
+              final codigo = s.codigo.toString().toUpperCase();
+              final termo = filtro.trim().toUpperCase();
+              if (termo.isEmpty) return true;
+              return nome.contains(termo) || codigo.contains(termo);
+            }).toList();
+
+            return SafeArea(
+              child: SizedBox(
+                height: MediaQuery.of(context).size.height * 0.78,
+                child: Column(
+                  children: [
+                    const SizedBox(height: 10),
+                    Container(
+                      width: 42,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.white24,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Selecionar setor',
+                      style: TextStyle(
+                        color: _kTextPrimary,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: TextField(
+                        onChanged: (value) =>
+                            setModalState(() => filtro = value),
+                        style: const TextStyle(color: _kTextPrimary),
+                        decoration: InputDecoration(
+                          hintText: 'Buscar por nome ou código',
+                          hintStyle: const TextStyle(color: _kTextSecondary),
+                          prefixIcon: const Icon(
+                            Icons.search,
+                            color: _kTextSecondary,
+                          ),
+                          filled: true,
+                          fillColor: _kSurface2,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(color: _kBorderSoft),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(color: _kBorderSoft),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(
+                              color: _kAccentColor,
+                              width: 2,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Expanded(
+                      child: listaFiltrada.isEmpty
+                          ? const Center(
+                              child: Text(
+                                'Nenhum setor encontrado',
+                                style: TextStyle(color: _kTextSecondary),
+                              ),
+                            )
+                          : ListView.separated(
+                              itemCount: listaFiltrada.length,
+                              separatorBuilder: (_, __) =>
+                                  const Divider(height: 1, color: _kBorderSoft),
+                              itemBuilder: (_, i) {
+                                final setor = listaFiltrada[i];
+                                return ListTile(
+                                  leading: Container(
+                                    width: 34,
+                                    height: 34,
+                                    decoration: BoxDecoration(
+                                      color: _kAccentColor.withValues(alpha: 0.14),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: const Icon(
+                                      Icons.apartment_outlined,
+                                      color: _kAccentColor,
+                                      size: 18,
+                                    ),
+                                  ),
+                                  title: Text(
+                                    setor.nome,
+                                    style: const TextStyle(
+                                      color: _kTextPrimary,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  subtitle: Text(
+                                    'Código ${setor.codigo}',
+                                    style: const TextStyle(
+                                      color: _kTextSecondary,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                  onTap: () => Navigator.of(ctx).pop(setor),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    if (!mounted || selecionado == null) return;
+
+    setState(() {
+      _setorSelecionado = selecionado;
+      _setorController.text = selecionado.nome;
+      _maquinaSelecionada = null;
+      _maquinaSelecionadaSecundaria = null;
+      _maquinaController.clear();
+      _maquina2Controller.clear();
+      _maquinas = [];
+    });
+
+    if (widget.tipo == 'A' &&
+        !selecionado.nome.toUpperCase().trim().contains(_kSetorSemMaquina)) {
+      _carregarMaquinas(selecionado.codigo);
+    }
+  }
+
+  Future<void> _abrirSeletorMaquina({bool segunda = false}) async {
+    if (_setorSelecionado == null) return;
+
+    final Maquina? selecionada = await showModalBottomSheet<Maquina>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: _kSurface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        String filtro = '';
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final listaFiltrada = _maquinas.where((m) {
+              final nome = m.nome.toUpperCase();
+              final codigo = m.codigo.toString().toUpperCase();
+              final termo = filtro.trim().toUpperCase();
+              if (termo.isEmpty) return true;
+              return nome.contains(termo) || codigo.contains(termo);
+            }).toList();
+
+            return SafeArea(
+              child: SizedBox(
+                height: MediaQuery.of(context).size.height * 0.78,
+                child: Column(
+                  children: [
+                    const SizedBox(height: 10),
+                    Container(
+                      width: 42,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.white24,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Selecionar máquina',
+                      style: TextStyle(
+                        color: _kTextPrimary,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: TextField(
+                        onChanged: (value) =>
+                            setModalState(() => filtro = value),
+                        style: const TextStyle(color: _kTextPrimary),
+                        decoration: InputDecoration(
+                          hintText: 'Buscar por nome ou código',
+                          hintStyle: const TextStyle(color: _kTextSecondary),
+                          prefixIcon: const Icon(
+                            Icons.search,
+                            color: _kTextSecondary,
+                          ),
+                          filled: true,
+                          fillColor: _kSurface2,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(color: _kBorderSoft),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(color: _kBorderSoft),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(
+                              color: _kAccentColor,
+                              width: 2,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Expanded(
+                      child: listaFiltrada.isEmpty
+                          ? const Center(
+                              child: Text(
+                                'Nenhuma máquina encontrada',
+                                style: TextStyle(color: _kTextSecondary),
+                              ),
+                            )
+                          : ListView.separated(
+                              itemCount: listaFiltrada.length,
+                              separatorBuilder: (_, __) =>
+                                  const Divider(height: 1, color: _kBorderSoft),
+                              itemBuilder: (_, i) {
+                                final maq = listaFiltrada[i];
+                                return ListTile(
+                                  leading: Container(
+                                    width: 34,
+                                    height: 34,
+                                    decoration: BoxDecoration(
+                                      color: _kAccentColor.withValues(alpha: 0.14),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: const Icon(
+                                      Icons.precision_manufacturing_outlined,
+                                      color: _kAccentColor,
+                                      size: 18,
+                                    ),
+                                  ),
+                                  title: Text(
+                                    maq.nome,
+                                    style: const TextStyle(
+                                      color: _kTextPrimary,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  subtitle: Text(
+                                    'Código ${maq.codigo}',
+                                    style: const TextStyle(
+                                      color: _kTextSecondary,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                  onTap: () => Navigator.of(ctx).pop(maq),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    if (!mounted || selecionada == null) return;
+
+    if (segunda &&
+        _maquinaSelecionada != null &&
+        _maquinaSelecionada!.codigo == selecionada.codigo) {
+      _showSnack("Máquina 2 deve ser diferente da Máquina 1", Colors.orange);
+      return;
+    }
+
+    setState(() {
+      if (segunda) {
+        _maquinaSelecionadaSecundaria = selecionada;
+        _maquina2Controller.text = selecionada.nome;
+        return;
+      }
+
+      _maquinaSelecionada = selecionada;
+      _maquinaController.text = selecionada.nome;
+      if (_maquinaSelecionadaSecundaria?.codigo == selecionada.codigo) {
+        _maquinaSelecionadaSecundaria = null;
+        _maquina2Controller.clear();
+      }
+    });
   }
 
   // -----------------------------------------------------------------------
@@ -1005,7 +1586,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
     try {
       final usuarios = await UsuarioOperadorService.buscarUsuarios();
       if (!mounted) return;
-      setState(() => _usuariosOperadores = usuarios);
+      setState(() => _usuariosOperadores = _ordenarUsuarios(usuarios));
     } finally {
       if (mounted) setState(() => _loadingUsuariosOperadores = false);
     }
@@ -1019,7 +1600,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
     setState(() => _loadingSetores = true);
     try {
       final setores = await SetorMaquinaService.buscarSetores();
-      setState(() => _setores = setores);
+      setState(() => _setores = _ordenarSetores(setores));
     } catch (e) {
       _showSnack("Erro ao carregar setores", Colors.red);
     } finally {
@@ -1032,10 +1613,13 @@ class _FormularioGeralState extends State<FormularioGeral> {
       _loadingMaquinas = true;
       _maquinas = [];
       _maquinaSelecionada = null;
+      _maquinaSelecionadaSecundaria = null;
+      _maquinaController.clear();
+      _maquina2Controller.clear();
     });
     try {
       final maquinas = await SetorMaquinaService.buscarMaquinas(setorId);
-      setState(() => _maquinas = maquinas);
+      setState(() => _maquinas = _ordenarMaquinas(maquinas));
     } catch (e) {
       _showSnack("Erro ao carregar máquinas", Colors.red);
     } finally {
@@ -1172,6 +1756,12 @@ class _FormularioGeralState extends State<FormularioGeral> {
       if (_defeitoController.text.trim().isEmpty) {
         return _showSnack("Preencha o campo Defeito", Colors.orange);
       }
+      if ((_operadorCdUserSelecionado ?? '').trim().isEmpty) {
+        return _showSnack("Selecione o Operador", Colors.orange);
+      }
+      if (_setorSelecionado == null) {
+        return _showSnack("Selecione o Setor", Colors.orange);
+      }
     }
 
     if (widget.tipo == 'A') {
@@ -1180,6 +1770,12 @@ class _FormularioGeralState extends State<FormularioGeral> {
       }
       if (!_isRevisao && _maquinaSelecionada == null) {
         return _showSnack("Selecione a Máquina", Colors.orange);
+      }
+      if (_maquinasSelecionadasDuplicadas) {
+        return _showSnack(
+          "Máquina 2 deve ser diferente da Máquina 1",
+          Colors.orange,
+        );
       }
       if ((_operadorCdUserSelecionado ?? '').trim().isEmpty) {
         return _showSnack("Selecione o Operador", Colors.orange);
@@ -1201,6 +1797,8 @@ class _FormularioGeralState extends State<FormularioGeral> {
         ? {
             "Setor": _setorSelecionado!.codigo,
             "Maq": _isRevisao ? 0 : _maquinaSelecionada!.codigo,
+            if (!_isRevisao && _maquinaSelecionadaSecundaria != null)
+              "Maq2": _maquinaSelecionadaSecundaria!.codigo,
             "Operador": _operadorCdUserSelecionado,
             "Qtde": int.tryParse(_qtdeController.text) ?? 0,
             "Artigo": _cdObjReal,
@@ -1208,6 +1806,9 @@ class _FormularioGeralState extends State<FormularioGeral> {
             "turno": widget.turno,
           }
         : {
+            "Setor": _setorSelecionado?.codigo,
+            "Maq": 0,
+            "Operador": _operadorCdUserSelecionado,
             "Artigo": _cdObjReal,
             "Detalhe": _detalheReal,
             "Defeito": _defeitoController.text,
@@ -1241,6 +1842,9 @@ class _FormularioGeralState extends State<FormularioGeral> {
     _detalheController.clear();
     _qtdeController.clear();
     _operadorController.clear();
+    _setorController.clear();
+    _maquinaController.clear();
+    _maquina2Controller.clear();
     _coletorArtigoController.clear();
     _defeitoController.clear();
     _operadorCdUserSelecionado = null;
@@ -1252,11 +1856,16 @@ class _FormularioGeralState extends State<FormularioGeral> {
         _etapaA = _EtapaA.identificacao;
         _setorSelecionado = null;
         _maquinaSelecionada = null;
+        _maquinaSelecionadaSecundaria = null;
         _maquinas = [];
         _coletorArtigoAtivo = false;
       });
     } else {
       setState(() {
+        _setorSelecionado = null;
+        _maquinaSelecionada = null;
+        _maquinaSelecionadaSecundaria = null;
+        _maquinas = [];
         _coletorArtigoAtivo = false;
       });
       WidgetsBinding.instance.addPostFrameCallback(
@@ -1288,6 +1897,12 @@ class _FormularioGeralState extends State<FormularioGeral> {
       _showSnack(msg, Colors.orange);
       return;
     }
+
+    if (_maquinasSelecionadasDuplicadas) {
+      _showSnack("Máquina 2 deve ser diferente da Máquina 1", Colors.orange);
+      return;
+    }
+
     setState(() => _etapaA = _EtapaA.producao);
     // Foca automaticamente no coletor do artigo
     WidgetsBinding.instance.addPostFrameCallback((_) => _ativarColetorArtigo());
@@ -1334,6 +1949,8 @@ class _FormularioGeralState extends State<FormularioGeral> {
         children: [
           _buildTurnoHeader(widget.turnoLetra),
           _buildCardSection('Qualidade', [
+            _buildOperadorDropdown(),
+            _buildSetorDropdown(),
             _buildArtigoField(),
             if (_isLoading) const LinearProgressIndicator(color: _kAccentColor),
             _buildTextField(
@@ -1379,6 +1996,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
               _buildOperadorDropdown(),
               _buildSetorDropdown(),
               if (!_isRevisao) _buildMaquinaDropdown(),
+              if (!_isRevisao) _buildMaquina2Dropdown(),
             ]),
             const SizedBox(height: 20),
             SizedBox(
@@ -1570,7 +2188,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
                 const SizedBox(height: 2),
                 Text(
                   'Setor: ${_setorSelecionado?.nome ?? "—"}'
-                  '${_isRevisao ? "" : "  •  Máquina: ${_maquinaSelecionada?.nome ?? "—"}"}',
+                  '$_resumoMaquinas',
                   style: const TextStyle(color: _kTextSecondary, fontSize: 12),
                 ),
               ],
@@ -1598,10 +2216,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
         (_operadorCdUserSelecionado ?? '').isNotEmpty &&
         _operadorController.text.isNotEmpty;
     final semUsuarios = _usuariosOperadores.isEmpty;
-    final valorSelecionado = _operadorCdUserSelecionado;
-    final valorValido =
-        valorSelecionado != null &&
-        _usuariosOperadores.any((u) => u.cdUser == valorSelecionado);
+    final totalOperadores = _usuariosOperadores.length;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -1615,76 +2230,17 @@ class _FormularioGeralState extends State<FormularioGeral> {
                 ),
               ),
             )
-          : DropdownButtonFormField<String>(
-              value: valorValido ? valorSelecionado : null,
-              dropdownColor: _kSurface,
-              isExpanded: true,
-              style: const TextStyle(color: _kTextPrimary),
-              decoration: InputDecoration(
-                labelText: 'Operador',
-                labelStyle: const TextStyle(color: _kTextSecondary),
-                prefixIcon: const Icon(Icons.badge, color: _kAccentColor),
-                suffixIcon: temOperador
-                    ? const Icon(Icons.check_circle, color: Colors.green)
-                    : const Icon(Icons.arrow_drop_down, color: _kTextSecondary),
-                filled: true,
-                fillColor: temOperador
-                    ? Colors.green.withOpacity(0.07)
-                    : _kSurface2,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: const BorderSide(color: _kBorderSoft),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide(
-                    color: temOperador
-                        ? Colors.green.withOpacity(0.5)
-                        : _kBorderSoft,
-                  ),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: const BorderSide(color: _kAccentColor, width: 2),
-                ),
-              ),
-              hint: Text(
-                semUsuarios ? 'Nenhum operador encontrado' : 'Selecione o operador',
-                style: const TextStyle(color: _kTextSecondary),
-              ),
-              items: _usuariosOperadores
-                  .map(
-                    (usuario) => DropdownMenuItem<String>(
-                      value: usuario.cdUser,
-                      child: Text(
-                        usuario.nmUser,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  )
-                  .toList(),
-              onChanged: semUsuarios
+          : _buildCampoSelecao(
+              controller: _operadorController,
+              label: 'Operador',
+              hint: semUsuarios ? 'Nenhum operador encontrado' : 'Selecione o operador',
+              icon: Icons.badge,
+              selecionado: temOperador,
+              habilitado: !semUsuarios,
+              onTap: semUsuarios ? null : _abrirSeletorOperador,
+              helperText: semUsuarios
                   ? null
-                  : (value) {
-                      if (value == null) {
-                        setState(() {
-                          _operadorCdUserSelecionado = null;
-                          _operadorController.clear();
-                        });
-                        return;
-                      }
-                      String nome = '';
-                      for (final usuario in _usuariosOperadores) {
-                        if (usuario.cdUser == value) {
-                          nome = usuario.nmUser;
-                          break;
-                        }
-                      }
-                      setState(() {
-                        _operadorCdUserSelecionado = value;
-                        _operadorController.text = nome;
-                      });
-                    },
+                  : '$totalOperadores operadores disponíveis',
             ),
     );
   }
@@ -1840,57 +2396,15 @@ class _FormularioGeralState extends State<FormularioGeral> {
               ),
             ),
           )
-        : DropdownButtonFormField<Setor>(
-            value: _setorSelecionado,
-            dropdownColor: _kSurface,
-            style: const TextStyle(color: _kTextPrimary),
-            decoration: InputDecoration(
-              labelText: 'Setor',
-              labelStyle: const TextStyle(color: _kTextSecondary),
-              prefixIcon: const Icon(Icons.apartment, color: _kAccentColor),
-              filled: true,
-              fillColor: _kSurface2,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: const BorderSide(color: _kBorderSoft),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: const BorderSide(color: _kBorderSoft),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: const BorderSide(color: _kAccentColor, width: 2),
-              ),
-            ),
-            hint: const Text(
-              'Selecione um setor',
-              style: TextStyle(color: _kTextSecondary),
-            ),
-            items: _setores
-                .map(
-                  (setor) => DropdownMenuItem<Setor>(
-                    value: setor,
-                    child: Text(
-                      setor.nome,
-                      style: const TextStyle(color: _kTextPrimary),
-                    ),
-                  ),
-                )
-                .toList(),
-            onChanged: (setor) {
-              setState(() {
-                _setorSelecionado = setor;
-                _maquinaSelecionada = null;
-                _maquinas = [];
-              });
-              if (setor != null &&
-                  !setor.nome.toUpperCase().trim().contains(
-                    _kSetorSemMaquina,
-                  )) {
-                _carregarMaquinas(setor.codigo);
-              }
-            },
+        : _buildCampoSelecao(
+            controller: _setorController,
+            label: 'Setor',
+            hint: _setores.isEmpty ? 'Nenhum setor encontrado' : 'Selecione um setor',
+            icon: Icons.apartment,
+            selecionado: _setorSelecionado != null,
+            habilitado: _setores.isNotEmpty,
+            onTap: _setores.isEmpty ? null : _abrirSeletorSetor,
+            helperText: _setores.isEmpty ? null : '${_setores.length} setores disponíveis',
           ),
   );
 
@@ -1906,67 +2420,57 @@ class _FormularioGeralState extends State<FormularioGeral> {
               ),
             ),
           )
-        : Opacity(
-            opacity: _setorSelecionado == null ? 0.45 : 1.0,
-            child: IgnorePointer(
-              ignoring: _setorSelecionado == null,
-              child: DropdownButtonFormField<Maquina>(
-                value: _maquinaSelecionada,
-                dropdownColor: _kSurface,
-                style: const TextStyle(color: _kTextPrimary),
-                decoration: InputDecoration(
-                  labelText: 'Máquina',
-                  labelStyle: const TextStyle(color: _kTextSecondary),
-                  prefixIcon: const Icon(Icons.settings, color: _kAccentColor),
-                  filled: true,
-                  fillColor: _setorSelecionado == null ? _kSurface : _kSurface2,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: const BorderSide(color: _kBorderSoft),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: const BorderSide(color: _kBorderSoft),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: const BorderSide(
-                      color: _kAccentColor,
-                      width: 2,
-                    ),
-                  ),
-                  helperText: _setorSelecionado == null
-                      ? 'Selecione um setor primeiro'
-                      : null,
-                  helperStyle: const TextStyle(
-                    color: _kTextSecondary,
-                    fontSize: 11,
-                  ),
-                ),
-                hint: Text(
-                  _setorSelecionado == null
-                      ? 'Aguardando setor...'
-                      : _maquinas.isEmpty
-                      ? 'Nenhuma máquina encontrada'
-                      : 'Selecione uma máquina',
-                  style: const TextStyle(color: _kTextSecondary),
-                ),
-                items: _maquinas
-                    .map(
-                      (maq) => DropdownMenuItem<Maquina>(
-                        value: maq,
-                        child: Text(
-                          maq.nome,
-                          style: const TextStyle(color: _kTextPrimary),
-                        ),
-                      ),
-                    )
-                    .toList(),
-                onChanged: _setorSelecionado == null
-                    ? null
-                    : (maq) => setState(() => _maquinaSelecionada = maq),
+        : _buildCampoSelecao(
+            controller: _maquinaController,
+            label: 'Máquina',
+            hint: _setorSelecionado == null
+                ? 'Selecione um setor primeiro'
+                : _maquinas.isEmpty
+                ? 'Nenhuma máquina encontrada'
+                : 'Selecione uma máquina',
+            icon: Icons.settings,
+            selecionado: _maquinaSelecionada != null,
+            habilitado: _setorSelecionado != null,
+            onTap: _setorSelecionado == null ? null : () => _abrirSeletorMaquina(),
+            helperText: _setorSelecionado == null
+                ? 'Selecione um setor primeiro'
+                : _maquinas.isEmpty
+                ? 'Nenhuma máquina disponível para este setor'
+                : '${_maquinas.length} máquinas disponíveis',
+          ),
+  );
+
+  Widget _buildMaquina2Dropdown() => Padding(
+    padding: const EdgeInsets.only(bottom: 12),
+    child: _loadingMaquinas
+        ? const Center(
+            child: Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: CircularProgressIndicator(
+                color: _kAccentColor,
+                strokeWidth: 2,
               ),
             ),
+          )
+        : _buildCampoSelecao(
+            controller: _maquina2Controller,
+            label: 'Máquina 2 (opcional)',
+            hint: _setorSelecionado == null
+                ? 'Selecione um setor primeiro'
+                : _maquinas.isEmpty
+                ? 'Nenhuma máquina encontrada'
+                : 'Selecione a segunda máquina',
+            icon: Icons.settings_applications,
+            selecionado: _maquinaSelecionadaSecundaria != null,
+            habilitado: _setorSelecionado != null,
+            onTap: _setorSelecionado == null
+                ? null
+                : () => _abrirSeletorMaquina(segunda: true),
+            helperText: _setorSelecionado == null
+                ? 'Selecione um setor primeiro'
+                : _maquinas.isEmpty
+                ? 'Nenhuma máquina disponível para este setor'
+                : 'Opcional: selecione se o operador atuar em duas máquinas',
           ),
   );
 

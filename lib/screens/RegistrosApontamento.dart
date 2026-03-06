@@ -340,9 +340,161 @@ class _ListaDadosGeral extends StatelessWidget {
     }
   }
 
+  Future<Map<String, String>> _buscarMapaOperadores() async {
+    try {
+      final response = await http.get(
+        Uri.parse("$_kBaseUrlFlask/consultar/usuarios"),
+        headers: {"Content-Type": "application/json"},
+      );
+      if (response.statusCode != 200) return {};
+
+      final List<dynamic> data = jsonDecode(response.body);
+      final mapa = <String, String>{};
+
+      for (final item in data) {
+        final registro = Map<String, dynamic>.from(item as Map);
+        final codigo = (registro['CdUser'] ?? '').toString().trim();
+        final nome = (registro['NmUser'] ?? '').toString().trim();
+        if (codigo.isNotEmpty && nome.isNotEmpty) {
+          mapa[codigo] = nome;
+        }
+      }
+
+      return mapa;
+    } catch (_) {
+      return {};
+    }
+  }
+
+  String _formatarOperador(
+    dynamic operadorRaw,
+    Map<String, String> mapaOperadores,
+  ) {
+    final codigo = (operadorRaw ?? '').toString().trim();
+    if (codigo.isEmpty) return "N/A";
+
+    final nome = mapaOperadores[codigo];
+    if (nome == null || nome.isEmpty) return "ID $codigo";
+    return "$nome (ID $codigo)";
+  }
+
+  String _normalizarCodigo(dynamic raw) {
+    final valor = (raw ?? '').toString().trim();
+    if (valor.isEmpty) return '';
+    final n = num.tryParse(valor);
+    if (n == null) return valor;
+    if (n == n.toInt()) return n.toInt().toString();
+    return valor;
+  }
+
+  String _tituloArtigo(Map<String, dynamic> item) {
+    final nome = (item['NomeArtigo'] ?? 'N/A').toString().trim();
+    final detalheNome = (item['DetalheNome'] ?? '').toString().trim();
+    final isPreto = nome.toUpperCase().contains('PRETO');
+    if (isPreto && detalheNome.isNotEmpty) {
+      return '$nome - $detalheNome';
+    }
+    return nome;
+  }
+
+  Future<void> _garantirCatalogoProdutos() async {
+    try {
+      final total = await DatabaseService.contarProdutos();
+      final precisaSincronizar = await DatabaseService.precisaSincronizar();
+      if (total == 0 || precisaSincronizar) {
+        await DatabaseService.sincronizarTodosProdutos();
+      }
+    } catch (_) {
+      // Mantem fluxo da tela mesmo que a sincronizacao falhe.
+    }
+  }
+
+  Future<Map<String, dynamic>?> _buscarProdutoLocal(
+    String objId,
+    String detId,
+  ) async {
+    Map<String, dynamic>? produto;
+    if (detId.isNotEmpty) {
+      produto = await DatabaseService.buscarProduto(objId, detId);
+    }
+
+    if (produto != null) return produto;
+
+    final produtosMesmoObjeto = await DatabaseService.buscarPorObjetoID(objId);
+    if (produtosMesmoObjeto.isEmpty) return null;
+
+    if (detId.isNotEmpty) {
+      final detalheNormalizado = detId.replaceFirst(RegExp(r'^0+'), '');
+      for (final p in produtosMesmoObjeto) {
+        final d = (p['detalheID'] ?? '').toString().trim();
+        final dNorm = d.replaceFirst(RegExp(r'^0+'), '');
+        if (d == detId || dNorm == detalheNormalizado) {
+          return p;
+        }
+      }
+    }
+
+    return produtosMesmoObjeto.first;
+  }
+
+  String _chaveMaquina(String setor, String codigo) => '$setor|$codigo';
+
+  Future<Map<String, String>> _buscarMapaMaquinas(Set<String> setores) async {
+    final mapa = <String, String>{};
+    if (setores.isEmpty) return mapa;
+
+    for (final setor in setores) {
+      try {
+        final response = await http.get(
+          Uri.parse("$_kBaseUrlFlask/consulta/maquinas?setor=$setor"),
+          headers: {"Content-Type": "application/json"},
+        );
+        if (response.statusCode != 200) continue;
+
+        final List<dynamic> data = jsonDecode(response.body);
+        for (final item in data) {
+          final registro = Map<String, dynamic>.from(item as Map);
+          final codigo = (registro['Codigo'] ?? '').toString().trim();
+          final nome = (registro['Nome'] ?? '').toString().trim();
+          if (codigo.isNotEmpty && nome.isNotEmpty) {
+            mapa[_chaveMaquina(setor, codigo)] = nome;
+          }
+        }
+      } catch (_) {
+        // Ignora falha de setor específico e continua o restante.
+      }
+    }
+
+    return mapa;
+  }
+
+  String _formatarMaquina(
+    dynamic maquinaRaw,
+    dynamic setorRaw,
+    Map<String, String> mapaMaquinas,
+  ) {
+    final valor = _normalizarCodigo(maquinaRaw);
+    if (valor.isEmpty) return "N/A";
+    if (valor == "0") return "N/A";
+
+    // Se já veio com nome (ex: "MAQ X (ID 12)"), mantém como está.
+    if (int.tryParse(valor) == null) return valor;
+
+    final codigo = valor;
+    final setor = _normalizarCodigo(setorRaw);
+    if (setor.isNotEmpty) {
+      final nome = mapaMaquinas[_chaveMaquina(setor, codigo)];
+      if (nome != null && nome.isNotEmpty) return "$nome (ID $codigo)";
+    }
+    return "ID $codigo";
+  }
+
   // --- BUSCAR DADOS DA API E CRUZAR COM O SQLITE ---
   Future<List<dynamic>> _buscarDados() async {
     try {
+      await _garantirCatalogoProdutos();
+
+      final mapaOperadores = await _buscarMapaOperadores();
       final response = await http.get(
         Uri.parse(
           "$_kBaseUrlFlask/apontamento/$endpoint",
@@ -351,21 +503,79 @@ class _ListaDadosGeral extends StatelessWidget {
 
       if (response.statusCode == 200) {
         List<dynamic> dados = jsonDecode(response.body);
+        final setores = <String>{};
 
-        // Associa o código ao Nome do Artigo consultando o banco local
+        for (final item in dados) {
+          final setor = _normalizarCodigo(item['Setor'] ?? item['setor']);
+          final maq = _normalizarCodigo(item['Maq']);
+          final maq2 = _normalizarCodigo(item['Maq2']);
+          if (setor.isNotEmpty && maq.isNotEmpty && int.tryParse(maq) != null) {
+            setores.add(setor);
+          }
+          if (endpoint == 'tipoA' &&
+              setor.isNotEmpty &&
+              maq2.isNotEmpty &&
+              maq2 != '0' &&
+              int.tryParse(maq2) != null) {
+            setores.add(setor);
+          }
+        }
+
+        final mapaMaquinas = await _buscarMapaMaquinas(setores);
+
+        // Associa o codigo ao nome do artigo consultando o SQLite local.
+        bool sincronizacaoReforcoExecutada = false;
         for (var item in dados) {
-          String objId = item['Artigo']?.toString() ?? "";
-          String detId = (item['Detalhe'] ?? item['detalhe'])?.toString() ?? "";
+          final objId = _normalizarCodigo(item['Artigo'] ?? item['artigo']);
+          final detId = _normalizarCodigo(item['Detalhe'] ?? item['detalhe']);
 
           if (objId.isNotEmpty) {
-            final produto = await DatabaseService.buscarProduto(objId, detId);
-            if (produto != null && produto['objeto'] != null) {
-              item['NomeArtigo'] = produto['objeto']; // Pegou o nome do Banco!
+            Map<String, dynamic>? produto = await _buscarProdutoLocal(
+              objId,
+              detId,
+            );
+
+            if (produto == null) {
+              if (!sincronizacaoReforcoExecutada) {
+                await DatabaseService.sincronizarTodosProdutos();
+                sincronizacaoReforcoExecutada = true;
+              }
+              produto = await _buscarProdutoLocal(objId, detId);
+            }
+
+            if (produto != null &&
+                (produto['objeto']?.toString().trim().isNotEmpty ?? false)) {
+              item['NomeArtigo'] = produto['objeto'].toString().trim();
+              item['DetalheNome'] =
+                  (produto['detalhe'] ?? '').toString().trim();
             } else {
               item['NomeArtigo'] = "Desconhecido ($objId)";
+              item['DetalheNome'] = '';
             }
           } else {
             item['NomeArtigo'] = "Sem Código";
+            item['DetalheNome'] = '';
+          }
+
+          item['ArtigoLabel'] = objId.isEmpty ? '-' : objId;
+          item['DetalheLabel'] = detId.isEmpty ? '-' : detId;
+
+          item['OperadorLabel'] = _formatarOperador(
+            item['Operador'],
+            mapaOperadores,
+          );
+          final setor = item['Setor'] ?? item['setor'];
+          final maq1Label = _formatarMaquina(item['Maq'], setor, mapaMaquinas);
+          item['Maq1Label'] = maq1Label;
+
+          final maq2Raw = _normalizarCodigo(item['Maq2']);
+          if (endpoint == 'tipoA' && maq2Raw.isNotEmpty && maq2Raw != '0') {
+            final maq2Label = _formatarMaquina(item['Maq2'], setor, mapaMaquinas);
+            item['Maq2Label'] = maq2Label;
+            item['MaqLabel'] = "Maq 1: $maq1Label | Maq 2: $maq2Label";
+          } else {
+            item['Maq2Label'] = null;
+            item['MaqLabel'] = maq1Label;
           }
         }
 
@@ -416,6 +626,7 @@ class _ListaDadosGeral extends StatelessWidget {
   }
 
   Widget _buildCardProducao(Map<String, dynamic> item) {
+    final tituloArtigo = _tituloArtigo(item);
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
@@ -435,7 +646,7 @@ class _ListaDadosGeral extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    item['NomeArtigo'] ?? 'N/A', // O Nome associado!
+                    tituloArtigo,
                     style: const TextStyle(
                       color: _kTextPrimary,
                       fontWeight: FontWeight.bold,
@@ -451,20 +662,26 @@ class _ListaDadosGeral extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              "Cód: ${item['Artigo']} | Lote: ${item['Detalhe'] ?? '-'}",
+              "Cód: ${item['ArtigoLabel'] ?? item['Artigo'] ?? '-'} | Lote: ${item['DetalheLabel'] ?? item['Detalhe'] ?? '-'}",
               style: const TextStyle(color: _kAccentColor, fontSize: 12),
             ),
             const Divider(height: 24, color: _kBorderSoft),
             _buildDataPoint(
               Icons.person_outline,
               "Operador",
-              item['Operador']?.toString(),
+              item['OperadorLabel']?.toString(),
             ),
             _buildDataPoint(
               Icons.precision_manufacturing_outlined,
-              "Máquina",
-              item['Maq']?.toString(),
+              item['Maq2Label'] == null ? "Máquina" : "Máquina 1",
+              (item['Maq1Label'] ?? item['MaqLabel'])?.toString(),
             ),
+            if (item['Maq2Label'] != null)
+              _buildDataPoint(
+                Icons.precision_manufacturing_outlined,
+                "Máquina 2",
+                item['Maq2Label']?.toString(),
+              ),
             _buildDataPoint(
               Icons.add_box_outlined,
               "Quantidade",
@@ -483,6 +700,7 @@ class _ListaDadosGeral extends StatelessWidget {
   }
 
   Widget _buildCardQualidade(Map<String, dynamic> item) {
+    final tituloArtigo = _tituloArtigo(item);
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
@@ -516,7 +734,7 @@ class _ListaDadosGeral extends StatelessWidget {
                     children: [
                       Expanded(
                         child: Text(
-                          item['NomeArtigo'] ?? 'N/A', // O Nome associado!
+                          tituloArtigo,
                           style: const TextStyle(
                             color: _kTextPrimary,
                             fontWeight: FontWeight.bold,
@@ -533,13 +751,18 @@ class _ListaDadosGeral extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    "Cód: ${item['Artigo']} | Lote: ${item['Detalhe'] ?? '-'}",
+                    "Cód: ${item['ArtigoLabel'] ?? item['Artigo'] ?? '-'} | Lote: ${item['DetalheLabel'] ?? item['Detalhe'] ?? '-'}",
                     style: const TextStyle(
                       color: Colors.orangeAccent,
                       fontSize: 12,
                     ),
                   ),
                   const Divider(height: 24, color: _kBorderSoft),
+                  _buildDataPoint(
+                    Icons.person_outline,
+                    "Operador",
+                    item['OperadorLabel']?.toString(),
+                  ),
                   _buildDataPoint(
                     Icons.warning_amber_rounded,
                     "Defeito",
