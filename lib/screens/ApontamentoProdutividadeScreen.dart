@@ -474,9 +474,7 @@ class UsuarioOperadorService {
       if (response.statusCode == 200) {
         final List<dynamic> data = jsonDecode(response.body);
         return data
-            .map(
-              (e) => UsuarioOperador.fromJson(Map<String, dynamic>.from(e)),
-            )
+            .map((e) => UsuarioOperador.fromJson(Map<String, dynamic>.from(e)))
             .where((u) => u.cdUser.trim().isNotEmpty)
             .toList();
       }
@@ -629,7 +627,22 @@ class _SplashScreenState extends State<SplashScreen> {
 // TABS PRINCIPAL
 // =========================================================================
 class ProducaoTabsScreen extends StatefulWidget {
-  const ProducaoTabsScreen({super.key});
+  final bool mostrarTipoB;
+  final bool mostrarSomenteTipoB;
+  final String? artigoEsperadoId;
+  final String? artigoEsperadoNome;
+  final VoidCallback? onApontamentoConcluido;
+  final bool fecharAoConcluir;
+
+  const ProducaoTabsScreen({
+    super.key,
+    this.mostrarTipoB = true,
+    this.mostrarSomenteTipoB = false,
+    this.artigoEsperadoId,
+    this.artigoEsperadoNome,
+    this.onApontamentoConcluido,
+    this.fecharAoConcluir = false,
+  });
   @override
   State<ProducaoTabsScreen> createState() => _ProducaoTabsScreenState();
 }
@@ -641,7 +654,10 @@ class _ProducaoTabsScreenState extends State<ProducaoTabsScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(
+      length: widget.mostrarSomenteTipoB ? 1 : (widget.mostrarTipoB ? 2 : 1),
+      vsync: this,
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _sincronizacaoAutomatica();
     });
@@ -872,24 +888,64 @@ class _ProducaoTabsScreenState extends State<ProducaoTabsScreen>
               ),
             ),
           ),
-          bottom: TabBar(
-            controller: _tabController,
-            labelColor: _kTextPrimary,
-            unselectedLabelColor: _kTextSecondary,
-            indicatorColor: _kAccentColor,
-            tabs: const [
-              Tab(text: 'Tipo A', icon: Icon(Icons.factory_outlined)),
-              Tab(text: 'Tipo B', icon: Icon(Icons.high_quality_outlined)),
-            ],
-          ),
+          bottom: widget.mostrarSomenteTipoB
+              ? null
+              : widget.mostrarTipoB
+              ? TabBar(
+                  controller: _tabController,
+                  labelColor: _kTextPrimary,
+                  unselectedLabelColor: _kTextSecondary,
+                  indicatorColor: _kAccentColor,
+                  tabs: const [
+                    Tab(text: 'Tipo A', icon: Icon(Icons.factory_outlined)),
+                    Tab(text: 'Tipo B', icon: Icon(Icons.factory_outlined)),
+                  ],
+                )
+              : null,
         ),
-        body: TabBarView(
-          controller: _tabController,
-          children: [
-            FormularioGeral(tipo: 'A', turno: turnoNum, turnoLetra: turnoLetra),
-            FormularioGeral(tipo: 'B', turno: turnoNum, turnoLetra: turnoLetra),
-          ],
-        ),
+        body: widget.mostrarSomenteTipoB
+            ? FormularioGeral(
+                tipo: 'B',
+                turno: turnoNum,
+                turnoLetra: turnoLetra,
+                artigoEsperadoId: widget.artigoEsperadoId,
+                artigoEsperadoNome: widget.artigoEsperadoNome,
+                onApontamentoConcluido: widget.onApontamentoConcluido,
+                fecharAoConcluir: widget.fecharAoConcluir,
+              )
+            : widget.mostrarTipoB
+            ? TabBarView(
+                controller: _tabController,
+                children: [
+                  FormularioGeral(
+                    tipo: 'A',
+                    turno: turnoNum,
+                    turnoLetra: turnoLetra,
+                    artigoEsperadoId: widget.artigoEsperadoId,
+                    artigoEsperadoNome: widget.artigoEsperadoNome,
+                    onApontamentoConcluido: widget.onApontamentoConcluido,
+                    fecharAoConcluir: widget.fecharAoConcluir,
+                  ),
+                  FormularioGeral(
+                    tipo: 'B',
+                    turno: turnoNum,
+                    turnoLetra: turnoLetra,
+                    artigoEsperadoId: widget.artigoEsperadoId,
+                    artigoEsperadoNome: widget.artigoEsperadoNome,
+                    onApontamentoConcluido: widget.onApontamentoConcluido,
+                    fecharAoConcluir: widget.fecharAoConcluir,
+                  ),
+                ],
+              )
+            : FormularioGeral(
+                tipo: 'A',
+                turno: turnoNum,
+                turnoLetra: turnoLetra,
+                artigoEsperadoId: widget.artigoEsperadoId,
+                artigoEsperadoNome: widget.artigoEsperadoNome,
+                onApontamentoConcluido: widget.onApontamentoConcluido,
+                fecharAoConcluir: widget.fecharAoConcluir,
+              ),
       ),
     );
   }
@@ -906,11 +962,19 @@ class FormularioGeral extends StatefulWidget {
   final String tipo;
   final int turno;
   final String turnoLetra;
+  final String? artigoEsperadoId;
+  final String? artigoEsperadoNome;
+  final VoidCallback? onApontamentoConcluido;
+  final bool fecharAoConcluir;
 
   const FormularioGeral({
     required this.tipo,
     required this.turno,
     required this.turnoLetra,
+    this.artigoEsperadoId,
+    this.artigoEsperadoNome,
+    this.onApontamentoConcluido,
+    this.fecharAoConcluir = false,
     super.key,
   });
 
@@ -926,12 +990,15 @@ class _FormularioGeralState extends State<FormularioGeral> {
   final _artigoController = TextEditingController();
   final _detalheController = TextEditingController();
   final _qtdeController = TextEditingController();
+  final _qtde2Controller = TextEditingController();
   final _operadorController = TextEditingController();
+  final _operador2Controller = TextEditingController();
   final _setorController = TextEditingController();
   final _maquinaController = TextEditingController();
   final _maquina2Controller = TextEditingController();
   final _defeitoController = TextEditingController();
   String? _operadorCdUserSelecionado;
+  String? _operador2CdUserSelecionado;
   List<UsuarioOperador> _usuariosOperadores = [];
   bool _loadingUsuariosOperadores = false;
 
@@ -952,6 +1019,8 @@ class _FormularioGeralState extends State<FormularioGeral> {
   String _cdObjReal = "";
   String _detalheReal = "";
   bool _isLoading = false;
+  String _artigoEsperadoId = "";
+  String _artigoEsperadoNome = "";
 
   // ── Estado visual do coletor ──────────────────────────────────────────
   bool _coletorArtigoAtivo = false;
@@ -991,6 +1060,8 @@ class _FormularioGeralState extends State<FormularioGeral> {
       _carregarSetores();
       _carregarUsuariosOperadores();
     }
+    _artigoEsperadoId = widget.artigoEsperadoId?.trim() ?? '';
+    _artigoEsperadoNome = widget.artigoEsperadoNome?.trim() ?? '';
   }
 
   @override
@@ -998,7 +1069,9 @@ class _FormularioGeralState extends State<FormularioGeral> {
     _artigoController.dispose();
     _detalheController.dispose();
     _qtdeController.dispose();
+    _qtde2Controller.dispose();
     _operadorController.dispose();
+    _operador2Controller.dispose();
     _setorController.dispose();
     _maquinaController.dispose();
     _maquina2Controller.dispose();
@@ -1012,6 +1085,14 @@ class _FormularioGeralState extends State<FormularioGeral> {
     final aNorm = a.trim().toUpperCase();
     final bNorm = b.trim().toUpperCase();
     return aNorm.compareTo(bNorm);
+  }
+
+  String _normalizarCodigo(String valor) {
+    final trimmed = valor.trim();
+    if (trimmed.isEmpty) return '';
+    final asInt = int.tryParse(trimmed);
+    if (asInt != null) return asInt.toString();
+    return trimmed;
   }
 
   List<UsuarioOperador> _ordenarUsuarios(List<UsuarioOperador> usuarios) {
@@ -1045,6 +1126,8 @@ class _FormularioGeralState extends State<FormularioGeral> {
     required bool habilitado,
     required VoidCallback? onTap,
     String? helperText,
+    bool mostrarLimpar = false,
+    VoidCallback? onClear,
   }) {
     return TextFormField(
       controller: controller,
@@ -1063,12 +1146,25 @@ class _FormularioGeralState extends State<FormularioGeral> {
         helperText: helperText,
         helperStyle: const TextStyle(color: _kTextSecondary, fontSize: 11),
         prefixIcon: Icon(icon, color: _kAccentColor),
-        suffixIcon: selecionado
-            ? const Icon(Icons.check_circle, color: Colors.green)
-            : const Icon(
-                Icons.keyboard_arrow_down_rounded,
-                color: _kTextSecondary,
+        suffixIcon: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              selecionado
+                  ? Icons.check_circle
+                  : Icons.keyboard_arrow_down_rounded,
+              color: selecionado ? Colors.green : _kTextSecondary,
+            ),
+            if (mostrarLimpar)
+              GestureDetector(
+                onTap: onClear,
+                child: const Padding(
+                  padding: EdgeInsets.only(right: 8),
+                  child: Icon(Icons.close, color: _kTextSecondary, size: 18),
+                ),
               ),
+          ],
+        ),
         filled: true,
         fillColor: !habilitado
             ? _kSurface
@@ -1099,7 +1195,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
     );
   }
 
-  Future<void> _abrirSeletorOperador() async {
+  Future<void> _abrirSeletorOperador({bool segundo = false}) async {
     if (_usuariosOperadores.isEmpty) return;
 
     final String? selecionado = await showModalBottomSheet<String>(
@@ -1198,7 +1294,9 @@ class _FormularioGeralState extends State<FormularioGeral> {
                                     width: 34,
                                     height: 34,
                                     decoration: BoxDecoration(
-                                      color: _kAccentColor.withValues(alpha: 0.14),
+                                      color: _kAccentColor.withValues(
+                                        alpha: 0.14,
+                                      ),
                                       borderRadius: BorderRadius.circular(10),
                                     ),
                                     child: const Icon(
@@ -1221,7 +1319,8 @@ class _FormularioGeralState extends State<FormularioGeral> {
                                       fontSize: 12,
                                     ),
                                   ),
-                                  onTap: () => Navigator.of(ctx).pop(usuario.cdUser),
+                                  onTap: () =>
+                                      Navigator.of(ctx).pop(usuario.cdUser),
                                 );
                               },
                             ),
@@ -1246,8 +1345,13 @@ class _FormularioGeralState extends State<FormularioGeral> {
     }
 
     setState(() {
-      _operadorCdUserSelecionado = selecionado;
-      _operadorController.text = nome;
+      if (segundo) {
+        _operador2CdUserSelecionado = selecionado;
+        _operador2Controller.text = nome;
+      } else {
+        _operadorCdUserSelecionado = selecionado;
+        _operadorController.text = nome;
+      }
     });
   }
 
@@ -1350,7 +1454,9 @@ class _FormularioGeralState extends State<FormularioGeral> {
                                     width: 34,
                                     height: 34,
                                     decoration: BoxDecoration(
-                                      color: _kAccentColor.withValues(alpha: 0.14),
+                                      color: _kAccentColor.withValues(
+                                        alpha: 0.14,
+                                      ),
                                       borderRadius: BorderRadius.circular(10),
                                     ),
                                     child: const Icon(
@@ -1504,7 +1610,9 @@ class _FormularioGeralState extends State<FormularioGeral> {
                                     width: 34,
                                     height: 34,
                                     decoration: BoxDecoration(
-                                      color: _kAccentColor.withValues(alpha: 0.14),
+                                      color: _kAccentColor.withValues(
+                                        alpha: 0.14,
+                                      ),
                                       borderRadius: BorderRadius.circular(10),
                                     ),
                                     child: const Icon(
@@ -1580,6 +1688,102 @@ class _FormularioGeralState extends State<FormularioGeral> {
     );
   }
 
+  void _limparArtigoSelecionado() {
+    setState(() {
+      _artigoController.clear();
+      _detalheController.clear();
+      _cdObjReal = "";
+      _detalheReal = "";
+      _coletorArtigoAtivo = false;
+    });
+  }
+
+  Future<void> _escolherModoLeituraArtigo() async {
+    if (_coletorArtigoAtivo) {
+      setState(() => _coletorArtigoAtivo = false);
+      FocusScope.of(context).unfocus();
+    }
+
+    final escolha = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: _kSurface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 42,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.white24,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Como deseja ler o artigo?',
+                  style: TextStyle(
+                    color: _kTextPrimary,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                ListTile(
+                  leading: const Icon(
+                    Icons.qr_code_scanner,
+                    color: _kAccentColor,
+                  ),
+                  title: const Text(
+                    'Câmera',
+                    style: TextStyle(color: _kTextPrimary),
+                  ),
+                  onTap: () => Navigator.pop(ctx, 'camera'),
+                ),
+                ListTile(
+                  leading: const Icon(
+                    Icons.barcode_reader,
+                    color: _kAccentColor,
+                  ),
+                  title: const Text(
+                    'Coletor',
+                    style: TextStyle(color: _kTextPrimary),
+                  ),
+                  onTap: () => Navigator.pop(ctx, 'coletor'),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (!mounted || escolha == null) return;
+
+    if (escolha == 'camera') {
+      final String? code = await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const ScannerPage(modo: 'qr', titulo: 'Ler Artigo'),
+        ),
+      );
+      if (code != null && code.isNotEmpty) {
+        _processarBuscaProduto(code);
+      }
+      return;
+    }
+
+    if (escolha == 'coletor') {
+      _ativarColetorArtigo();
+    }
+  }
+
   Future<void> _carregarUsuariosOperadores() async {
     if (_loadingUsuariosOperadores) return;
     setState(() => _loadingUsuariosOperadores = true);
@@ -1647,6 +1851,14 @@ class _FormularioGeralState extends State<FormularioGeral> {
 
       if (buscadoObjID.isEmpty) {
         _showSnack("Código inválido", Colors.orange);
+        return;
+      }
+
+      final esperado = _normalizarCodigo(_artigoEsperadoId);
+      final recebido = _normalizarCodigo(buscadoObjID);
+      if (esperado.isNotEmpty && recebido != esperado) {
+        setState(() => _coletorArtigoAtivo = false);
+        _showSnack("Artigo diferente do selecionado", Colors.red);
         return;
       }
 
@@ -1786,6 +1998,18 @@ class _FormularioGeralState extends State<FormularioGeral> {
         int.tryParse(_qtdeController.text) == null) {
       return _showSnack("Preencha a quantidade corretamente", Colors.orange);
     }
+    if (widget.tipo == 'A') {
+      final operador2 = (_operador2CdUserSelecionado ?? '').trim();
+      if (operador2.isNotEmpty) {
+        if (_qtde2Controller.text.trim().isEmpty ||
+            int.tryParse(_qtde2Controller.text) == null) {
+          return _showSnack(
+            "Preencha a quantidade do Operador 2 corretamente",
+            Colors.orange,
+          );
+        }
+      }
+    }
 
     setState(() => _isLoading = true);
 
@@ -1793,42 +2017,75 @@ class _FormularioGeralState extends State<FormularioGeral> {
         ? '/apontamento/tipoA'
         : '/apontamento/tipoB';
 
-    final payload = widget.tipo == 'A'
-        ? {
-            "Setor": _setorSelecionado!.codigo,
-            "Maq": _isRevisao ? 0 : _maquinaSelecionada!.codigo,
-            if (!_isRevisao && _maquinaSelecionadaSecundaria != null)
-              "Maq2": _maquinaSelecionadaSecundaria!.codigo,
-            "Operador": _operadorCdUserSelecionado,
-            "Qtde": int.tryParse(_qtdeController.text) ?? 0,
-            "Artigo": _cdObjReal,
-            "Detalhe": _detalheReal,
-            "turno": widget.turno,
-          }
-        : {
-            "Setor": _setorSelecionado?.codigo,
-            "Maq": 0,
-            "Operador": _operadorCdUserSelecionado,
-            "Artigo": _cdObjReal,
-            "Detalhe": _detalheReal,
-            "Defeito": _defeitoController.text,
-            "Qtde": int.tryParse(_qtdeController.text) ?? 0,
-            "turno": widget.turno,
-          };
+    final quantidade = int.tryParse(_qtdeController.text) ?? 0;
+    final quantidade2 = int.tryParse(_qtde2Controller.text) ?? 0;
+    final payloads = <Map<String, dynamic>>[];
+
+    if (widget.tipo == 'A') {
+      final base = <String, dynamic>{
+        "Setor": _setorSelecionado!.codigo,
+        "Qtde": quantidade,
+        "Artigo": _cdObjReal,
+        "Detalhe": _detalheReal,
+        "turno": widget.turno,
+      };
+
+      // Registro do Operador 1
+      payloads.add({
+        ...base,
+        "Maq": _setorSelecionado!.codigo,
+        "Operador": _operadorCdUserSelecionado,
+      });
+
+      // Se houver Operador 2, cria um segundo registro usando a mesma leitura de QR
+      final operador2 = (_operador2CdUserSelecionado ?? '').trim();
+      if (operador2.isNotEmpty) {
+        final maquina2 = _isRevisao
+            ? 0
+            : (_maquinaSelecionadaSecundaria?.codigo ??
+                  _maquinaSelecionada!.codigo);
+
+        payloads.add({
+          ...base,
+          "Maq": _setorSelecionado!.codigo,
+          "Operador": operador2,
+          "Qtde": quantidade2,
+        });
+      }
+    } else {
+      payloads.add({
+        "Setor": _setorSelecionado?.codigo,
+        "Maq": _setorSelecionado?.codigo,
+        "Operador": _operadorCdUserSelecionado,
+        "Artigo": _cdObjReal,
+        "Detalhe": _detalheReal,
+        "Defeito": _defeitoController.text,
+        "Qtde": quantidade,
+        "turno": widget.turno,
+      });
+    }
 
     try {
-      final resp = await http.post(
-        Uri.parse("$_kBaseUrlFlask$endpoint"),
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode(payload),
-      );
+      for (var i = 0; i < payloads.length; i++) {
+        final resp = await http.post(
+          Uri.parse("$_kBaseUrlFlask$endpoint"),
+          headers: {"Content-Type": "application/json"},
+          body: jsonEncode(payloads[i]),
+        );
 
-      if (resp.statusCode == 201) {
-        _showSnack("Salvo com sucesso!", Colors.green);
-        _limpar();
-      } else {
-        _showSnack("Erro ao salvar: ${resp.statusCode}", Colors.red);
+        if (resp.statusCode != 201) {
+          _showSnack("Erro ao salvar: ${resp.statusCode}", Colors.red);
+          return;
+        }
       }
+
+      _showSnack("Salvo com sucesso!", Colors.green);
+      widget.onApontamentoConcluido?.call();
+      if (widget.fecharAoConcluir && mounted) {
+        Navigator.of(context).pop();
+        return;
+      }
+      _limpar();
     } catch (e) {
       debugPrint('[ERRO ENVIO] $e');
       _showSnack("Erro ao salvar", Colors.red);
@@ -1841,13 +2098,16 @@ class _FormularioGeralState extends State<FormularioGeral> {
     _artigoController.clear();
     _detalheController.clear();
     _qtdeController.clear();
+    _qtde2Controller.clear();
     _operadorController.clear();
+    _operador2Controller.clear();
     _setorController.clear();
     _maquinaController.clear();
     _maquina2Controller.clear();
     _coletorArtigoController.clear();
     _defeitoController.clear();
     _operadorCdUserSelecionado = null;
+    _operador2CdUserSelecionado = null;
     _cdObjReal = "";
     _detalheReal = "";
 
@@ -1951,8 +2211,8 @@ class _FormularioGeralState extends State<FormularioGeral> {
           _buildCardSection('Qualidade', [
             _buildOperadorDropdown(),
             _buildSetorDropdown(),
+            _buildArtigoEsperadoInfo(),
             _buildArtigoField(),
-            if (_isLoading) const LinearProgressIndicator(color: _kAccentColor),
             _buildTextField(
               _detalheController,
               'Detalhe (Lote)',
@@ -1994,6 +2254,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
           if (_etapaA == _EtapaA.identificacao) ...[
             _buildCardSection('Etapa 1 — Identificação', [
               _buildOperadorDropdown(),
+              _buildOperador2Dropdown(),
               _buildSetorDropdown(),
               if (!_isRevisao) _buildMaquinaDropdown(),
               if (!_isRevisao) _buildMaquina2Dropdown(),
@@ -2030,9 +2291,8 @@ class _FormularioGeralState extends State<FormularioGeral> {
 
             // ── Etapa 2: Produção ─────────────────────────────────────────
             _buildCardSection('Etapa 2 — Produção', [
+              _buildArtigoEsperadoInfo(),
               _buildArtigoField(),
-              if (_isLoading)
-                const LinearProgressIndicator(color: _kAccentColor),
               _buildTextField(
                 _detalheController,
                 'Detalhe (Lote)',
@@ -2045,6 +2305,13 @@ class _FormularioGeralState extends State<FormularioGeral> {
                 Icons.add_task,
                 isNumeric: true,
               ),
+              if ((_operador2CdUserSelecionado ?? '').trim().isNotEmpty)
+                _buildTextField(
+                  _qtde2Controller,
+                  'Quantidade Operador 2',
+                  Icons.add_task,
+                  isNumeric: true,
+                ),
             ]),
             const SizedBox(height: 20),
             Row(
@@ -2185,6 +2452,17 @@ class _FormularioGeralState extends State<FormularioGeral> {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
+                if (_operador2Controller.text.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    'Segundo operador: ${_operador2Controller.text}',
+                    style: const TextStyle(
+                      color: _kTextSecondary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 2),
                 Text(
                   'Setor: ${_setorSelecionado?.nome ?? "—"}'
@@ -2221,27 +2499,117 @@ class _FormularioGeralState extends State<FormularioGeral> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: _loadingUsuariosOperadores
-          ? const Center(
-              child: Padding(
-                padding: EdgeInsets.symmetric(vertical: 8),
-                child: CircularProgressIndicator(
-                  color: _kAccentColor,
-                  strokeWidth: 2,
-                ),
-              ),
+          ? _buildCampoSelecao(
+              controller: _operadorController,
+              label: 'Operador',
+              hint: 'Carregando operadores...',
+              icon: Icons.badge,
+              selecionado: false,
+              habilitado: false,
+              onTap: null,
+              helperText: null,
             )
           : _buildCampoSelecao(
               controller: _operadorController,
               label: 'Operador',
-              hint: semUsuarios ? 'Nenhum operador encontrado' : 'Selecione o operador',
+              hint: semUsuarios
+                  ? 'Nenhum operador encontrado'
+                  : 'Selecione o operador',
               icon: Icons.badge,
               selecionado: temOperador,
               habilitado: !semUsuarios,
-              onTap: semUsuarios ? null : _abrirSeletorOperador,
+              onTap: semUsuarios ? null : () => _abrirSeletorOperador(),
               helperText: semUsuarios
                   ? null
                   : '$totalOperadores operadores disponíveis',
+              mostrarLimpar: temOperador,
+              onClear: () {
+                setState(() {
+                  _operadorCdUserSelecionado = null;
+                  _operadorController.clear();
+                });
+              },
             ),
+    );
+  }
+
+  Widget _buildOperador2Dropdown() {
+    final temOperador =
+        (_operador2CdUserSelecionado ?? '').isNotEmpty &&
+        _operador2Controller.text.isNotEmpty;
+    final semUsuarios = _usuariosOperadores.isEmpty;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: _loadingUsuariosOperadores
+          ? _buildCampoSelecao(
+              controller: _operador2Controller,
+              label: 'Segundo operador (opcional)',
+              hint: 'Carregando operadores...',
+              icon: Icons.badge_outlined,
+              selecionado: false,
+              habilitado: false,
+              onTap: null,
+              helperText: null,
+            )
+          : _buildCampoSelecao(
+              controller: _operador2Controller,
+              label: 'Segundo operador (opcional)',
+              hint: semUsuarios
+                  ? 'Nenhum operador encontrado'
+                  : 'Selecione o operador',
+              icon: Icons.badge_outlined,
+              selecionado: temOperador,
+              habilitado: !semUsuarios,
+              onTap: semUsuarios
+                  ? null
+                  : () => _abrirSeletorOperador(segundo: true),
+              helperText: null,
+              mostrarLimpar: temOperador,
+              onClear: () {
+                setState(() {
+                  _operador2CdUserSelecionado = null;
+                  _operador2Controller.clear();
+                  _qtde2Controller.clear();
+                });
+              },
+            ),
+    );
+  }
+
+  Widget _buildArtigoEsperadoInfo() {
+    if (_artigoEsperadoId.isEmpty && _artigoEsperadoNome.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final label = _artigoEsperadoNome.isNotEmpty
+        ? _artigoEsperadoNome
+        : 'ID ${_artigoEsperadoId}';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: _kSurface.withOpacity(0.7),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _kBorderSoft),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.info_outline, color: _kAccentColor, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Artigo esperado: $label',
+              style: const TextStyle(
+                color: _kTextPrimary,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -2251,6 +2619,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
 
   Widget _buildArtigoField() {
     final temProduto = _artigoController.text.isNotEmpty;
+    final mostrarCamera = !temProduto;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -2273,19 +2642,12 @@ class _FormularioGeralState extends State<FormularioGeral> {
                 color: _kAccentColor,
               ),
               suffixIcon: temProduto
-                  ? const Icon(Icons.check_circle, color: Colors.green)
-                  : _coletorArtigoAtivo
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: Padding(
-                        padding: EdgeInsets.all(12.0),
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: _kAccentColor,
-                        ),
-                      ),
+                  ? IconButton(
+                      icon: const Icon(Icons.close, color: _kTextSecondary),
+                      onPressed: _limparArtigoSelecionado,
                     )
+                  : _coletorArtigoAtivo
+                  ? const SizedBox.shrink()
                   : const Icon(Icons.sensors_off, color: _kTextSecondary),
               filled: true,
               fillColor: temProduto
@@ -2313,29 +2675,31 @@ class _FormularioGeralState extends State<FormularioGeral> {
                 borderSide: const BorderSide(color: _kAccentColor, width: 2),
               ),
             ),
-            onTap: _coletorArtigoAtivo ? null : _ativarColetorArtigo,
+            onTap: _coletorArtigoAtivo ? null : _escolherModoLeituraArtigo,
           ),
 
           // Campo HID invisível
           Positioned.fill(
-            child: Opacity(
-              opacity: 0,
-              child: TextField(
-                controller: _coletorArtigoController,
-                focusNode: _coletorArtigoFocus,
-                keyboardType: TextInputType.none,
-                textInputAction: TextInputAction.done,
-                onChanged: (_) {
-                  SystemChannels.textInput.invokeMethod('TextInput.hide');
-                },
-                onSubmitted: (value) {
-                  final code = value.trim();
-                  _coletorArtigoController.clear();
-                  setState(() => _coletorArtigoAtivo = false);
-                  FocusScope.of(context).unfocus();
-                  if (code.isNotEmpty) _processarBuscaProduto(code);
-                },
-                onTap: () => setState(() => _coletorArtigoAtivo = true),
+            child: IgnorePointer(
+              ignoring: !_coletorArtigoAtivo,
+              child: Opacity(
+                opacity: 0,
+                child: TextField(
+                  controller: _coletorArtigoController,
+                  focusNode: _coletorArtigoFocus,
+                  keyboardType: TextInputType.none,
+                  textInputAction: TextInputAction.done,
+                  onChanged: (_) {
+                    SystemChannels.textInput.invokeMethod('TextInput.hide');
+                  },
+                  onSubmitted: (value) {
+                    final code = value.trim();
+                    _coletorArtigoController.clear();
+                    setState(() => _coletorArtigoAtivo = false);
+                    FocusScope.of(context).unfocus();
+                    if (code.isNotEmpty) _processarBuscaProduto(code);
+                  },
+                ),
               ),
             ),
           ),
@@ -2345,7 +2709,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
             right: 0,
             top: 0,
             bottom: 0,
-            child: temProduto
+            child: !mostrarCamera
                 ? const SizedBox.shrink()
                 : Padding(
                     padding: const EdgeInsets.symmetric(
@@ -2358,20 +2722,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
                         color: _kAccentColor,
                         size: 22,
                       ),
-                      onPressed: () async {
-                        final String? code = await Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const ScannerPage(
-                              modo: 'all',
-                              titulo: 'Ler Artigo',
-                            ),
-                          ),
-                        );
-                        if (code != null && code.isNotEmpty) {
-                          _processarBuscaProduto(code);
-                        }
-                      },
+                      onPressed: _escolherModoLeituraArtigo,
                     ),
                   ),
           ),
@@ -2387,38 +2738,56 @@ class _FormularioGeralState extends State<FormularioGeral> {
   Widget _buildSetorDropdown() => Padding(
     padding: const EdgeInsets.only(bottom: 12),
     child: _loadingSetores
-        ? const Center(
-            child: Padding(
-              padding: EdgeInsets.symmetric(vertical: 8),
-              child: CircularProgressIndicator(
-                color: _kAccentColor,
-                strokeWidth: 2,
-              ),
-            ),
+        ? _buildCampoSelecao(
+            controller: _setorController,
+            label: 'Setor',
+            hint: 'Carregando setores...',
+            icon: Icons.apartment,
+            selecionado: false,
+            habilitado: false,
+            onTap: null,
+            helperText: null,
           )
         : _buildCampoSelecao(
             controller: _setorController,
             label: 'Setor',
-            hint: _setores.isEmpty ? 'Nenhum setor encontrado' : 'Selecione um setor',
+            hint: _setores.isEmpty
+                ? 'Nenhum setor encontrado'
+                : 'Selecione um setor',
             icon: Icons.apartment,
             selecionado: _setorSelecionado != null,
             habilitado: _setores.isNotEmpty,
             onTap: _setores.isEmpty ? null : _abrirSeletorSetor,
-            helperText: _setores.isEmpty ? null : '${_setores.length} setores disponíveis',
+            helperText: _setores.isEmpty
+                ? null
+                : '${_setores.length} setores disponíveis',
+            mostrarLimpar: _setorSelecionado != null,
+            onClear: () {
+              setState(() {
+                _setorSelecionado = null;
+                _setorController.clear();
+                _maquinas = [];
+                _maquinaSelecionada = null;
+                _maquinaSelecionadaSecundaria = null;
+                _maquinaController.clear();
+                _maquina2Controller.clear();
+              });
+            },
           ),
   );
 
   Widget _buildMaquinaDropdown() => Padding(
     padding: const EdgeInsets.only(bottom: 12),
     child: _loadingMaquinas
-        ? const Center(
-            child: Padding(
-              padding: EdgeInsets.symmetric(vertical: 8),
-              child: CircularProgressIndicator(
-                color: _kAccentColor,
-                strokeWidth: 2,
-              ),
-            ),
+        ? _buildCampoSelecao(
+            controller: _maquinaController,
+            label: 'Máquina',
+            hint: 'Carregando máquinas...',
+            icon: Icons.settings,
+            selecionado: false,
+            habilitado: false,
+            onTap: null,
+            helperText: null,
           )
         : _buildCampoSelecao(
             controller: _maquinaController,
@@ -2431,26 +2800,36 @@ class _FormularioGeralState extends State<FormularioGeral> {
             icon: Icons.settings,
             selecionado: _maquinaSelecionada != null,
             habilitado: _setorSelecionado != null,
-            onTap: _setorSelecionado == null ? null : () => _abrirSeletorMaquina(),
+            onTap: _setorSelecionado == null
+                ? null
+                : () => _abrirSeletorMaquina(),
             helperText: _setorSelecionado == null
                 ? 'Selecione um setor primeiro'
                 : _maquinas.isEmpty
                 ? 'Nenhuma máquina disponível para este setor'
                 : '${_maquinas.length} máquinas disponíveis',
+            mostrarLimpar: _maquinaSelecionada != null,
+            onClear: () {
+              setState(() {
+                _maquinaSelecionada = null;
+                _maquinaController.clear();
+              });
+            },
           ),
   );
 
   Widget _buildMaquina2Dropdown() => Padding(
     padding: const EdgeInsets.only(bottom: 12),
     child: _loadingMaquinas
-        ? const Center(
-            child: Padding(
-              padding: EdgeInsets.symmetric(vertical: 8),
-              child: CircularProgressIndicator(
-                color: _kAccentColor,
-                strokeWidth: 2,
-              ),
-            ),
+        ? _buildCampoSelecao(
+            controller: _maquina2Controller,
+            label: 'Máquina 2 (opcional)',
+            hint: 'Carregando máquinas...',
+            icon: Icons.settings_applications,
+            selecionado: false,
+            habilitado: false,
+            onTap: null,
+            helperText: null,
           )
         : _buildCampoSelecao(
             controller: _maquina2Controller,
@@ -2471,6 +2850,13 @@ class _FormularioGeralState extends State<FormularioGeral> {
                 : _maquinas.isEmpty
                 ? 'Nenhuma máquina disponível para este setor'
                 : 'Opcional: selecione se o operador atuar em duas máquinas',
+            mostrarLimpar: _maquinaSelecionadaSecundaria != null,
+            onClear: () {
+              setState(() {
+                _maquinaSelecionadaSecundaria = null;
+                _maquina2Controller.clear();
+              });
+            },
           ),
   );
 
@@ -2645,8 +3031,7 @@ class _MacScannerPageState extends State<_MacScannerPage>
         if (!mounted) return;
         setState(() => _cameraPermissionGranted = granted);
       },
-      // macOS: aceita qualquer formato
-      formats: null,
+      formats: _resolverFormatosMac(),
     );
 
     _laserAnim = AnimationController(
@@ -2658,6 +3043,13 @@ class _MacScannerPageState extends State<_MacScannerPage>
       begin: 0.0,
       end: 1.0,
     ).animate(CurvedAnimation(parent: _laserAnim, curve: Curves.easeInOut));
+  }
+
+  List<BarcodeFormat>? _resolverFormatosMac() {
+    if (widget.modo == 'qr') {
+      return const [BarcodeFormat.qrCode];
+    }
+    return null;
   }
 
   @override
@@ -3004,8 +3396,8 @@ class _AndroidScannerPageState extends State<_AndroidScannerPage>
   void initState() {
     super.initState();
     _controller = MobileScannerController(
-      detectionSpeed: DetectionSpeed.noDuplicates,
-      detectionTimeoutMs: 400,
+      detectionSpeed: DetectionSpeed.unrestricted,
+      detectionTimeoutMs: 100,
       autoStart: true,
       facing: CameraFacing.back,
       cameraResolution: const Size(1280, 720),
@@ -3028,6 +3420,9 @@ class _AndroidScannerPageState extends State<_AndroidScannerPage>
   }
 
   List<BarcodeFormat>? _resolverFormatosMobile() {
+    if (widget.modo == 'qr') {
+      return const [BarcodeFormat.qrCode];
+    }
     if (widget.modo == 'barcode') {
       return const [
         BarcodeFormat.code128,
@@ -3227,9 +3622,7 @@ class _AndroidScannerPageState extends State<_AndroidScannerPage>
             onPressed: _controller.switchCamera,
           ),
           IconButton(
-            icon: Icon(
-              _torchOn ? Icons.flashlight_off : Icons.flashlight_on,
-            ),
+            icon: Icon(_torchOn ? Icons.flashlight_off : Icons.flashlight_on),
             color: _torchOn ? _kAccentColor : _kTextSecondary,
             onPressed: () {
               _controller.toggleTorch();

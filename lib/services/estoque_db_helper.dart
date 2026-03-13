@@ -18,10 +18,10 @@ class EstoqueDbHelper {
 
   Future<Database> _initDB() async {
     String path = join(await getDatabasesPath(), 'estoque_database.db');
-    // ATENÇÃO: Alterado para versão 6 para disparar o _onUpgrade com limpeza melhorada
+    // ATENÇÃO: Alterado para versão 7 para adicionar turnoId ao cache do mapa
     return await openDatabase(
       path,
-      version: 6,
+      version: 7,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -46,7 +46,8 @@ class EstoqueDbHelper {
         data_iso TEXT,
         produtoId INTEGER,
         quantidade REAL,
-        operacaoId INTEGER
+        operacaoId INTEGER,
+        turnoId INTEGER
       )
     ''');
 
@@ -110,6 +111,11 @@ class EstoqueDbHelper {
       // Remove todos os registros antigos da cache_grafico para evitar conflitos
       await db.delete('cache_grafico');
       print('✓ Cache legado removida com sucesso');
+    }
+    if (oldVersion < 7) {
+      // Adiciona coluna de turno no cache do mapa e limpa registros antigos
+      await db.execute('ALTER TABLE mapa_producao ADD COLUMN turnoId INTEGER');
+      await db.delete('mapa_producao');
     }
   }
 
@@ -183,11 +189,14 @@ class EstoqueDbHelper {
     final batch = db.batch();
 
     for (var reg in registros) {
+      final turnoId =
+          reg['turnoId'] ?? reg['turnoID'] ?? reg['TurnoID'];
       batch.insert('mapa_producao', {
         'data_iso': isoDate,
         'produtoId': reg['produtoId'],
         'quantidade': reg['quantidade'],
         'operacaoId': reg['operacaoId'],
+        'turnoId': turnoId,
       }, conflictAlgorithm: ConflictAlgorithm.replace);
     }
     await batch.commit(noResult: true);

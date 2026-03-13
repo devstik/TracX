@@ -12,6 +12,7 @@ import 'package:tracx/screens/MapaProducaoScreen.dart';
 import 'package:tracx/screens/ConsultaMapaProducaoScreen.dart';
 import 'package:tracx/screens/ApontamentoProdutividadeScreen.dart';
 import 'package:tracx/screens/RegistrosApontamento.dart';
+import 'package:tracx/screens/ImpressaoQrScreen.dart';
 import 'package:tracx/services/estoque_db_helper.dart';
 //import 'package:tracx/widgets/widgets_dados_integrados.dart';
 import 'package:tracx/services/update_service.dart';
@@ -730,6 +731,8 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
   // ---------------- AÇÕES ----------------
 
   Widget _buildCadastros() {
+    final nome = widget.conferente.trim().toLowerCase();
+    final podeImprimirQr = nome == 'joao' || nome == 'admin';
     final List<_ActionItem> actions = [
       _ActionItem(
         title: "Registrar",
@@ -786,6 +789,20 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
           _navigateWithTransition(context, const ConsultaMapaProducaoScreen());
         },
       ),
+      // if (podeImprimirQr)
+      //   _ActionItem(
+      //     title: "Impressão QR",
+      //     subtitle: "Etiqueta com QR Code",
+      //     icon: Icons.print_outlined,
+      //     onTap: () {
+      //       _navigateWithTransition(
+      //         context,
+      //         ImpressaoQrScreen(
+      //           conferente: widget.conferente,
+      //         ),
+      //       );
+      //     },
+      //   ),
       _ActionItem(
         title: "Apontamento",
         subtitle: "Produtividade",

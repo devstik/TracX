@@ -27,6 +27,19 @@ const Color _kBorderSoft = Color(0x33FFFFFF);
 // 1. CONFIGURAÇÃO E MODELO DE DADOS
 // **********************************************
 
+bool _isArtigoPreto(String nome) {
+  return nome.toUpperCase().contains('PRETO');
+}
+
+String _detalheSeArtigoPreto(String nome, String detalhe) {
+  if (!_isArtigoPreto(nome)) return '';
+  final texto = detalhe.trim();
+  if (texto.isEmpty || texto.toUpperCase() == 'N/A' || texto == '--') {
+    return '';
+  }
+  return texto;
+}
+
 abstract class AppConstants {
   static const String empresaId = '2';
   static const int operacaoIdFiltro = 142;
@@ -71,20 +84,6 @@ class MapaResultado {
   final List<Map<String, dynamic>> registros;
 
   const MapaResultado({required this.data, required this.registros});
-}
-
-class _ObjetoResumo {
-  final int produtoId;
-  final String nome;
-  final String detalhe;
-  double quantidade;
-
-  _ObjetoResumo({
-    required this.produtoId,
-    required this.nome,
-    required this.detalhe,
-    required this.quantidade,
-  });
 }
 
 class ApiException implements Exception {
@@ -178,6 +177,7 @@ abstract class ApiService {
     final uri = Uri.https(AppConstants.baseUrlWMS, AppConstants.mapaPath, {
       'empresaID': AppConstants.empresaId,
       'tipoDeDocumentoID': AppConstants.tipoDocumentoId,
+      'centroDeCustosId': '13',
       'data': isoDate,
     });
 
@@ -244,8 +244,6 @@ class _ConsultaMapaProducaoScreenState extends State<ConsultaMapaProducaoScreen>
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _dataInicialController = TextEditingController();
   final TextEditingController _dataFinalController = TextEditingController();
-  final TextEditingController _objetoFiltroController = TextEditingController();
-  String _objetoFiltro = '';
 
   bool _loading = false;
   List<MapaResultado> _resultados = [];
@@ -257,11 +255,6 @@ class _ConsultaMapaProducaoScreenState extends State<ConsultaMapaProducaoScreen>
   void initState() {
     super.initState();
     _carregarCatalogoLocal();
-    _objetoFiltroController.addListener(() {
-      setState(() {
-        _objetoFiltro = _objetoFiltroController.text.trim().toLowerCase();
-      });
-    });
   }
 
   Future<void> _carregarCatalogoLocal() async {
@@ -278,49 +271,9 @@ class _ConsultaMapaProducaoScreenState extends State<ConsultaMapaProducaoScreen>
   void dispose() {
     _dataInicialController.dispose();
     _dataFinalController.dispose();
-    _objetoFiltroController.dispose();
     super.dispose();
   }
 
-  String? _nomeProduto(int? produtoId) {
-    if (produtoId == null) return null;
-    return CacheManager.produtosNomeCache[produtoId];
-  }
-
-  String _detalheProduto(int? produtoId) {
-    if (produtoId == null) return 'Lote: N/A';
-    final detalhe = CacheManager.produtosDetalheCache[produtoId];
-    return detalhe ?? 'N/A';
-  }
-
-  List<_ObjetoResumo> _agruparObjetos() {
-    final mapa = <int, _ObjetoResumo>{};
-    for (final resultado in _resultados) {
-      for (final registro in resultado.registros) {
-        final produtoId = registro['produtoId'] as int?;
-        final nome = _nomeProduto(produtoId);
-        final quantidade = registro['quantidade'];
-        final quantidadeNum = quantidade is num ? quantidade.toDouble() : 0.0;
-
-        if (produtoId == null || nome == null || quantidadeNum <= 0) continue;
-
-        mapa.putIfAbsent(
-          produtoId,
-          () => _ObjetoResumo(
-            produtoId: produtoId,
-            nome: nome,
-            detalhe: _detalheProduto(produtoId),
-            quantidade: 0,
-          ),
-        );
-        mapa[produtoId]!.quantidade += quantidadeNum;
-      }
-    }
-
-    final lista = mapa.values.toList()
-      ..sort((a, b) => a.nome.toLowerCase().compareTo(b.nome.toLowerCase()));
-    return lista;
-  }
 
   Future<void> _consultar() async {
     FocusScope.of(context).unfocus();
@@ -520,7 +473,6 @@ class _ConsultaMapaProducaoScreenState extends State<ConsultaMapaProducaoScreen>
                 delegate: SliverChildListDelegate([
                   _buildFormArea(),
                   const SizedBox(height: 18),
-                  _buildObjetoResumoSection(),
 
                   if (_loading && _resultados.isEmpty)
                     _LoadingFeedback(
@@ -632,144 +584,6 @@ class _ConsultaMapaProducaoScreenState extends State<ConsultaMapaProducaoScreen>
     );
   }
 
-  Widget _buildObjetoResumoSection() {
-    final objetos = _agruparObjetos();
-    if (objetos.isEmpty) return const SizedBox.shrink();
-
-    final filtro = _objetoFiltro;
-    final objetosFiltrados = filtro.isEmpty
-        ? objetos
-        : objetos.where((o) {
-            final nomeLower = o.nome.toLowerCase();
-            return nomeLower.contains(filtro) ||
-                o.produtoId.toString().contains(filtro);
-          }).toList();
-
-    final totalGeral = objetosFiltrados.fold<double>(
-      0,
-      (sum, obj) => sum + obj.quantidade,
-    );
-
-    final formatter = NumberFormat('#,##0.00', 'pt_BR');
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: _kSurface.withOpacity(0.92),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: _kBorderSoft, width: 1),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.35),
-            blurRadius: 12,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Row(
-            children: [
-              Icon(Icons.search_rounded, color: _kAccentColor),
-              SizedBox(width: 8),
-              Text(
-                'Pesquisar por Objeto',
-                style: TextStyle(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 16,
-                  color: _kTextPrimary,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-
-          TextField(
-            controller: _objetoFiltroController,
-            style: const TextStyle(color: _kTextPrimary),
-            decoration: InputDecoration(
-              hintText: 'Digite o nome ou código do objeto',
-              hintStyle: TextStyle(color: _kTextSecondary.withOpacity(0.8)),
-              prefixIcon: const Icon(Icons.search, color: _kTextSecondary),
-              filled: true,
-              fillColor: _kSurface2,
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: BorderSide(color: _kBorderSoft),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: const BorderSide(color: _kAccentColor, width: 1.6),
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 12),
-
-          Text(
-            'Total geral: ${formatter.format(totalGeral)} metros',
-            style: const TextStyle(
-              fontWeight: FontWeight.w700,
-              fontSize: 14,
-              color: _kTextSecondary,
-            ),
-          ),
-
-          const SizedBox(height: 12),
-
-          SizedBox(
-            height: 220,
-            child: objetosFiltrados.isEmpty
-                ? const Center(
-                    child: Text(
-                      'Nenhum objeto encontrado.',
-                      style: TextStyle(color: _kTextSecondary),
-                    ),
-                  )
-                : ListView.separated(
-                    itemCount: objetosFiltrados.length,
-                    separatorBuilder: (_, __) => Divider(
-                      height: 1,
-                      color: _kBorderSoft.withOpacity(0.4),
-                    ),
-                    itemBuilder: (_, index) {
-                      final item = objetosFiltrados[index];
-
-                      return ListTile(
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                        title: Text(
-                          item.nome,
-                          style: const TextStyle(
-                            color: _kTextPrimary,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 14,
-                          ),
-                        ),
-                        subtitle: Text(
-                          'ID: ${item.produtoId} • Lote: ${item.detalhe}',
-                          style: const TextStyle(
-                            color: _kTextSecondary,
-                            fontSize: 12,
-                          ),
-                        ),
-                        trailing: Text(
-                          formatter.format(item.quantidade),
-                          style: const TextStyle(
-                            color: _kAccentColor,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 // --- COMPONENTES ---
@@ -949,38 +763,123 @@ class _MapaCardState extends State<_MapaCard> {
   }
 
   String _getProductDetail(int? produtoId) {
-    if (produtoId == null) return 'Lote: N/A';
+    if (produtoId == null) return '';
     final detalhe = CacheManager.produtosDetalheCache[produtoId];
-    return 'Lote: ${detalhe ?? 'N/A'}';
+    return detalhe ?? '';
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final dataFormatada = DateFormat(
-      'dd/MM/yyyy',
-    ).format(widget.resultado.data);
+  int? _parseTurnoId(dynamic raw) {
+    if (raw == null) return null;
+    if (raw is int) return raw;
+    final parsed = int.tryParse(raw.toString().trim());
+    return parsed;
+  }
 
-    final filteredRegistros = widget.resultado.registros.where((registro) {
-      final produtoId = registro['produtoId'] as int?;
-      final quantidade = registro['quantidade'];
+  int? _turnoIdDoRegistro(Map<String, dynamic> registro) {
+    final raw =
+        registro['turnoId'] ?? registro['turnoID'] ?? registro['TurnoID'];
+    return _parseTurnoId(raw);
+  }
 
-      final isQuantityValid = quantidade is num && quantidade > 0;
-      final isNameFound = _getProductName(produtoId) != null;
+  String _mapearTurno(int? turnoId) {
+    if (turnoId == 3) return 'Manhã';
+    if (turnoId == 4) return 'Tarde';
+    if (turnoId == 2) return 'Sem turno';
+    return 'Sem turno';
+  }
 
-      return isQuantityValid && isNameFound;
-    }).toList();
+  void _mostrarDetalhesLinha({
+    required Map<String, dynamic> registro,
+    required String nomeProduto,
+    required String detalheExibido,
+    required String quantidadeFormatada,
+    required String dataFormatada,
+  }) {
+    final produtoId = registro['produtoId'];
+    final ordem = registro['ordemProducaoId'] ?? registro['ordemProducaoID'];
+    final lote = registro['loteId'] ?? registro['loteID'];
+    final turnoId = _turnoIdDoRegistro(registro);
+    final turnoLabel = _mapearTurno(turnoId);
 
-    final double totalQuantidade = filteredRegistros.fold(0.0, (sum, registro) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: _kSurface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (ctx) {
+        Widget item(String label, String value) => Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 120,
+                child: Text(
+                  label,
+                  style: const TextStyle(
+                    color: _kTextSecondary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              Expanded(
+                child: Text(
+                  value,
+                  style: const TextStyle(
+                    color: _kTextPrimary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Detalhes do item',
+                  style: TextStyle(
+                    color: _kTextPrimary,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                item('Data', dataFormatada),
+                item('Turno', turnoLabel),
+                item('Código', produtoId?.toString() ?? '--'),
+                item('Objeto', nomeProduto),
+                item('Detalhe', detalheExibido.isEmpty ? '-' : detalheExibido),
+                item('Quantidade', quantidadeFormatada),
+                if (ordem != null) item('Ordem', ordem.toString()),
+                if (lote != null) item('Lote', lote.toString()),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildCardForGroup({
+    required String dataFormatada,
+    required String turnoLabel,
+    required List<Map<String, dynamic>> registros,
+  }) {
+    final double totalQuantidade = registros.fold(0.0, (sum, registro) {
       final quantidade = registro['quantidade'];
       return sum + (quantidade is num ? quantidade : 0.0);
     });
 
-    if (filteredRegistros.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
     final totalQuantidadeFormatada = _totalFormat.format(totalQuantidade);
-    final totalRegistros = filteredRegistros.length;
+    final totalRegistros = registros.length;
     final subtitleText = '$totalQuantidadeFormatada metros';
 
     return Container(
@@ -1010,31 +909,88 @@ class _MapaCardState extends State<_MapaCard> {
             color: _kAccentColor,
             size: 24,
           ),
-          title: Text(
-            'Data: $dataFormatada',
-            style: const TextStyle(
-              fontWeight: FontWeight.w800,
-              fontSize: 15,
-              color: _kTextPrimary,
-            ),
+          title: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Data: $dataFormatada',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 15,
+                    color: _kTextPrimary,
+                  ),
+                ),
+              ),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: _kSurface2.withOpacity(0.95),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: _kBorderSoft),
+                ),
+                child: Text(
+                  turnoLabel,
+                  style: const TextStyle(
+                    color: _kTextPrimary,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 11,
+                  ),
+                ),
+              ),
+            ],
           ),
           subtitle: Text(
             subtitleText,
             style: const TextStyle(color: _kTextSecondary, fontSize: 13),
           ),
           children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Total de itens: $totalRegistros',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: _kTextSecondary,
+                      fontSize: 13,
+                    ),
+                  ),
+                  Text(
+                    '$totalQuantidadeFormatada metros',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: _kAccentColor,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16),
+              child: _MapaTabelaHeader(),
+            ),
+            const SizedBox(height: 8),
             ListView.builder(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               padding: EdgeInsets.zero,
               itemCount: totalRegistros,
               itemBuilder: (context, index) {
-                final registro = filteredRegistros[index];
+                final registro = registros[index];
                 final produtoId = registro['produtoId'] as int?;
                 final quantidade = registro['quantidade'];
 
                 final nomeProduto = _getProductName(produtoId)!;
                 final detalheProduto = _getProductDetail(produtoId);
+                final detalheExibido = _detalheSeArtigoPreto(
+                  nomeProduto,
+                  detalheProduto,
+                );
+                final rowColor = _kSurface2.withOpacity(0.95);
 
                 final quantidadeFormatada = quantidade != null
                     ? _quantityFormat.format(quantidade)
@@ -1046,83 +1002,246 @@ class _MapaCardState extends State<_MapaCard> {
                     right: 16,
                     bottom: 10,
                   ),
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: _kSurface2.withOpacity(0.9),
+                  child: Material(
+                    color: rowColor,
+                    borderRadius: BorderRadius.circular(14),
+                    child: InkWell(
                       borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: _kBorderSoft, width: 1),
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                nomeProduto,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 14,
-                                  color: _kTextPrimary,
-                                ),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                detalheProduto,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w500,
-                                  fontSize: 12,
-                                  color: _kTextSecondary,
-                                ),
-                              ),
-                            ],
-                          ),
+                      onTap: () => _mostrarDetalhesLinha(
+                        registro: registro,
+                        nomeProduto: nomeProduto,
+                        detalheExibido: detalheExibido,
+                        quantidadeFormatada: quantidadeFormatada,
+                        dataFormatada: dataFormatada,
+                      ),
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: _kBorderSoft, width: 1),
                         ),
-                        const SizedBox(width: 10),
-                        Text(
-                          quantidadeFormatada,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                            color: _kAccentColor,
-                          ),
+                        child: _MapaTabelaRow(
+                          codigo: produtoId?.toString() ?? '--',
+                          nome: nomeProduto,
+                          detalhe: detalheExibido,
+                          quantidade: quantidadeFormatada,
                         ),
-                      ],
+                      ),
                     ),
                   ),
                 );
               },
             ),
-            const SizedBox(height: 6),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Total do dia',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: _kTextSecondary,
-                    ),
-                  ),
-                  Text(
-                    '$totalQuantidadeFormatada metros',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: _kAccentColor,
-                    ),
-                  ),
-                ],
-              ),
-            ),
             const SizedBox(height: 8),
           ],
         ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final dataFormatada = DateFormat(
+      'dd/MM/yyyy',
+    ).format(widget.resultado.data);
+
+    final filteredRegistros = widget.resultado.registros.where((registro) {
+      final produtoId = registro['produtoId'] as int?;
+      final quantidade = registro['quantidade'];
+
+      final isQuantityValid = quantidade is num && quantidade > 0;
+      final isNameFound = _getProductName(produtoId) != null;
+
+      return isQuantityValid && isNameFound;
+    }).toList();
+
+    if (filteredRegistros.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final grupos = <String, List<Map<String, dynamic>>>{};
+    for (final reg in filteredRegistros) {
+      final turnoLabel = _mapearTurno(_turnoIdDoRegistro(reg));
+      grupos.putIfAbsent(turnoLabel, () => []).add(reg);
+    }
+
+    const order = ['Manhã', 'Tarde', 'Sem turno'];
+    final labels = grupos.keys.toList()
+      ..sort(
+        (a, b) => order.indexOf(a).compareTo(order.indexOf(b)),
+      );
+
+    if (labels.length == 1) {
+      final label = labels.first;
+      return _buildCardForGroup(
+        dataFormatada: dataFormatada,
+        turnoLabel: label,
+        registros: grupos[label]!,
+      );
+    }
+
+    return Column(
+      children: [
+        for (final label in labels)
+          _buildCardForGroup(
+            dataFormatada: dataFormatada,
+            turnoLabel: label,
+            registros: grupos[label]!,
+          ),
+      ],
+    );
+  }
+}
+
+class _MapaTabelaHeader extends StatelessWidget {
+  const _MapaTabelaHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: _kSurface.withOpacity(0.95),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: _kBorderSoft, width: 1),
+      ),
+      child: const Row(
+        children: [
+          Expanded(
+            flex: 2,
+            child: Text(
+              'Código',
+              style: TextStyle(
+                color: _kTextPrimary,
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+                letterSpacing: 0.2,
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 6,
+            child: Text(
+              'Objeto',
+              style: TextStyle(
+                color: _kTextPrimary,
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+                letterSpacing: 0.2,
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 4,
+            child: Text(
+              'Detalhe',
+              style: TextStyle(
+                color: _kTextPrimary,
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+                letterSpacing: 0.2,
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: Text(
+                'Qtd',
+                style: TextStyle(
+                  color: _kTextPrimary,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                  letterSpacing: 0.2,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MapaTabelaRow extends StatelessWidget {
+  final String codigo;
+  final String nome;
+  final String detalhe;
+  final String quantidade;
+
+  const _MapaTabelaRow({
+    required this.codigo,
+    required this.nome,
+    required this.detalhe,
+    required this.quantidade,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final detalheExibido = detalhe.trim();
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          Expanded(
+            flex: 2,
+            child: Text(
+              codigo,
+              style: TextStyle(
+                color: _kTextPrimary,
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+              ),
+              textAlign: TextAlign.left,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          Expanded(
+            flex: 6,
+            child: Text(
+              nome,
+              style: TextStyle(
+                color: _kTextPrimary,
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          Expanded(
+            flex: 4,
+            child: Text(
+              detalheExibido,
+              style: TextStyle(
+                color: _kTextSecondary,
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: Text(
+                quantidade,
+                style: TextStyle(
+                  color: _kAccentColor,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 13,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
