@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shimmer/shimmer.dart';
+import '../services/auth_service.dart';
 import '../services/estoque_db_helper.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -98,8 +99,20 @@ class _LoginScreenState extends State<LoginScreen>
       HapticFeedback.lightImpact();
 
       final username = _userController.text.trim();
+      final password = _passwordController.text;
 
       try {
+        final loginOffline = await AuthService.loginAdminOffline(
+          username,
+          password,
+        );
+        if (loginOffline) {
+          await _dbHelper.salvarUsuarioLocal(username);
+          _salvarUltimoUsuario(username);
+          _navegarParaHome(username, AuthService.offlineAdminToken);
+          return;
+        }
+
         final apiKey = await _obterChaveApi();
 
         final response = await http

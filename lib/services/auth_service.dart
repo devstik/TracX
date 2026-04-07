@@ -6,8 +6,8 @@ import 'package:flutter/foundation.dart'; // Para debugPrint
 class AuthService {
   // --- Credenciais Offline ---
   static const String _adminUsername =
-      'admin'; // Usuário fixo para login offline
-  static const String _adminPassword = 'admin'; // Senha fixa para login offline
+      'andre'; // Usuário fixo para login offline
+  static const String _adminPassword = '123456'; // Senha fixa para login offline
   static const String offlineAdminToken =
       'OFFLINE_ADMIN_TOKEN_VALIDO'; // Token "falso" para modo offline
 
@@ -99,7 +99,7 @@ class AuthService {
     String username,
     String password,
   ) async {
-    if (username.toLowerCase() == _adminUsername &&
+    if (username.trim().toLowerCase() == _adminUsername &&
         password == _adminPassword) {
       // Define uma expiração de 10 anos
       await _salvarToken(
@@ -115,11 +115,11 @@ class AuthService {
         validitySeconds: 3650 * 24 * 3600,
       );
       debugPrint(
-        '[AUTH] Login Admin Offline bem-sucedido. Token: $offlineAdminToken',
+        '[AUTH] Login Offline bem-sucedido. Token: $offlineAdminToken',
       );
       return true;
     }
-    debugPrint('[AUTH] Falha no Login Admin Offline. Credenciais inválidas.');
+    debugPrint('[AUTH] Falha no Login Offline. Credenciais inválidas.');
     return false;
   }
 

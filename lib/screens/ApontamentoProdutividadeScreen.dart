@@ -1,17 +1,23 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'dart:math' as math;
+import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart' as path_helper;
+import '../services/auth_service.dart' as top_auth;
 
 // =========================================================================
 // CONFIGURAÇÃO DE REDE
 // =========================================================================
 const String _kBaseUrlFlask = "http://168.190.90.2:5000";
+const String _kMapaEficienciaEmbEndpoint =
+    "/apontamento/mapa-eficiencia-emb";
+const String _kFalhaTipoBEndpoint = "/consultar/falha-tipo-b";
 const String _kConsultaApiBase =
     "https://mediumpurple-loris-159660.hostingersite.com";
 
@@ -31,6 +37,22 @@ const Color _kTextPrimary = Color(0xFFF9FAFB);
 const Color _kTextSecondary = Color(0xFF9CA3AF);
 
 const Color _kBorderSoft = Color(0x33FFFFFF);
+const String _kPaleteTipoBFixo = 'PA-L1-R500-D-P1';
+const String _kTopmanagerBaseUrl = 'visions.topmanager.com.br';
+const String _kEmpresaIdOrdemProducao = '2';
+const String _kOrdensFabricacaoPath =
+    '/Servidor_2.8.0_api/logtechwms/itemdemapadeproducao/ordensdefabricacao';
+const String _kIncluirOrdemFabricacaoPath =
+    '/Servidor_2.8.0_api/logtechwms/itemdemapadeproducao/incluirordemdefabricacao';
+const String _kErroOrdemFabricacaoGenerico =
+    'Não foi possível criar a Ordem de Fabricação.';
+
+class _ResultadoOrdemFabricacao {
+  final int? id;
+  final String? erro;
+
+  const _ResultadoOrdemFabricacao({this.id, this.erro});
+}
 
 // =========================================================================
 // SETORES BLOQUEADOS (não aparecem na lista)
@@ -91,6 +113,22 @@ class UsuarioOperador {
       id: json['Id'] is int ? json['Id'] : int.tryParse('${json['Id']}') ?? 0,
       cdUser: json['CdUser']?.toString() ?? '',
       nmUser: json['NmUser']?.toString() ?? '',
+    );
+  }
+}
+
+class _DefeitoTipoB {
+  final String codigo;
+  final String nome;
+
+  const _DefeitoTipoB(this.codigo, this.nome);
+
+  factory _DefeitoTipoB.fromJson(Map<String, dynamic> json) {
+    return _DefeitoTipoB(
+      (json['ID'] ?? json['Id'] ?? json['id'] ?? '').toString().trim(),
+      (json['NmFalaTipoB'] ?? json['NmFalhaTipoB'] ?? json['nome'] ?? '')
+          .toString()
+          .trim(),
     );
   }
 }
@@ -190,6 +228,65 @@ class DatabaseService {
     );
   }
 
+  static Future<List<Map<String, dynamic>>> buscarArtigosPorNome(
+    String termo, {
+    String? objetoIDRestrito,
+  }) async {
+    final db = await database;
+    final termoBusca = '%${termo.trim().toUpperCase()}%';
+    final restrito = (objetoIDRestrito ?? '').trim();
+    final restritoNormalizado = _normalizarCodigoConsulta(restrito);
+
+    if (restrito.isNotEmpty) {
+      return await db.rawQuery(
+        '''
+        SELECT objetoID, objeto
+        FROM $_tableProdutos
+        WHERE (objetoID = ? OR ltrim(objetoID, '0') = ?)
+          AND UPPER(objeto) LIKE ?
+        GROUP BY objetoID, objeto
+        ORDER BY objeto
+        LIMIT 60
+        ''',
+        [restrito, restritoNormalizado, termoBusca],
+      );
+    }
+
+    return await db.rawQuery(
+      '''
+      SELECT objetoID, objeto
+      FROM $_tableProdutos
+      WHERE UPPER(objeto) LIKE ?
+      GROUP BY objetoID, objeto
+      ORDER BY objeto
+      LIMIT 60
+      ''',
+      [termoBusca],
+    );
+  }
+
+  static Future<List<Map<String, dynamic>>> buscarLotesPorObjetoID(
+    String objetoID, {
+    String termo = '',
+  }) async {
+    final db = await database;
+    final objetoNormalizado = _normalizarCodigoConsulta(objetoID);
+    final termoBusca = '%${termo.trim().toUpperCase()}%';
+
+    return await db.rawQuery(
+      '''
+      SELECT detalheID, detalhe
+      FROM $_tableProdutos
+      WHERE (objetoID = ? OR ltrim(objetoID, '0') = ?)
+        AND UPPER(detalhe) LIKE ?
+      GROUP BY detalheID, detalhe
+      ORDER BY detalhe
+      LIMIT 100
+      ''',
+      [objetoID, objetoNormalizado, termoBusca],
+    );
+  }
+
   static Future<void> limparProdutos() async {
     final db = await database;
     await db.delete(_tableProdutos);
@@ -203,6 +300,13 @@ class DatabaseService {
       'SELECT COUNT(*) as count FROM $_tableProdutos',
     );
     return Sqflite.firstIntValue(result) ?? 0;
+  }
+
+  static String _normalizarCodigoConsulta(String valor) {
+    final texto = valor.trim();
+    if (texto.isEmpty) return '';
+    final semZeros = texto.replaceFirst(RegExp(r'^0+'), '');
+    return semZeros.isEmpty ? '0' : semZeros;
   }
 
   static Future<bool> sincronizarTodosProdutos() async {
@@ -939,6 +1043,7 @@ class _ProducaoTabsScreenState extends State<ProducaoTabsScreen>
               )
             : FormularioGeral(
                 tipo: 'A',
+                
                 turno: turnoNum,
                 turnoLetra: turnoLetra,
                 artigoEsperadoId: widget.artigoEsperadoId,
@@ -997,8 +1102,15 @@ class _FormularioGeralState extends State<FormularioGeral> {
   final _maquinaController = TextEditingController();
   final _maquina2Controller = TextEditingController();
   final _defeitoController = TextEditingController();
+  final _dataController = TextEditingController();
+  final _turnoInfoController = TextEditingController();
+  final _ordemProducaoController = TextEditingController();
+  final _palletController = TextEditingController();
+  String? _defeitoSelecionadoCodigo;
   String? _operadorCdUserSelecionado;
   String? _operador2CdUserSelecionado;
+  List<_DefeitoTipoB> _defeitosTipoB = [];
+  bool _loadingDefeitosTipoB = false;
   List<UsuarioOperador> _usuariosOperadores = [];
   bool _loadingUsuariosOperadores = false;
 
@@ -1021,6 +1133,8 @@ class _FormularioGeralState extends State<FormularioGeral> {
   bool _isLoading = false;
   String _artigoEsperadoId = "";
   String _artigoEsperadoNome = "";
+  List<Map<String, dynamic>> _lotesDisponiveis = [];
+  bool _buscandoOrdemProducao = false;
 
   // ── Estado visual do coletor ──────────────────────────────────────────
   bool _coletorArtigoAtivo = false;
@@ -1045,6 +1159,19 @@ class _FormularioGeralState extends State<FormularioGeral> {
     return '  •  Máquinas: $maqPrincipal / $maqSecundaria';
   }
 
+  String _descricaoTurno(String letra) {
+    switch (letra.trim().toUpperCase()) {
+      case 'A':
+        return 'Manhã';
+      case 'B':
+        return 'Tarde';
+      case 'C':
+        return 'Noite';
+      default:
+        return letra;
+    }
+  }
+
   // ── Verifica se a Etapa 1 está completa para habilitar "Avançar" ──────
   bool get _etapa1Completa {
     if ((_operadorCdUserSelecionado ?? '').trim().isEmpty) return false;
@@ -1060,8 +1187,16 @@ class _FormularioGeralState extends State<FormularioGeral> {
       _carregarSetores();
       _carregarUsuariosOperadores();
     }
+    if (widget.tipo == 'B') {
+      _carregarDefeitosTipoB();
+    }
     _artigoEsperadoId = widget.artigoEsperadoId?.trim() ?? '';
     _artigoEsperadoNome = widget.artigoEsperadoNome?.trim() ?? '';
+    _dataController.text = DateFormat('dd/MM/yyyy').format(DateTime.now());
+    _turnoInfoController.text = _descricaoTurno(widget.turnoLetra);
+    if (widget.tipo == 'B') {
+      _palletController.text = _kPaleteTipoBFixo;
+    }
   }
 
   @override
@@ -1076,6 +1211,10 @@ class _FormularioGeralState extends State<FormularioGeral> {
     _maquinaController.dispose();
     _maquina2Controller.dispose();
     _defeitoController.dispose();
+    _dataController.dispose();
+    _turnoInfoController.dispose();
+    _ordemProducaoController.dispose();
+    _palletController.dispose();
     _coletorArtigoController.dispose();
     _coletorArtigoFocus.dispose();
     super.dispose();
@@ -1094,6 +1233,9 @@ class _FormularioGeralState extends State<FormularioGeral> {
     if (asInt != null) return asInt.toString();
     return trimmed;
   }
+
+  String _labelDefeito(_DefeitoTipoB defeito) =>
+      '${defeito.codigo} - ${defeito.nome}';
 
   List<UsuarioOperador> _ordenarUsuarios(List<UsuarioOperador> usuarios) {
     final ordenados = List<UsuarioOperador>.from(usuarios);
@@ -1692,10 +1834,719 @@ class _FormularioGeralState extends State<FormularioGeral> {
     setState(() {
       _artigoController.clear();
       _detalheController.clear();
+      _ordemProducaoController.clear();
       _cdObjReal = "";
       _detalheReal = "";
+      _lotesDisponiveis = [];
       _coletorArtigoAtivo = false;
     });
+  }
+
+  void _aplicarProdutoSelecionado({
+    required String artigoCodigo,
+    required String artigoNome,
+    required String loteCodigo,
+    required String loteNome,
+  }) {
+    setState(() {
+      _artigoController.text = artigoNome;
+      _detalheController.text = loteNome;
+      _ordemProducaoController.clear();
+      _cdObjReal = artigoCodigo;
+      _detalheReal = loteCodigo;
+      _coletorArtigoAtivo = false;
+    });
+    FocusScope.of(context).unfocus();
+  }
+
+  Future<void> _carregarLotesDoArtigo(
+    String artigoCodigo, {
+    String? loteSelecionadoCodigo,
+    String? loteSelecionadoNome,
+  }) async {
+    final codigo = artigoCodigo.trim();
+    if (codigo.isEmpty) {
+      if (!mounted) return;
+      setState(() => _lotesDisponiveis = []);
+      return;
+    }
+
+    final lotes = await DatabaseService.buscarLotesPorObjetoID(codigo);
+    if (!mounted) return;
+
+    final normalizados = <Map<String, dynamic>>[];
+    final chaves = <String>{};
+
+    for (final lote in lotes) {
+      final detalheID = (lote['detalheID'] ?? '').toString().trim();
+      final detalhe = (lote['detalhe'] ?? '').toString().trim();
+      if (detalheID.isEmpty || detalhe.isEmpty) continue;
+      if (chaves.add(detalheID)) {
+        normalizados.add({'detalheID': detalheID, 'detalhe': detalhe});
+      }
+    }
+
+    final selecionadoCodigo = (loteSelecionadoCodigo ?? '').trim();
+    final selecionadoNome = (loteSelecionadoNome ?? '').trim();
+    if (selecionadoCodigo.isNotEmpty &&
+        selecionadoNome.isNotEmpty &&
+        chaves.add(selecionadoCodigo)) {
+      normalizados.insert(0, {
+        'detalheID': selecionadoCodigo,
+        'detalhe': selecionadoNome,
+      });
+    }
+
+    setState(() {
+      _lotesDisponiveis = normalizados;
+    });
+  }
+
+  Future<void> _carregarDefeitosTipoB({bool mostrarErro = false}) async {
+    if (_loadingDefeitosTipoB) return;
+    if (mounted) {
+      setState(() => _loadingDefeitosTipoB = true);
+    } else {
+      _loadingDefeitosTipoB = true;
+    }
+
+    try {
+      final response = await http.get(
+        Uri.parse("$_kBaseUrlFlask$_kFalhaTipoBEndpoint"),
+        headers: {"Content-Type": "application/json"},
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception('HTTP ${response.statusCode}');
+      }
+
+      final decoded = jsonDecode(response.body);
+      final data = decoded is List ? decoded : <dynamic>[];
+      final defeitos = data
+          .whereType<Map<String, dynamic>>()
+          .map(_DefeitoTipoB.fromJson)
+          .where((item) => item.codigo.isNotEmpty && item.nome.isNotEmpty)
+          .toList()
+        ..sort((a, b) => _compareAlpha(a.codigo.padLeft(4, '0'), b.codigo.padLeft(4, '0')));
+
+      if (!mounted) return;
+      setState(() {
+        _defeitosTipoB = defeitos;
+      });
+    } catch (e) {
+      debugPrint('[ERRO_DEFEITO_TIPOB] $e');
+      if (mostrarErro && mounted) {
+        _showSnack(
+          "Erro ao carregar defeitos do Tipo B",
+          Colors.red,
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _loadingDefeitosTipoB = false);
+      } else {
+        _loadingDefeitosTipoB = false;
+      }
+    }
+  }
+
+  Future<void> _abrirSeletorDefeitoTipoB() async {
+    if (_defeitosTipoB.isEmpty) {
+      await _carregarDefeitosTipoB(mostrarErro: true);
+    }
+    if (!mounted || _defeitosTipoB.isEmpty) return;
+
+    String busca = '';
+    final selecionado = await showModalBottomSheet<_DefeitoTipoB>(
+      context: context,
+      backgroundColor: _kSurface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setModalState) {
+            List<_DefeitoTipoB> filtrar() {
+              if (busca.trim().isEmpty) return _defeitosTipoB;
+              final termo = busca.trim().toUpperCase();
+              return _defeitosTipoB.where((defeito) {
+                return defeito.codigo.contains(termo) ||
+                    defeito.nome.toUpperCase().contains(termo);
+              }).toList();
+            }
+
+            final itens = filtrar();
+
+            return SafeArea(
+              child: Padding(
+                padding: EdgeInsets.only(
+                  left: 16,
+                  right: 16,
+                  top: 16,
+                  bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        IconButton(
+                          onPressed: () => Navigator.of(ctx).pop(),
+                          icon: const Icon(
+                            Icons.arrow_back,
+                            color: _kTextPrimary,
+                          ),
+                          tooltip: 'Voltar',
+                        ),
+                        const SizedBox(width: 4),
+                        const Expanded(
+                          child: Text(
+                            'Selecionar Defeito',
+                            style: TextStyle(
+                              color: _kTextPrimary,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          '${itens.length} itens',
+                          style: const TextStyle(
+                            color: _kTextSecondary,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Escolha pelo nome ou pelo codigo para enviar somente o numero do defeito.',
+                      style: TextStyle(
+                        color: _kTextSecondary.withOpacity(0.9),
+                        fontSize: 12,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      style: const TextStyle(color: _kTextPrimary),
+                      decoration: InputDecoration(
+                        hintText: 'Buscar por codigo ou nome',
+                        hintStyle: const TextStyle(color: _kTextSecondary),
+                        prefixIcon: const Icon(
+                          Icons.search,
+                          color: _kAccentColor,
+                        ),
+                        filled: true,
+                        fillColor: _kBgBottom,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide.none,
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: const BorderSide(color: _kBorderSoft),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: const BorderSide(
+                            color: _kAccentColor,
+                            width: 2,
+                          ),
+                        ),
+                      ),
+                      onChanged: (value) => setModalState(() => busca = value),
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      height: 360,
+                      child: itens.isEmpty
+                          ? const Padding(
+                              padding: EdgeInsets.all(24),
+                              child: Text(
+                                'Nenhum defeito encontrado.',
+                                style: TextStyle(color: _kTextSecondary),
+                              ),
+                            )
+                          : ListView.separated(
+                              shrinkWrap: true,
+                              itemCount: itens.length,
+                              separatorBuilder: (_, __) => const SizedBox(
+                                height: 10,
+                              ),
+                              itemBuilder: (_, index) {
+                                final defeito = itens[index];
+                                final ativo =
+                                    _defeitoSelecionadoCodigo ==
+                                    defeito.codigo;
+                                return Material(
+                                  color: Colors.transparent,
+                                  child: InkWell(
+                                    borderRadius: BorderRadius.circular(16),
+                                    onTap: () => Navigator.pop(ctx, defeito),
+                                    child: Ink(
+                                      decoration: BoxDecoration(
+                                        color: ativo
+                                            ? _kAccentColor.withOpacity(0.10)
+                                            : _kSurface2,
+                                        borderRadius: BorderRadius.circular(16),
+                                        border: Border.all(
+                                          color: ativo
+                                              ? _kAccentColor
+                                              : _kBorderSoft,
+                                        ),
+                                      ),
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 14,
+                                          vertical: 12,
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            Container(
+                                              width: 38,
+                                              height: 38,
+                                              decoration: BoxDecoration(
+                                                color: _kAccentColor.withOpacity(
+                                                  0.15,
+                                                ),
+                                                borderRadius:
+                                                    BorderRadius.circular(12),
+                                              ),
+                                              child: Center(
+                                                child: Text(
+                                                  defeito.codigo,
+                                                  style: const TextStyle(
+                                                    color: _kAccentColor,
+                                                    fontWeight: FontWeight.w800,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 12),
+                                            Expanded(
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    defeito.nome,
+                                                    style: const TextStyle(
+                                                      color: _kTextPrimary,
+                                                      fontWeight:
+                                                          FontWeight.w700,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 2),
+                                                  Text(
+                                                    'Codigo ${defeito.codigo}',
+                                                    style: const TextStyle(
+                                                      color: _kTextSecondary,
+                                                      fontSize: 12,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Icon(
+                                              ativo
+                                                  ? Icons.check_circle
+                                                  : Icons.chevron_right,
+                                              color: ativo
+                                                  ? _kAccentColor
+                                                  : _kTextSecondary,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    if (!mounted || selecionado == null) return;
+    setState(() {
+      _defeitoSelecionadoCodigo = selecionado.codigo;
+      _defeitoController.text = _labelDefeito(selecionado);
+    });
+  }
+
+  Future<Map<String, dynamic>?> _abrirSeletorArtigoManualTipoB() async {
+    final artigoEsperado = _normalizarCodigo(_artigoEsperadoId);
+    String busca = '';
+    bool carregando = false;
+    bool carregado = false;
+    List<Map<String, dynamic>> resultados = [];
+
+    return showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      backgroundColor: _kSurface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (ctx) {
+        Future<void> carregarResultados(StateSetter setModalState) async {
+          setModalState(() => carregando = true);
+          final itens = await DatabaseService.buscarArtigosPorNome(
+            busca,
+            objetoIDRestrito: artigoEsperado.isEmpty ? null : artigoEsperado,
+          );
+          if (!ctx.mounted) return;
+          setModalState(() {
+            resultados = itens;
+            carregando = false;
+          });
+        }
+
+        return StatefulBuilder(
+          builder: (ctx, setModalState) {
+            if (!carregado) {
+              carregado = true;
+              Future.microtask(() => carregarResultados(setModalState));
+            }
+
+            return SafeArea(
+              child: Padding(
+                padding: EdgeInsets.only(
+                  left: 16,
+                  right: 16,
+                  top: 16,
+                  bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.white24,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Selecionar artigo manualmente',
+                      style: TextStyle(
+                        color: _kTextPrimary,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    if (artigoEsperado.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        'Artigo esperado: ${_artigoEsperadoNome.isNotEmpty ? _artigoEsperadoNome : artigoEsperado}',
+                        style: const TextStyle(
+                          color: _kTextSecondary,
+                          fontSize: 12,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                    TextField(
+                      style: const TextStyle(color: _kTextPrimary),
+                      decoration: InputDecoration(
+                        hintText: 'Digite o nome do artigo',
+                        hintStyle: const TextStyle(color: _kTextSecondary),
+                        prefixIcon: const Icon(
+                          Icons.search,
+                          color: _kAccentColor,
+                        ),
+                        filled: true,
+                        fillColor: _kSurface2,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: const BorderSide(color: _kBorderSoft),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: const BorderSide(color: _kBorderSoft),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: const BorderSide(
+                            color: _kAccentColor,
+                            width: 2,
+                          ),
+                        ),
+                      ),
+                      onChanged: (value) {
+                        setModalState(() => busca = value);
+                        carregarResultados(setModalState);
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      height: 360,
+                      child: carregando
+                          ? const Padding(
+                              padding: EdgeInsets.all(24),
+                              child: CircularProgressIndicator(
+                                color: _kAccentColor,
+                              ),
+                            )
+                          : resultados.isEmpty
+                          ? const Padding(
+                              padding: EdgeInsets.all(24),
+                              child: Text(
+                                'Nenhum artigo encontrado no catalogo local.',
+                                style: TextStyle(color: _kTextSecondary),
+                              ),
+                            )
+                          : ListView.separated(
+                              shrinkWrap: true,
+                              itemCount: resultados.length,
+                              separatorBuilder: (_, __) =>
+                                  const Divider(color: _kBorderSoft, height: 1),
+                              itemBuilder: (_, index) {
+                                final item = resultados[index];
+                                final codigo =
+                                    (item['objetoID'] ?? '').toString().trim();
+                                final nome =
+                                    (item['objeto'] ?? '').toString().trim();
+                                return ListTile(
+                                  title: Text(
+                                    nome,
+                                    style: const TextStyle(
+                                      color: _kTextPrimary,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  subtitle: Text(
+                                    'Codigo $codigo',
+                                    style: const TextStyle(
+                                      color: _kTextSecondary,
+                                    ),
+                                  ),
+                                  onTap: () => Navigator.pop(ctx, item),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<Map<String, dynamic>?> _abrirSeletorLoteManualTipoB(
+    String artigoCodigo,
+  ) async {
+    String busca = '';
+    bool carregando = false;
+    bool carregado = false;
+    List<Map<String, dynamic>> resultados = [];
+
+    return showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      backgroundColor: _kSurface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (ctx) {
+        Future<void> carregarResultados(StateSetter setModalState) async {
+          setModalState(() => carregando = true);
+          final itens = await DatabaseService.buscarLotesPorObjetoID(
+            artigoCodigo,
+            termo: busca,
+          );
+          if (!ctx.mounted) return;
+          setModalState(() {
+            resultados = itens;
+            carregando = false;
+          });
+        }
+
+        return StatefulBuilder(
+          builder: (ctx, setModalState) {
+            if (!carregado) {
+              carregado = true;
+              Future.microtask(() => carregarResultados(setModalState));
+            }
+
+            return SafeArea(
+              child: Padding(
+                padding: EdgeInsets.only(
+                  left: 16,
+                  right: 16,
+                  top: 16,
+                  bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.white24,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Selecionar lote',
+                      style: TextStyle(
+                        color: _kTextPrimary,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      style: const TextStyle(color: _kTextPrimary),
+                      decoration: InputDecoration(
+                        hintText: 'Digite o nome do lote',
+                        hintStyle: const TextStyle(color: _kTextSecondary),
+                        prefixIcon: const Icon(
+                          Icons.search,
+                          color: _kAccentColor,
+                        ),
+                        filled: true,
+                        fillColor: _kSurface2,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: const BorderSide(color: _kBorderSoft),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: const BorderSide(color: _kBorderSoft),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: const BorderSide(
+                            color: _kAccentColor,
+                            width: 2,
+                          ),
+                        ),
+                      ),
+                      onChanged: (value) {
+                        setModalState(() => busca = value);
+                        carregarResultados(setModalState);
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      height: 360,
+                      child: carregando
+                          ? const Padding(
+                              padding: EdgeInsets.all(24),
+                              child: CircularProgressIndicator(
+                                color: _kAccentColor,
+                              ),
+                            )
+                          : resultados.isEmpty
+                          ? const Padding(
+                              padding: EdgeInsets.all(24),
+                              child: Text(
+                                'Nenhum lote encontrado para este artigo.',
+                                style: TextStyle(color: _kTextSecondary),
+                              ),
+                            )
+                          : ListView.separated(
+                              shrinkWrap: true,
+                              itemCount: resultados.length,
+                              separatorBuilder: (_, __) =>
+                                  const Divider(color: _kBorderSoft, height: 1),
+                              itemBuilder: (_, index) {
+                                final item = resultados[index];
+                                final codigo =
+                                    (item['detalheID'] ?? '').toString().trim();
+                                final nome =
+                                    (item['detalhe'] ?? '').toString().trim();
+                                return ListTile(
+                                  title: Text(
+                                    nome,
+                                    style: const TextStyle(
+                                      color: _kTextPrimary,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  subtitle: Text(
+                                    'Codigo $codigo',
+                                    style: const TextStyle(
+                                      color: _kTextSecondary,
+                                    ),
+                                  ),
+                                  onTap: () => Navigator.pop(ctx, item),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _abrirFluxoManualArtigoTipoB() async {
+    final totalProdutos = await DatabaseService.contarProdutos();
+    if (totalProdutos == 0) {
+      _showSnack(
+        'Catalogo local vazio. Sincronize os produtos para usar o modo manual.',
+        Colors.orange,
+      );
+      return;
+    }
+
+    final artigo = await _abrirSeletorArtigoManualTipoB();
+    if (!mounted || artigo == null) return;
+
+    final artigoCodigo = (artigo['objetoID'] ?? '').toString().trim();
+    final artigoNome = (artigo['objeto'] ?? '').toString().trim();
+    if (artigoCodigo.isEmpty || artigoNome.isEmpty) {
+      _showSnack('Artigo invalido selecionado.', Colors.orange);
+      return;
+    }
+
+    final lote = await _abrirSeletorLoteManualTipoB(artigoCodigo);
+    if (!mounted || lote == null) return;
+
+    final loteCodigo = (lote['detalheID'] ?? '').toString().trim();
+    final loteNome = (lote['detalhe'] ?? '').toString().trim();
+    if (loteCodigo.isEmpty || loteNome.isEmpty) {
+      _showSnack('Lote invalido selecionado.', Colors.orange);
+      return;
+    }
+
+    _aplicarProdutoSelecionado(
+      artigoCodigo: artigoCodigo,
+      artigoNome: artigoNome,
+      loteCodigo: loteCodigo,
+      loteNome: loteNome,
+    );
+    await _carregarLotesDoArtigo(
+      artigoCodigo,
+      loteSelecionadoCodigo: loteCodigo,
+      loteSelecionadoNome: loteNome,
+    );
+    await _buscarOrdemProducaoParaObjeto(artigoCodigo);
+    _showSnack('Artigo e lote definidos manualmente.', Colors.green);
   }
 
   Future<void> _escolherModoLeituraArtigo() async {
@@ -1757,6 +2608,22 @@ class _FormularioGeralState extends State<FormularioGeral> {
                   ),
                   onTap: () => Navigator.pop(ctx, 'coletor'),
                 ),
+                if (widget.tipo == 'B')
+                  ListTile(
+                    leading: const Icon(
+                      Icons.edit_note,
+                      color: _kAccentColor,
+                    ),
+                    title: const Text(
+                      'Manual',
+                      style: TextStyle(color: _kTextPrimary),
+                    ),
+                    subtitle: const Text(
+                      'Escolher artigo e lote pelo nome',
+                      style: TextStyle(color: _kTextSecondary),
+                    ),
+                    onTap: () => Navigator.pop(ctx, 'manual'),
+                  ),
               ],
             ),
           ),
@@ -1781,6 +2648,11 @@ class _FormularioGeralState extends State<FormularioGeral> {
 
     if (escolha == 'coletor') {
       _ativarColetorArtigo();
+      return;
+    }
+
+    if (escolha == 'manual' && widget.tipo == 'B') {
+      await _abrirFluxoManualArtigoTipoB();
     }
   }
 
@@ -1868,15 +2740,23 @@ class _FormularioGeralState extends State<FormularioGeral> {
       );
 
       if (produto != null) {
-        setState(() {
-          _artigoController.text = produto['objeto'] ?? "";
-          _detalheController.text = produto['detalhe'] ?? "";
-          _cdObjReal = produto['objetoID'] ?? "";
-          _detalheReal = produto['detalheID'] ?? "";
-          _coletorArtigoAtivo = false;
-        });
+        final artigoCodigo = (produto['objetoID'] ?? '').toString();
+        final artigoNome = (produto['objeto'] ?? '').toString();
+        final loteCodigo = (produto['detalheID'] ?? '').toString();
+        final loteNome = (produto['detalhe'] ?? '').toString();
+        _aplicarProdutoSelecionado(
+          artigoCodigo: artigoCodigo,
+          artigoNome: artigoNome,
+          loteCodigo: loteCodigo,
+          loteNome: loteNome,
+        );
+        await _carregarLotesDoArtigo(
+          artigoCodigo,
+          loteSelecionadoCodigo: loteCodigo,
+          loteSelecionadoNome: loteNome,
+        );
+        await _buscarOrdemProducaoParaObjeto(artigoCodigo);
         _showSnack("Produto encontrado!", Colors.green);
-        FocusScope.of(context).unfocus();
       } else {
         await _buscarNaAPI(buscadoObjID, buscadoDetID);
       }
@@ -1934,16 +2814,18 @@ class _FormularioGeralState extends State<FormularioGeral> {
         final String nomeProduto = loteEncontrado["NmObj"]?.toString() ?? "";
         final String nmLot = loteEncontrado["NmLot"]?.toString() ?? "";
 
-        setState(() {
-          _artigoController.text =
-              nomeProduto; // Mostra o nome do produto na tela
-          _detalheController.text =
-              nmLot; // Mostra o NOME do lote/detalhe na tela
-          _cdObjReal = objetoID; // Guarda o código do objeto para envio
-          _detalheReal =
-              detalheID; // ✅ CORRIGIDO: Guarda o NÚMERO (ID) do detalhe para envio ao SQL
-          _coletorArtigoAtivo = false;
-        });
+        _aplicarProdutoSelecionado(
+          artigoCodigo: objetoID,
+          artigoNome: nomeProduto,
+          loteCodigo: detalheID,
+          loteNome: nmLot,
+        );
+        await _carregarLotesDoArtigo(
+          objetoID,
+          loteSelecionadoCodigo: detalheID,
+          loteSelecionadoNome: nmLot,
+        );
+        await _buscarOrdemProducaoParaObjeto(objetoID);
         _showSnack("✅ Produto e lote encontrados", Colors.green);
       } else if (response.statusCode == 401) {
         await AuthService.limparToken();
@@ -1957,22 +2839,361 @@ class _FormularioGeralState extends State<FormularioGeral> {
     }
   }
 
+  DateTime? _tentarLerDataBr(String texto) {
+    final candidatos = [DateFormat('dd/MM/yyyy'), DateFormat('dd/MM/yy')];
+    for (final formato in candidatos) {
+      try {
+        return formato.parseStrict(texto);
+      } catch (_) {
+        continue;
+      }
+    }
+    return null;
+  }
+
+  String _obterDataInicialOrdens() {
+    final textoData = _dataController.text.trim();
+    final referencia = _tentarLerDataBr(textoData) ?? DateTime.now();
+    return DateFormat("yyyy-MM-dd'T'00:00:00").format(referencia);
+  }
+
+  String _formatarDataIsoMidnight(DateTime data) {
+    return DateFormat("yyyy-MM-dd'T'00:00:00").format(data);
+  }
+
+  int _toInt(dynamic value) {
+    if (value == null) return 0;
+    if (value is int) return value;
+    if (value is double) return value.toInt();
+    if (value is String) return int.tryParse(value.trim()) ?? 0;
+    return 0;
+  }
+
+  List<dynamic> _normalizarRespostaOrdens(dynamic decoded) {
+    if (decoded == null) return const [];
+    if (decoded is List) return decoded;
+    if (decoded is Map<String, dynamic>) {
+      const possiveisChaves = [
+        'data',
+        'dados',
+        'resultado',
+        'result',
+        'ordens',
+        'items',
+        'values',
+      ];
+      for (final chave in possiveisChaves) {
+        final valor = decoded[chave];
+        if (valor is List) {
+          return valor;
+        }
+      }
+      for (final valor in decoded.values) {
+        if (valor is List) return valor;
+      }
+    }
+    return const [];
+  }
+
+  int? _extrairIdOrdem(dynamic item) {
+    if (item is int) return item;
+    if (item is String) return int.tryParse(item.trim());
+
+    if (item is Map<String, dynamic>) {
+      const possiveisChaves = [
+        'ID',
+        'Id',
+        'id',
+        'OrdemProducaoID',
+        'ordemProducaoID',
+        'OrdemFabricacaoID',
+        'ordemFabricacaoID',
+        'OrdemFabricacaoId',
+        'ordemFabricacaoId',
+        'NrOrdem',
+        'nrOrdem',
+        'Ordem',
+        'ordem',
+        'Numero',
+        'numero',
+        'NumeroOrdem',
+        'numeroOrdem',
+      ];
+
+      for (final chave in possiveisChaves) {
+        final valor = item[chave];
+        if (valor == null) continue;
+        if (valor is int) return valor;
+        if (valor is String) {
+          final parsed = int.tryParse(valor.trim());
+          if (parsed != null) return parsed;
+        }
+      }
+    }
+    return null;
+  }
+
+  int? _extrairIdOrdemCriada(dynamic decoded) {
+    if (decoded == null) return null;
+    if (decoded is int) return decoded;
+    if (decoded is String) return int.tryParse(decoded.trim());
+    if (decoded is Map<String, dynamic>) {
+      const possiveisChaves = [
+        'id',
+        'Id',
+        'ID',
+        'ordemProducaoId',
+        'ordemProducaoID',
+        'ordemFabricacaoId',
+        'ordemFabricacaoID',
+        'OrdemProducaoID',
+        'OrdemFabricacaoID',
+      ];
+      for (final chave in possiveisChaves) {
+        final valor = decoded[chave];
+        if (valor is int) return valor;
+        if (valor is String) {
+          final parsed = int.tryParse(valor.trim());
+          if (parsed != null) return parsed;
+        }
+      }
+    }
+    return null;
+  }
+
+  Future<void> _buscarOrdemProducaoParaObjeto(
+    String objetoCodigo, {
+    bool isRetry = false,
+  }) async {
+    final objetoID = int.tryParse(objetoCodigo.trim());
+    if (objetoID == null) return;
+
+    final isOffline = await top_auth.AuthService.isOfflineModeActive();
+    if (isOffline) {
+      if (mounted) {
+        _showSnack(
+          "Modo offline ativo. Não foi possível consultar a Ordem de Produção.",
+          Colors.orange,
+        );
+      }
+      return;
+    }
+
+    final token = await top_auth.AuthService.obterTokenLogtech();
+    if (token == null) {
+      if (mounted) {
+        _showSnack(
+          "Falha na autenticação ao consultar Ordens de Produção.",
+          Colors.red,
+        );
+      }
+      return;
+    }
+
+    final queryParams = {
+      'empresaID': _kEmpresaIdOrdemProducao,
+      'objetoID': objetoID.toString(),
+      'dataInicial': _obterDataInicialOrdens(),
+    };
+
+    if (mounted) {
+      setState(() => _buscandoOrdemProducao = true);
+    } else {
+      _buscandoOrdemProducao = true;
+    }
+
+    try {
+      final uri = Uri.https(_kTopmanagerBaseUrl, _kOrdensFabricacaoPath, queryParams);
+      final response = await http
+          .get(
+            uri,
+            headers: {
+              'Authorization': 'Bearer $token',
+              'Content-Type': 'application/json',
+            },
+          )
+          .timeout(const Duration(seconds: 8));
+
+      if (response.statusCode == 401 && !isRetry) {
+        await top_auth.AuthService.clearToken();
+        await _buscarOrdemProducaoParaObjeto(objetoCodigo, isRetry: true);
+        return;
+      }
+
+      if (response.statusCode != 200) {
+        throw Exception('HTTP ${response.statusCode}: ${response.body}');
+      }
+
+      final decoded = response.body.isNotEmpty ? jsonDecode(response.body) : null;
+      final ordens = _normalizarRespostaOrdens(decoded);
+      final ordemSelecionada = ordens
+          .map<int?>((o) => _extrairIdOrdem(o))
+          .firstWhere((value) => value != null, orElse: () => null);
+
+      if (!mounted) return;
+      setState(() {
+        _ordemProducaoController.text =
+            ordemSelecionada?.toString() ?? '';
+      });
+    } catch (e) {
+      debugPrint('[ERRO_ORDEM] Falha ao buscar ordens de produção: $e');
+      if (mounted) {
+        _showSnack(
+          "Erro ao consultar Ordens de Produção.",
+          Colors.orange,
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _buscandoOrdemProducao = false);
+      } else {
+        _buscandoOrdemProducao = false;
+      }
+    }
+  }
+
+  Future<_ResultadoOrdemFabricacao> _incluirOrdemFabricacao({
+    required int objetoProduzidoId,
+    required double quantidadePlanejada,
+    required String token,
+    bool isRetry = false,
+  }) async {
+    final agora = DateTime.now();
+    final payload = {
+      'dataAtivacao': _formatarDataIsoMidnight(agora),
+      'dataDesativacao': _formatarDataIsoMidnight(agora),
+      'empresaId': int.tryParse(_kEmpresaIdOrdemProducao) ?? 0,
+      'objetoId': 1532,
+      'objetoProduzidoId': objetoProduzidoId,
+      'quantidadePlanejada': quantidadePlanejada,
+      'quantidadeProduzida': 0,
+      'situacaoEvento': 1,
+    };
+
+    try {
+      final uri = Uri.https(_kTopmanagerBaseUrl, _kIncluirOrdemFabricacaoPath);
+      final response = await http.post(
+        uri,
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode(payload),
+      );
+
+      if (response.statusCode == 401 && !isRetry) {
+        await top_auth.AuthService.clearToken();
+        final novoToken = await top_auth.AuthService.obterTokenLogtech();
+        if (novoToken == null) {
+          return const _ResultadoOrdemFabricacao(
+            erro: 'Falha na autenticação ao criar ordem.',
+          );
+        }
+        return _incluirOrdemFabricacao(
+          objetoProduzidoId: objetoProduzidoId,
+          quantidadePlanejada: quantidadePlanejada,
+          token: novoToken,
+          isRetry: true,
+        );
+      }
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        String? erroDetalhado;
+        if (response.body.isNotEmpty) {
+          try {
+            final decoded = jsonDecode(response.body);
+            if (decoded is Map<String, dynamic>) {
+              erroDetalhado =
+                  decoded['erro']?.toString() ?? decoded['Message']?.toString();
+            } else {
+              erroDetalhado = response.body;
+            }
+          } catch (_) {
+            erroDetalhado = response.body;
+          }
+        }
+        return _ResultadoOrdemFabricacao(erro: erroDetalhado);
+      }
+
+      if (response.body.isEmpty) {
+        return const _ResultadoOrdemFabricacao();
+      }
+
+      final decoded = jsonDecode(response.body);
+      final id = _extrairIdOrdemCriada(decoded);
+      return _ResultadoOrdemFabricacao(id: id);
+    } catch (e) {
+      return _ResultadoOrdemFabricacao(erro: e.toString());
+    }
+  }
+
   // -----------------------------------------------------------------------
   // ENVIO
   // -----------------------------------------------------------------------
 
+  Future<http.Response> _postJson(
+    String endpoint,
+    Map<String, dynamic> payload,
+  ) {
+    return http.post(
+      Uri.parse("$_kBaseUrlFlask$endpoint"),
+      headers: {"Content-Type": "application/json"},
+      body: jsonEncode(payload),
+    );
+  }
+
+  String _formatarDataSqlServer(DateTime data) {
+    String doisDigitos(int valor) => valor.toString().padLeft(2, '0');
+    return '${data.year}${doisDigitos(data.month)}${doisDigitos(data.day)} '
+        '${doisDigitos(data.hour)}:${doisDigitos(data.minute)}:${doisDigitos(data.second)}';
+  }
+
+  Map<String, dynamic> _criarPayloadMapaEficiencia(
+    Map<String, dynamic> payloadOriginal,
+    DateTime dataApontamento,
+  ) {
+    final codigoLote =
+        payloadOriginal["CdLot"] ??
+        payloadOriginal["Cdlot"] ??
+        payloadOriginal["Detalhe"];
+
+    return {
+      "Data": _formatarDataSqlServer(dataApontamento),
+      "CdTur":
+          payloadOriginal["CdTur"] ?? payloadOriginal["turno"] ?? widget.turno,
+      "Setor": payloadOriginal["Setor"],
+      "Maq": payloadOriginal["Maq"],
+      "Operador": payloadOriginal["Operador"],
+      "Artigo": payloadOriginal["Artigo"],
+      "Qtde": payloadOriginal["Qtde"],
+      "Defeito": payloadOriginal["Defeito"],
+      "CdLot": codigoLote,
+      "Cdlot": codigoLote,
+      "CdMppite": payloadOriginal["CdMppite"],
+      "CdVpd": payloadOriginal["CdVpd"],
+      "TpMovimento": payloadOriginal["TpMovimento"] ?? 1,
+    };
+  }
+
   Future<void> _enviar() async {
     if (_cdObjReal.isEmpty) return _showSnack("Bipe um Artigo", Colors.orange);
 
+    final codigoDefeito =
+        (_defeitoSelecionadoCodigo ?? _normalizarCodigo(_defeitoController.text))
+            .trim();
+
     if (widget.tipo == 'B') {
-      if (_defeitoController.text.trim().isEmpty) {
+      if (codigoDefeito.isEmpty) {
         return _showSnack("Preencha o campo Defeito", Colors.orange);
+      }
+      if (_palletController.text.trim().toUpperCase() != _kPaleteTipoBFixo) {
+        return _showSnack(
+          "Selecione o palete $_kPaleteTipoBFixo",
+          Colors.orange,
+        );
       }
       if ((_operadorCdUserSelecionado ?? '').trim().isEmpty) {
         return _showSnack("Selecione o Operador", Colors.orange);
-      }
-      if (_setorSelecionado == null) {
-        return _showSnack("Selecione o Setor", Colors.orange);
       }
     }
 
@@ -2021,12 +3242,47 @@ class _FormularioGeralState extends State<FormularioGeral> {
     final quantidade2 = int.tryParse(_qtde2Controller.text) ?? 0;
     final payloads = <Map<String, dynamic>>[];
 
+    if (widget.tipo == 'B') {
+      int? ordemProducaoId = int.tryParse(_ordemProducaoController.text.trim());
+      if (ordemProducaoId == null) {
+        final token = await top_auth.AuthService.obterTokenLogtech();
+        if (token == null) {
+          setState(() => _isLoading = false);
+          return _showSnack(
+            "Falha na autenticação. Não foi possível gerar a Ordem de Produção.",
+            Colors.red,
+          );
+        }
+
+        final resultado = await _incluirOrdemFabricacao(
+          objetoProduzidoId: _toInt(_cdObjReal),
+          quantidadePlanejada: quantidade.toDouble(),
+          token: token,
+        );
+
+        if (resultado.id == null) {
+          setState(() => _isLoading = false);
+          final erro = (resultado.erro ?? '').trim();
+          return _showSnack(
+            erro.isEmpty
+                ? _kErroOrdemFabricacaoGenerico
+                : '$_kErroOrdemFabricacaoGenerico $erro',
+            Colors.red,
+          );
+        }
+
+        _ordemProducaoController.text = resultado.id.toString();
+      }
+    }
+
     if (widget.tipo == 'A') {
       final base = <String, dynamic>{
         "Setor": _setorSelecionado!.codigo,
         "Qtde": quantidade,
         "Artigo": _cdObjReal,
         "Detalhe": _detalheReal,
+        "CdLot": _detalheReal,
+        "TpMovimento": 1,
         "turno": widget.turno,
       };
 
@@ -2040,11 +3296,6 @@ class _FormularioGeralState extends State<FormularioGeral> {
       // Se houver Operador 2, cria um segundo registro usando a mesma leitura de QR
       final operador2 = (_operador2CdUserSelecionado ?? '').trim();
       if (operador2.isNotEmpty) {
-        final maquina2 = _isRevisao
-            ? 0
-            : (_maquinaSelecionadaSecundaria?.codigo ??
-                  _maquinaSelecionada!.codigo);
-
         payloads.add({
           ...base,
           "Maq": _setorSelecionado!.codigo,
@@ -2059,27 +3310,47 @@ class _FormularioGeralState extends State<FormularioGeral> {
         "Operador": _operadorCdUserSelecionado,
         "Artigo": _cdObjReal,
         "Detalhe": _detalheReal,
-        "Defeito": _defeitoController.text,
+        "CdLot": _detalheReal,
+        "Defeito": codigoDefeito,
         "Qtde": quantidade,
+        "TpMovimento": 1,
         "turno": widget.turno,
       });
     }
 
     try {
+      bool houveFalhaMapaEficiencia = false;
+      final dataApontamento = DateTime.now();
+
       for (var i = 0; i < payloads.length; i++) {
-        final resp = await http.post(
-          Uri.parse("$_kBaseUrlFlask$endpoint"),
-          headers: {"Content-Type": "application/json"},
-          body: jsonEncode(payloads[i]),
-        );
+        final payloadAtual = payloads[i];
+        final resp = await _postJson(endpoint, payloadAtual);
 
         if (resp.statusCode != 201) {
           _showSnack("Erro ao salvar: ${resp.statusCode}", Colors.red);
           return;
         }
+
+        final mapaResp = await _postJson(
+          _kMapaEficienciaEmbEndpoint,
+          _criarPayloadMapaEficiencia(payloadAtual, dataApontamento),
+        );
+
+        if (mapaResp.statusCode != 201) {
+          houveFalhaMapaEficiencia = true;
+          debugPrint(
+            '[ERRO MAPA EFICIENCIA] '
+            'status=${mapaResp.statusCode} body=${mapaResp.body}',
+          );
+        }
       }
 
-      _showSnack("Salvo com sucesso!", Colors.green);
+      _showSnack(
+        houveFalhaMapaEficiencia
+            ? "Apontamento salvo, mas falhou no Mapa de Eficiência"
+            : "Salvo com sucesso!",
+        houveFalhaMapaEficiencia ? Colors.orange : Colors.green,
+      );
       widget.onApontamentoConcluido?.call();
       if (widget.fecharAoConcluir && mounted) {
         Navigator.of(context).pop();
@@ -2099,6 +3370,8 @@ class _FormularioGeralState extends State<FormularioGeral> {
     _detalheController.clear();
     _qtdeController.clear();
     _qtde2Controller.clear();
+    _ordemProducaoController.clear();
+    _palletController.clear();
     _operadorController.clear();
     _operador2Controller.clear();
     _setorController.clear();
@@ -2106,10 +3379,12 @@ class _FormularioGeralState extends State<FormularioGeral> {
     _maquina2Controller.clear();
     _coletorArtigoController.clear();
     _defeitoController.clear();
+    _defeitoSelecionadoCodigo = null;
     _operadorCdUserSelecionado = null;
     _operador2CdUserSelecionado = null;
     _cdObjReal = "";
     _detalheReal = "";
+    _lotesDisponiveis = [];
 
     if (widget.tipo == 'A') {
       setState(() {
@@ -2119,6 +3394,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
         _maquinaSelecionadaSecundaria = null;
         _maquinas = [];
         _coletorArtigoAtivo = false;
+        _buscandoOrdemProducao = false;
       });
     } else {
       setState(() {
@@ -2127,10 +3403,9 @@ class _FormularioGeralState extends State<FormularioGeral> {
         _maquinaSelecionadaSecundaria = null;
         _maquinas = [];
         _coletorArtigoAtivo = false;
+        _buscandoOrdemProducao = false;
+        _palletController.text = _kPaleteTipoBFixo;
       });
-      WidgetsBinding.instance.addPostFrameCallback(
-        (_) => _ativarColetorArtigo(),
-      );
     }
   }
 
@@ -2181,6 +3456,61 @@ class _FormularioGeralState extends State<FormularioGeral> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.tipo == 'B') {
+      return Stack(
+        children: [
+          Positioned.fill(
+            child: IgnorePointer(
+              child: Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [_kBgTop, _kSurface2, _kBgBottom],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            top: -120,
+            right: -60,
+            child: Container(
+              width: 240,
+              height: 240,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [
+                    _kAccentColor.withOpacity(0.14),
+                    Colors.transparent,
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: -110,
+            left: -40,
+            child: Container(
+              width: 220,
+              height: 220,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [
+                    _kPrimaryColor.withOpacity(0.10),
+                    Colors.transparent,
+                  ],
+                ),
+              ),
+            ),
+          ),
+          _buildTipoB(),
+        ],
+      );
+    }
+
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
@@ -2189,7 +3519,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
           end: Alignment.bottomCenter,
         ),
       ),
-      child: widget.tipo == 'A' ? _buildTipoA() : _buildTipoB(),
+      child: _buildTipoA(),
     );
   }
 
@@ -2198,40 +3528,66 @@ class _FormularioGeralState extends State<FormularioGeral> {
   // -----------------------------------------------------------------------
 
   Widget _buildTipoB() {
-    // Foca no coletor do artigo ao montar a tela Tipo B
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_coletorArtigoAtivo && _cdObjReal.isEmpty) _ativarColetorArtigo();
-    });
-
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(24),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildTurnoHeader(widget.turnoLetra),
-          _buildCardSection('Qualidade', [
-            _buildOperadorDropdown(),
-            _buildSetorDropdown(),
-            _buildArtigoEsperadoInfo(),
-            _buildArtigoField(),
-            _buildTextField(
-              _detalheController,
-              'Detalhe (Lote)',
-              Icons.info_outline,
-              readOnly: true,
-            ),
-            _buildTextField(
-              _defeitoController,
-              'Defeito',
-              Icons.warning_amber_outlined,
-            ),
-            _buildTextField(
-              _qtdeController,
-              'Quantidade',
-              Icons.add_task,
-              isNumeric: true,
-            ),
-          ]),
-          const SizedBox(height: 20),
+          _buildTipoBSection(
+            title: 'Informações do Documento',
+            children: [
+              _buildTipoBResponsiveFieldGroup([
+                _buildTipoBInfoField(
+                  label: 'Data (dd/MM/yyyy)',
+                  value: _dataController.text,
+                  icon: Icons.calendar_today_outlined,
+                ),
+                _buildTipoBInfoField(
+                  label: 'Turno',
+                  value: _turnoInfoController.text,
+                  icon: Icons.schedule,
+                ),
+              ]),
+            ],
+          ),
+          _buildTipoBSection(
+            title: 'Identificação da Produção',
+            children: [
+              _buildArtigoEsperadoInfo(),
+              _buildTipoBResponsiveFieldGroup([
+                _buildOrdemProducaoFieldTipoB(),
+                _buildArtigoField(),
+                _buildDetalheDropdownTipoB(),
+                _buildTextField(
+                  _qtdeController,
+                  'Quantidade',
+                  Icons.add_task,
+                  isNumeric: true,
+                ),
+                _buildPaleteFieldTipoB(),
+              ]),
+              const SizedBox(height: 2),
+              const Text(
+                'Palete permitido: PA-L1-R500-D-P1',
+                style: TextStyle(
+                  color: _kTextSecondary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          _buildTipoBSection(
+            title: 'Controle de Qualidade',
+            children: [
+              _buildTipoBResponsiveFieldGroup([
+                _buildOperadorDropdown(),
+                // _buildSetorDropdown(),
+                _buildDefeitoDropdownTipoB(),
+              ]),
+            ],
+          ),
+          const SizedBox(height: 8),
           _buildBotaoConfirmar(),
         ],
       ),
@@ -2619,7 +3975,8 @@ class _FormularioGeralState extends State<FormularioGeral> {
 
   Widget _buildArtigoField() {
     final temProduto = _artigoController.text.isNotEmpty;
-    final mostrarCamera = !temProduto;
+    final mostrarCamera = !temProduto && widget.tipo != 'B';
+    final labelCampo = widget.tipo == 'B' ? 'Objeto' : 'Artigo';
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -2631,11 +3988,13 @@ class _FormularioGeralState extends State<FormularioGeral> {
             readOnly: true,
             style: const TextStyle(color: _kTextPrimary),
             decoration: InputDecoration(
-              labelText: 'Artigo',
+              labelText: labelCampo,
               labelStyle: const TextStyle(color: _kTextSecondary),
               hintText: _coletorArtigoAtivo
                   ? 'Aguardando bipe...'
-                  : 'Toque em 🎯 para ativar coletor',
+                  : widget.tipo == 'B'
+                  ? 'Toque para camera, coletor ou manual'
+                  : 'Toque para ativar coletor',
               hintStyle: const TextStyle(color: _kTextSecondary, fontSize: 13),
               prefixIcon: const Icon(
                 Icons.inventory_2_outlined,
@@ -2645,6 +4004,28 @@ class _FormularioGeralState extends State<FormularioGeral> {
                   ? IconButton(
                       icon: const Icon(Icons.close, color: _kTextSecondary),
                       onPressed: _limparArtigoSelecionado,
+                    )
+                  : widget.tipo == 'B'
+                  ? Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(
+                            Icons.edit_note,
+                            color: _kAccentColor,
+                          ),
+                          tooltip: 'Selecionar manualmente',
+                          onPressed: _abrirFluxoManualArtigoTipoB,
+                        ),
+                        IconButton(
+                          icon: const Icon(
+                            Icons.qr_code_scanner,
+                            color: _kAccentColor,
+                          ),
+                          tooltip: 'Ler artigo',
+                          onPressed: _escolherModoLeituraArtigo,
+                        ),
+                      ],
                     )
                   : _coletorArtigoAtivo
                   ? const SizedBox.shrink()
@@ -2734,6 +4115,255 @@ class _FormularioGeralState extends State<FormularioGeral> {
   // -----------------------------------------------------------------------
   // DROPDOWNS (iguais ao original)
   // -----------------------------------------------------------------------
+
+  Widget _buildDefeitoDropdownTipoB() {
+    final selecionado =
+        (_defeitoSelecionadoCodigo ?? '').isNotEmpty &&
+        _defeitoController.text.isNotEmpty;
+    final habilitado = !_loadingDefeitosTipoB;
+    final hint = _loadingDefeitosTipoB
+        ? 'Carregando defeitos...'
+        : _defeitosTipoB.isEmpty
+        ? 'Nenhum defeito encontrado'
+        : 'Selecione o defeito';
+    final helperText = _loadingDefeitosTipoB
+        ? 'Consultando defeitos cadastrados'
+        : _defeitosTipoB.isEmpty
+        ? 'Não foi possível obter defeitos da API'
+        : '${_defeitosTipoB.length} defeitos cadastrados';
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: _buildCampoSelecao(
+        controller: _defeitoController,
+        label: 'Defeito',
+        hint: hint,
+        icon: Icons.warning_amber_outlined,
+        selecionado: selecionado,
+        habilitado: habilitado,
+        onTap: habilitado ? _abrirSeletorDefeitoTipoB : null,
+        helperText: helperText,
+        mostrarLimpar: selecionado,
+        onClear: () {
+          setState(() {
+            _defeitoSelecionadoCodigo = null;
+            _defeitoController.clear();
+          });
+        },
+      ),
+    );
+  }
+
+  Future<void> _abrirSelecaoPaleteTipoB() async {
+    final selecionado = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: _kSurface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 42,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.white24,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Selecionar Palete',
+                  style: TextStyle(
+                    color: _kTextPrimary,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(
+                    Icons.warehouse_outlined,
+                    color: _kAccentColor,
+                  ),
+                  title: const Text(
+                    _kPaleteTipoBFixo,
+                    style: TextStyle(
+                      color: _kTextPrimary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  subtitle: const Text(
+                    'Único palete permitido para este apontamento',
+                    style: TextStyle(color: _kTextSecondary),
+                  ),
+                  onTap: () => Navigator.pop(ctx, _kPaleteTipoBFixo),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (!mounted || selecionado == null) return;
+    setState(() => _palletController.text = selecionado);
+  }
+
+  Widget _buildOrdemProducaoFieldTipoB() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: TextFormField(
+        controller: _ordemProducaoController,
+        readOnly: true,
+        style: const TextStyle(color: _kTextPrimary),
+        decoration: InputDecoration(
+          labelText: 'Ordem de Produção',
+          hintText: 'Preenchimento bloqueado',
+          labelStyle: const TextStyle(color: _kTextSecondary),
+          hintStyle: const TextStyle(color: _kTextSecondary, fontSize: 13),
+          prefixIcon: const Icon(
+            Icons.confirmation_number_outlined,
+            color: _kAccentColor,
+          ),
+          suffixIcon: _buscandoOrdemProducao
+              ? const Padding(
+                  padding: EdgeInsets.all(12),
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: _kAccentColor,
+                    ),
+                  ),
+                )
+              : IconButton(
+                  icon: const Icon(Icons.refresh, color: _kTextSecondary),
+                  tooltip: 'Reconsultar Ordem de Produção',
+                  onPressed: _cdObjReal.trim().isEmpty
+                      ? null
+                      : () => _buscarOrdemProducaoParaObjeto(_cdObjReal),
+                ),
+          filled: true,
+          fillColor: _kSurface2,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: BorderSide.none,
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: const BorderSide(color: _kBorderSoft),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: const BorderSide(color: _kAccentColor, width: 2),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPaleteFieldTipoB() {
+    final selecionado =
+        _palletController.text.trim().toUpperCase() == _kPaleteTipoBFixo;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: _buildCampoSelecao(
+        controller: _palletController,
+        label: 'Palete',
+        hint: 'Selecione o palete',
+        icon: Icons.warehouse_outlined,
+        selecionado: selecionado,
+        habilitado: true,
+        onTap: _abrirSelecaoPaleteTipoB,
+        helperText: 'Somente $_kPaleteTipoBFixo',
+      ),
+    );
+  }
+
+  Widget _buildDetalheDropdownTipoB() {
+    final possuiOpcoes = _lotesDisponiveis.isNotEmpty;
+    final valorAtual = possuiOpcoes &&
+            _lotesDisponiveis.any(
+              (item) => (item['detalheID'] ?? '').toString() == _detalheReal,
+            )
+        ? _detalheReal
+        : null;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: InputDecorator(
+        decoration: InputDecoration(
+          labelText: 'Detalhe',
+          labelStyle: const TextStyle(color: _kTextSecondary),
+          prefixIcon: const Icon(Icons.info_outline, color: _kAccentColor),
+          filled: true,
+          fillColor: _kSurface2,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: BorderSide.none,
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: const BorderSide(color: _kBorderSoft),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: const BorderSide(color: _kAccentColor, width: 2),
+          ),
+          helperText: possuiOpcoes
+              ? '${_lotesDisponiveis.length} lotes disponiveis'
+              : 'Selecione ou leia um artigo para carregar os lotes',
+          helperStyle: const TextStyle(color: _kTextSecondary, fontSize: 11),
+        ),
+        child: DropdownButtonHideUnderline(
+          child: DropdownButton<String>(
+            isExpanded: true,
+            dropdownColor: _kSurface,
+            hint: const Text(
+              'Selecione o detalhe',
+              style: TextStyle(color: _kTextSecondary),
+            ),
+            value: valorAtual,
+            items: _lotesDisponiveis.map((item) {
+              final codigo = (item['detalheID'] ?? '').toString();
+              final detalhe = (item['detalhe'] ?? '').toString();
+              return DropdownMenuItem<String>(
+                value: codigo,
+                child: Text(
+                  detalhe,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: _kTextPrimary),
+                ),
+              );
+            }).toList(),
+            onChanged: !possuiOpcoes
+                ? null
+                : (value) {
+                    if (value == null) return;
+                    final selecionado = _lotesDisponiveis.firstWhere(
+                      (item) => (item['detalheID'] ?? '').toString() == value,
+                    );
+                    setState(() {
+                      _detalheReal = value;
+                      _detalheController.text =
+                          (selecionado['detalhe'] ?? '').toString();
+                    });
+                  },
+          ),
+        ),
+      ),
+    );
+  }
 
   Widget _buildSetorDropdown() => Padding(
     padding: const EdgeInsets.only(bottom: 12),
@@ -2874,21 +4504,28 @@ class _FormularioGeralState extends State<FormularioGeral> {
       boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 8)],
     ),
     child: Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        const Text(
-          'TURNO ATUAL',
-          style: TextStyle(fontWeight: FontWeight.w800, color: _kTextSecondary),
-        ),
-        Chip(
-          label: Text(
-            letra,
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w900,
-            ),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'TURNO ATUAL',
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  color: _kTextSecondary,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                _descricaoTurno(letra),
+                style: const TextStyle(
+                  color: _kTextPrimary,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
           ),
-          backgroundColor: _kPrimaryColor,
         ),
       ],
     ),
@@ -2919,6 +4556,110 @@ class _FormularioGeralState extends State<FormularioGeral> {
       ],
     ),
   );
+
+  Widget _buildTipoBSection({
+    required String title,
+    required List<Widget> children,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 20),
+      decoration: BoxDecoration(
+        color: _kSurface2,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _kBorderSoft),
+        boxShadow: [
+          BoxShadow(
+            color: _kPrimaryColor.withOpacity(0.10),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 22),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: _kTextPrimary,
+              ),
+            ),
+            const SizedBox(height: 18),
+            ...children,
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTipoBInfoField({
+    required String label,
+    required String value,
+    required IconData icon,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: InputDecorator(
+        decoration: InputDecoration(
+          labelText: label,
+          labelStyle: const TextStyle(color: _kTextSecondary),
+          prefixIcon: Icon(icon, color: _kAccentColor),
+          filled: true,
+          fillColor: _kSurface,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: BorderSide.none,
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: const BorderSide(color: _kBorderSoft),
+          ),
+        ),
+        child: Text(
+          value,
+          style: const TextStyle(
+            color: _kTextPrimary,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTipoBResponsiveFieldGroup(List<Widget> fields) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final availableWidth = constraints.maxWidth;
+        final columns = availableWidth >= 980
+            ? 3
+            : availableWidth >= 640
+            ? 2
+            : 1;
+        const spacing = 16.0;
+        final double targetWidth = columns == 1
+            ? availableWidth
+            : math.min(
+                math.max(
+                  (availableWidth - spacing * (columns - 1)) / columns,
+                  250,
+                ),
+                420,
+              );
+
+        return Wrap(
+          spacing: spacing,
+          runSpacing: 0,
+          children: fields
+              .map((field) => SizedBox(width: targetWidth, child: field))
+              .toList(),
+        );
+      },
+    );
+  }
 
   Widget _buildTextField(
     TextEditingController controller,

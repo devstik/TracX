@@ -17,6 +17,7 @@ class RegistroAdapter extends TypeAdapter<Registro> {
       for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
     };
     return Registro(
+      id: fields[15] as int?,
       data: fields[0] as DateTime,
       ordemProducao: fields[1] as int,
       quantidade: fields[2] as int,
@@ -38,7 +39,7 @@ class RegistroAdapter extends TypeAdapter<Registro> {
   @override
   void write(BinaryWriter writer, Registro obj) {
     writer
-      ..writeByte(15)
+      ..writeByte(16)
       ..writeByte(0)
       ..write(obj.data)
       ..writeByte(1)
@@ -68,7 +69,9 @@ class RegistroAdapter extends TypeAdapter<Registro> {
       ..writeByte(13)
       ..write(obj.dataMovimentacao)
       ..writeByte(14)
-      ..write(obj.caixa);
+      ..write(obj.caixa)
+      ..writeByte(15)
+      ..write(obj.id);
   }
 
   @override

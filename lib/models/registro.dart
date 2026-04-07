@@ -4,6 +4,8 @@ part 'registro.g.dart';
 
 @HiveType(typeId: 0)
 class Registro extends HiveObject {
+  @HiveField(15)
+  int? id;
   // O campo 'data' será usado como Data de Entrada
   @HiveField(0)
   DateTime data;
@@ -52,6 +54,7 @@ class Registro extends HiveObject {
   String? caixa;
 
   Registro({
+    this.id,
     required this.data,
     required this.ordemProducao,
     required this.quantidade,
@@ -87,6 +90,7 @@ class Registro extends HiveObject {
   // Construtor de Fábrica para mapear do JSON da API
   // =======================================================================
   factory Registro.fromJson(Map<String, dynamic> json) {
+    final idRaw = json['ID'] ?? json['Id'];
     final dataEntrada = json['DataEntrada'] != null
         ? DateTime.parse(json['DataEntrada'] as String)
         : DateTime.now();
@@ -96,6 +100,7 @@ class Registro extends HiveObject {
         : null;
 
     return Registro(
+      id: idRaw is int ? idRaw : int.tryParse(idRaw?.toString() ?? ''),
       ordemProducao: json['NrOrdem'] as int,
       data: dataEntrada,
       artigo: json['Artigo'] as String,
@@ -115,6 +120,7 @@ class Registro extends HiveObject {
   }
 
   Map<String, dynamic> toJson() => {
+    'id': id,
     'data': data.toIso8601String(),
     'ordem_producao': ordemProducao,
     'quantidade': quantidade,

@@ -2,7 +2,7 @@ name: tracx
 description: "A new Flutter project."
 publish_to: "none"
 
-version: 2.0.2+2
+version: 2.0.20+20
 
 environment:
   sdk: ^3.8.1
@@ -32,6 +32,7 @@ dependencies:
   pdf: ^3.10.7
   flutter_zxing: ^2.2.1
   sqflite: ^2.4.2
+  sqflite_common_ffi: ^2.3.4+4
   permission_handler: ^12.0.1
   rename: ^3.1.0
   flutter_datawedge: ^3.2.0

@@ -6,6 +6,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:flutter/services.dart';
+import 'package:tracx/services/datawedge_service.dart';
 import 'package:tracx/services/movimentacao_service.dart';
 import '../screens/login_screen.dart';
 
@@ -310,12 +311,15 @@ class _RegistroScreenState extends State<RegistroScreen> {
   final _numCorteController = TextEditingController();
   final _volumeProgController = TextEditingController();
   final _caixaController = TextEditingController();
+  final _coletorQrController = TextEditingController();
+  final FocusNode _coletorQrFocus = FocusNode();
 
   String? _localizacaoSelecionada;
   DateTime? _data;
 
   bool _isSaving = false;
   bool _isManualEntry = false;
+  bool _coletorQrAtivo = false;
 
   @override
   void initState() {
@@ -323,10 +327,12 @@ class _RegistroScreenState extends State<RegistroScreen> {
     _data = DateTime.now();
     _removerRegistrosAntigos();
     _ordemController.addListener(_updateFormState);
+    DataWedgeService.scanData.addListener(_onColetorScan);
   }
 
   @override
   void dispose() {
+    DataWedgeService.scanData.removeListener(_onColetorScan);
     _ordemController.removeListener(_updateFormState);
     _ordemController.dispose();
     _quantidadeController.dispose();
@@ -338,6 +344,8 @@ class _RegistroScreenState extends State<RegistroScreen> {
     _numCorteController.dispose();
     _volumeProgController.dispose();
     _caixaController.dispose();
+    _coletorQrController.dispose();
+    _coletorQrFocus.dispose();
     super.dispose();
   }
 
@@ -370,6 +378,195 @@ class _RegistroScreenState extends State<RegistroScreen> {
     return (value == null || value.isEmpty) ? '' : value;
   }
 
+  QrCodeData? _parseQrCode(String? qrCode) {
+    if (qrCode == null || qrCode.trim().isEmpty) return null;
+
+    try {
+      final Map<String, dynamic> jsonMap = jsonDecode(qrCode.trim());
+      return QrCodeData.fromJson(jsonMap);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void _preencherCamposComQr(QrCodeData qr) {
+    final double metrosUnitario =
+        double.tryParse(qr.metros.toString().replaceAll(',', '.')) ?? 0.0;
+    final int quantidadeTambores =
+        int.tryParse(qr.numeroTambores.toString()) ?? 0;
+
+    final double metrosTotal = metrosUnitario * quantidadeTambores;
+
+    final String metrosFormatado = metrosTotal == 0.0
+        ? '0'
+        : metrosTotal.toStringAsFixed(3).replaceAll('.', ',');
+
+    final String ordem = qr.ordem == 0 ? '0' : qr.ordem.toString();
+    final String peso = qr.peso == 0.0 ? '0' : qr.peso.toStringAsFixed(3);
+    final String quantidade = quantidadeTambores.toString();
+
+    final String artigo = _safeString(qr.artigo);
+    final String cor = _safeString(qr.cor);
+    final String volumeProg = _safeString(qr.volumeProg);
+    final String dataTingimento = _safeString(qr.dataTingimento);
+    final String numCorte = _safeString(qr.numCorte);
+
+    String caixa = _safeString(qr.caixa);
+    if (caixa.isEmpty) caixa = '0';
+
+    HapticFeedback.mediumImpact();
+
+    setState(() {
+      _ordemController.text = ordem;
+      _artigoController.text = artigo;
+      _corController.text = cor;
+      _quantidadeController.text = quantidade;
+      _pesoController.text = peso;
+      _volumeProgController.text = volumeProg;
+      _caixaController.text = caixa;
+      _metrosController.text = metrosFormatado;
+      _dataTingimentoController.text = dataTingimento;
+      _numCorteController.text = numCorte;
+    });
+  }
+
+  void _showQrInvalidoFeedback() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('QR Code invalido ou incompleto. Tente novamente.'),
+        backgroundColor: _kPrimaryColor,
+      ),
+    );
+  }
+
+  void _processarTextoQr(String rawQrCode) {
+    final qr = _parseQrCode(rawQrCode);
+    if (qr == null) {
+      _showQrInvalidoFeedback();
+      if (_coletorQrAtivo) {
+        _coletorQrController.clear();
+        _coletorQrFocus.requestFocus();
+        Future.microtask(
+          () => SystemChannels.textInput.invokeMethod('TextInput.hide'),
+        );
+      }
+      return;
+    }
+
+    _desativarColetorQr();
+    _preencherCamposComQr(qr);
+  }
+
+  void _onColetorScan() {
+    if (!_coletorQrAtivo) return;
+
+    final rawQrCode = DataWedgeService.scanData.value;
+    if (rawQrCode == null || rawQrCode.trim().isEmpty) return;
+
+    DataWedgeService.scanData.value = null;
+    _processarTextoQr(rawQrCode);
+  }
+
+  void _ativarColetorQr() {
+    if (_isManualEntry) return;
+
+    DataWedgeService.scanData.value = null;
+    SystemChannels.textInput.invokeMethod('TextInput.hide');
+    setState(() => _coletorQrAtivo = true);
+    _coletorQrController.clear();
+    _coletorQrFocus.requestFocus();
+    Future.microtask(
+      () => SystemChannels.textInput.invokeMethod('TextInput.hide'),
+    );
+  }
+
+  void _desativarColetorQr() {
+    _coletorQrController.clear();
+    FocusScope.of(context).unfocus();
+    if (mounted && _coletorQrAtivo) {
+      setState(() => _coletorQrAtivo = false);
+    }
+  }
+
+  Future<void> _escolherModoLeituraQr() async {
+    if (_isManualEntry) return;
+
+    if (_coletorQrAtivo) {
+      _desativarColetorQr();
+    }
+
+    final escolha = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: _kSurface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 42,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.white24,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Como deseja ler o QR Code?',
+                  style: TextStyle(
+                    color: _kTextPrimary,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                ListTile(
+                  leading: const Icon(
+                    Icons.qr_code_scanner,
+                    color: _kAccentColor,
+                  ),
+                  title: const Text(
+                    'Camera',
+                    style: TextStyle(color: _kTextPrimary),
+                  ),
+                  onTap: () => Navigator.pop(ctx, 'camera'),
+                ),
+                ListTile(
+                  leading: const Icon(
+                    Icons.barcode_reader,
+                    color: _kAccentColor,
+                  ),
+                  title: const Text(
+                    'Coletor',
+                    style: TextStyle(color: _kTextPrimary),
+                  ),
+                  onTap: () => Navigator.pop(ctx, 'coletor'),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (!mounted || escolha == null) return;
+
+    if (escolha == 'camera') {
+      await _scanQR();
+      return;
+    }
+
+    if (escolha == 'coletor') {
+      _ativarColetorQr();
+    }
+  }
+
   Future<void> _scanQR() async {
     final qr = await Navigator.push<QrCodeData>(
       context,
@@ -377,47 +574,12 @@ class _RegistroScreenState extends State<RegistroScreen> {
     );
 
     if (qr != null) {
-      double metrosUnitario =
-          double.tryParse(qr.metros.toString().replaceAll(',', '.')) ?? 0.0;
-      int quantidadeTambores = int.tryParse(qr.numeroTambores.toString()) ?? 0;
-
-      double metrosTotal = metrosUnitario * quantidadeTambores;
-
-      final String metrosFormatado = metrosTotal == 0.0
-          ? '0'
-          : metrosTotal.toStringAsFixed(3).replaceAll('.', ',');
-
-      final String ordem = qr.ordem == 0 ? '0' : qr.ordem.toString();
-      final String peso = qr.peso == 0.0 ? '0' : qr.peso.toStringAsFixed(3);
-      final String quantidade = quantidadeTambores.toString();
-
-      final String artigo = _safeString(qr.artigo);
-      final String cor = _safeString(qr.cor);
-      final String volumeProg = _safeString(qr.volumeProg);
-      final String dataTingimento = _safeString(qr.dataTingimento);
-      final String numCorte = _safeString(qr.numCorte);
-
-      String caixa = _safeString(qr.caixa);
-      if (caixa.isEmpty) caixa = '0';
-
-      HapticFeedback.mediumImpact();
-
-      setState(() {
-        _ordemController.text = ordem;
-        _artigoController.text = artigo;
-        _corController.text = cor;
-        _quantidadeController.text = quantidade;
-        _pesoController.text = peso;
-        _volumeProgController.text = volumeProg;
-        _caixaController.text = caixa;
-        _metrosController.text = metrosFormatado;
-        _dataTingimentoController.text = dataTingimento;
-        _numCorteController.text = numCorte;
-      });
+      _preencherCamposComQr(qr);
     }
   }
 
   void _limparFormulario() {
+    _desativarColetorQr();
     _ordemController.clear();
     _quantidadeController.clear();
     _artigoController.clear();
@@ -777,9 +939,19 @@ class _RegistroScreenState extends State<RegistroScreen> {
             children: [
               Expanded(
                 child: ElevatedButton.icon(
-                  onPressed: _isManualEntry ? null : _scanQR,
-                  icon: const Icon(Icons.qr_code_scanner),
-                  label: const Text('Ler QR Code'),
+                  onPressed: _isManualEntry
+                      ? null
+                      : (_coletorQrAtivo
+                            ? _desativarColetorQr
+                            : _escolherModoLeituraQr),
+                  icon: Icon(
+                    _coletorQrAtivo
+                        ? Icons.barcode_reader
+                        : Icons.qr_code_scanner,
+                  ),
+                  label: Text(
+                    _coletorQrAtivo ? 'Cancelar Coletor' : 'Ler QR Code',
+                  ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: _kPrimaryColor,
                     foregroundColor: Colors.white,
@@ -797,10 +969,14 @@ class _RegistroScreenState extends State<RegistroScreen> {
               Expanded(
                 child: ElevatedButton.icon(
                   onPressed: () {
-                    setState(() {
-                      _isManualEntry = !_isManualEntry;
-                      if (!_isManualEntry) _limparFormulario();
-                    });
+                    final bool ativarManual = !_isManualEntry;
+                    if (ativarManual) {
+                      _desativarColetorQr();
+                      setState(() => _isManualEntry = true);
+                    } else {
+                      setState(() => _isManualEntry = false);
+                      _limparFormulario();
+                    }
                     HapticFeedback.lightImpact();
                   },
                   icon: Icon(_isManualEntry ? Icons.close : Icons.edit),
@@ -831,6 +1007,59 @@ class _RegistroScreenState extends State<RegistroScreen> {
               fontSize: 13,
             ),
           ),
+          if (!_isManualEntry && _coletorQrAtivo) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Coletor ativo: bipa o QR Code para preencher todos os campos.',
+              style: TextStyle(
+                color: _kAccentColor.withOpacity(0.95),
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _limparFormulario,
+              icon: const Icon(Icons.cleaning_services_outlined),
+              label: const Text('Limpar Campos'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.white,
+                side: BorderSide(color: Colors.white.withOpacity(0.22)),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+            ),
+          ),
+          if (!_isManualEntry) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 1,
+              child: Opacity(
+                opacity: 0,
+                child: TextField(
+                  controller: _coletorQrController,
+                  focusNode: _coletorQrFocus,
+                  keyboardType: TextInputType.none,
+                  textInputAction: TextInputAction.done,
+                  onChanged: (_) {
+                    SystemChannels.textInput.invokeMethod('TextInput.hide');
+                  },
+                  onSubmitted: (value) {
+                    final rawQrCode = value.trim();
+                    _coletorQrController.clear();
+                    if (_coletorQrAtivo && rawQrCode.isNotEmpty) {
+                      _processarTextoQr(rawQrCode);
+                    }
+                  },
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );

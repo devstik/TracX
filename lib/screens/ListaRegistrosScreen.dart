@@ -54,6 +54,13 @@ class ListaRegistrosScreen extends StatefulWidget {
   _ListaRegistrosScreenState createState() => _ListaRegistrosScreenState();
 }
 
+class _ResumoRelatorioValor {
+  double kg;
+  double metros;
+
+  _ResumoRelatorioValor({this.kg = 0, this.metros = 0});
+}
+
 class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
     with SingleTickerProviderStateMixin {
   // ATUALIZADO: Formatadores globais com separador de milhar (ponto)
@@ -83,6 +90,7 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
   // Future para evitar refazer a requisição a cada setState (melhora performance percebida)
   late Future<Map<String, List<Registro>>> _embalagemFuture;
   late Future<List<RegistroTinturaria>> _tinturariaFuture;
+  final Map<String, double> _mapaGramaturas = {};
 
   @override
   void initState() {
@@ -105,6 +113,7 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
 
   // Gera uma chave única para um registro de Embalagem
   String _getRegistroKey(Registro r) {
+    if (r.id != null) return 'id:${r.id}';
     // Usamos Data e Turno para garantir unicidade, já que a OP pode se repetir.
     return '${r.ordemProducao}|${r.data.toIso8601String()}|${r.turno}';
   }
@@ -369,6 +378,284 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
   }
 
   // Função para deletar um registro
+  String _formatarDataApi(DateTime data) {
+    return DateFormat('yyyy-MM-dd').format(data);
+  }
+
+  double _parseDoublePtBr(String valor) {
+    return double.tryParse(valor.trim().replaceAll(',', '.')) ?? 0.0;
+  }
+
+  Future<void> _editarRegistroApi(Registro registro) async {
+    if (registro.id == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Registro sem ID para edição.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    final dataController = TextEditingController(
+      text: _formatarDataApi(registro.data),
+    );
+    final ordemController = TextEditingController(
+      text: registro.ordemProducao.toString(),
+    );
+    final quantidadeController = TextEditingController(
+      text: registro.quantidade.toString(),
+    );
+    final artigoController = TextEditingController(text: registro.artigo);
+    final corController = TextEditingController(text: registro.cor);
+    final pesoController = TextEditingController(
+      text: registro.peso.toStringAsFixed(3).replaceAll('.', ','),
+    );
+    final conferenteController = TextEditingController(text: registro.conferente);
+    final turnoController = TextEditingController(text: registro.turno);
+    final metrosController = TextEditingController(
+      text: (registro.metros ?? 0.0).toStringAsFixed(3).replaceAll('.', ','),
+    );
+    final dataTingimentoController = TextEditingController(
+      text: registro.dataTingimento ?? '',
+    );
+    final numCorteController = TextEditingController(
+      text: registro.numCorte ?? '',
+    );
+    final volumeProgController = TextEditingController(
+      text: (registro.volumeProg ?? 0.0)
+          .toStringAsFixed(3)
+          .replaceAll('.', ','),
+    );
+    final caixaController = TextEditingController(text: registro.caixa ?? '');
+    bool salvando = false;
+
+    await showDialog(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          backgroundColor: _kSurface,
+          title: const Text(
+            'Editar Registro',
+            style: TextStyle(color: _kTextPrimary),
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: dataController,
+                  style: const TextStyle(color: _kTextPrimary),
+                  decoration: const InputDecoration(
+                    labelText: 'Data',
+                    labelStyle: TextStyle(color: _kTextSecondary),
+                  ),
+                ),
+                TextField(
+                  controller: ordemController,
+                  style: const TextStyle(color: _kTextPrimary),
+                  decoration: const InputDecoration(
+                    labelText: 'Ordem Produção',
+                    labelStyle: TextStyle(color: _kTextSecondary),
+                  ),
+                  keyboardType: TextInputType.number,
+                ),
+                TextField(
+                  controller: artigoController,
+                  style: const TextStyle(color: _kTextPrimary),
+                  decoration: const InputDecoration(
+                    labelText: 'Artigo',
+                    labelStyle: TextStyle(color: _kTextSecondary),
+                  ),
+                ),
+                TextField(
+                  controller: corController,
+                  style: const TextStyle(color: _kTextPrimary),
+                  decoration: const InputDecoration(
+                    labelText: 'Cor',
+                    labelStyle: TextStyle(color: _kTextSecondary),
+                  ),
+                ),
+                TextField(
+                  controller: quantidadeController,
+                  style: const TextStyle(color: _kTextPrimary),
+                  decoration: const InputDecoration(
+                    labelText: 'Quantidade',
+                    labelStyle: TextStyle(color: _kTextSecondary),
+                  ),
+                  keyboardType: TextInputType.number,
+                ),
+                TextField(
+                  controller: pesoController,
+                  style: const TextStyle(color: _kTextPrimary),
+                  decoration: const InputDecoration(
+                    labelText: 'Peso (Kg)',
+                    labelStyle: TextStyle(color: _kTextSecondary),
+                  ),
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                ),
+                TextField(
+                  controller: conferenteController,
+                  style: const TextStyle(color: _kTextPrimary),
+                  decoration: const InputDecoration(
+                    labelText: 'Conferente',
+                    labelStyle: TextStyle(color: _kTextSecondary),
+                  ),
+                ),
+                TextField(
+                  controller: turnoController,
+                  style: const TextStyle(color: _kTextPrimary),
+                  decoration: const InputDecoration(
+                    labelText: 'Turno',
+                    labelStyle: TextStyle(color: _kTextSecondary),
+                  ),
+                ),
+                TextField(
+                  controller: metrosController,
+                  style: const TextStyle(color: _kTextPrimary),
+                  decoration: const InputDecoration(
+                    labelText: 'Metros',
+                    labelStyle: TextStyle(color: _kTextSecondary),
+                  ),
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                ),
+                TextField(
+                  controller: volumeProgController,
+                  style: const TextStyle(color: _kTextPrimary),
+                  decoration: const InputDecoration(
+                    labelText: 'Volume Programado',
+                    labelStyle: TextStyle(color: _kTextSecondary),
+                  ),
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                ),
+                TextField(
+                  controller: caixaController,
+                  style: const TextStyle(color: _kTextPrimary),
+                  decoration: const InputDecoration(
+                    labelText: 'Caixa',
+                    labelStyle: TextStyle(color: _kTextSecondary),
+                  ),
+                ),
+                TextField(
+                  controller: dataTingimentoController,
+                  style: const TextStyle(color: _kTextPrimary),
+                  decoration: const InputDecoration(
+                    labelText: 'Data Tingimento',
+                    labelStyle: TextStyle(color: _kTextSecondary),
+                  ),
+                ),
+                TextField(
+                  controller: numCorteController,
+                  style: const TextStyle(color: _kTextPrimary),
+                  decoration: const InputDecoration(
+                    labelText: 'Num Corte',
+                    labelStyle: TextStyle(color: _kTextSecondary),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: salvando ? null : () => Navigator.pop(dialogContext),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: salvando
+                  ? null
+                  : () async {
+                      setDialogState(() => salvando = true);
+
+                      final payload = {
+                        'Data': dataController.text.trim(),
+                        'NrOrdem': int.tryParse(ordemController.text.trim()) ?? 0,
+                        'Artigo': artigoController.text.trim(),
+                        'Cor': corController.text.trim(),
+                        'Quantidade':
+                            int.tryParse(quantidadeController.text.trim()) ?? 0,
+                        'Peso': _parseDoublePtBr(pesoController.text),
+                        'Conferente': conferenteController.text.trim(),
+                        'Turno': turnoController.text.trim(),
+                        'Metros': _parseDoublePtBr(metrosController.text),
+                        'DataTingimento': dataTingimentoController.text.trim(),
+                        'NumCorte': numCorteController.text.trim(),
+                        'VolumeProg': _parseDoublePtBr(volumeProgController.text),
+                        'Caixa': caixaController.text.trim(),
+                      };
+
+                      try {
+                        final response = await http.patch(
+                          Uri.parse(
+                            'http://168.190.90.2:5000/consulta/embalagem/${registro.id}',
+                          ),
+                          headers: {'Content-Type': 'application/json'},
+                          body: jsonEncode(payload),
+                        );
+
+                        if (!mounted) return;
+
+                        if (response.statusCode == 200) {
+                          setState(() {
+                            _embalagemFuture = _buscarTodos();
+                          });
+                          Navigator.pop(dialogContext);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Registro atualizado com sucesso!'),
+                              backgroundColor: Colors.green,
+                            ),
+                          );
+                          return;
+                        }
+
+                        String erro = 'Erro ao atualizar registro.';
+                        try {
+                          final body = jsonDecode(response.body);
+                          if (body is Map && body['error'] != null) {
+                            erro = body['error'].toString();
+                          }
+                        } catch (_) {}
+
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(erro),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      } catch (_) {
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Erro ao atualizar registro.'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      } finally {
+                        if (dialogContext.mounted) {
+                          setDialogState(() => salvando = false);
+                        }
+                      }
+                    },
+              child: salvando
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Salvar'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _deletarRegistro(Registro registro) async {
     // Verificar se o usuário está autorizado a deletar
     const List<String> usuariosAutorizados = ['Leide', 'João'];
@@ -1040,8 +1327,74 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
     return {'Embalagem': embalagem};
   }
 
+  Future<void> _garantirMapaGramaturas() async {
+    if (_mapaGramaturas.isNotEmpty) return;
+
+    final url = Uri.parse('http://168.190.90.2:5000/consulta/allArtigos');
+    final response = await http.get(url);
+    if (response.statusCode != 200) {
+      throw Exception('Erro [allArtigos]: ${response.statusCode}');
+    }
+
+    final List<dynamic> dados = jsonDecode(response.body);
+    for (final item in dados) {
+      if (item is! Map) continue;
+      final registro = Map<String, dynamic>.from(item);
+      final artigo = _normalizarChaveArtigo(registro['Artigo']);
+      final gramatura = double.tryParse(
+        (registro['Gramatura'] ?? '').toString().replaceAll(',', '.'),
+      );
+      if (artigo.isNotEmpty && gramatura != null && gramatura > 0) {
+        _mapaGramaturas[artigo] = gramatura;
+      }
+    }
+  }
+
+  String _normalizarChaveArtigo(dynamic valor) {
+    final texto = (valor ?? '').toString().trim().toLowerCase();
+    if (texto.isEmpty) return '';
+
+    final semAcento = texto
+        .replaceAll(RegExp(r'[áàãâä]'), 'a')
+        .replaceAll(RegExp(r'[éèêë]'), 'e')
+        .replaceAll(RegExp(r'[íìîï]'), 'i')
+        .replaceAll(RegExp(r'[óòõôö]'), 'o')
+        .replaceAll(RegExp(r'[úùûü]'), 'u')
+        .replaceAll('ç', 'c');
+
+    return semAcento
+        .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
+  String _descricaoProduto(String artigo, String cor) {
+    final artigoLimpo = artigo.trim();
+    final corLimpa = cor.trim();
+    if (artigoLimpo.isEmpty) return corLimpa;
+    if (corLimpa.isEmpty) return artigoLimpo;
+    return '$artigoLimpo $corLimpa';
+  }
+
+  double _calcularMetrosPorArtigo(String artigoCompleto, double peso) {
+    if (peso <= 0) return 0;
+    final gramatura = _mapaGramaturas[_normalizarChaveArtigo(artigoCompleto)];
+    if (gramatura == null || gramatura <= 0) return 0;
+    return (peso * 1000) / gramatura;
+  }
+
+  double? _obterGramaturaPorArtigo(String artigoCompleto) {
+    final gramatura = _mapaGramaturas[_normalizarChaveArtigo(artigoCompleto)];
+    if (gramatura == null || gramatura <= 0) return null;
+    return gramatura;
+  }
+
   // Manteve a função de busca de dados (fora do escopo de refatoração de UI)
   Future<List<Registro>> _buscarRegistros(String modulo) async {
+    if (modulo == 'embalagem') {
+      await _garantirMapaGramaturas();
+    }
+
     final url = Uri.parse('http://168.190.90.2:5000/consulta/$modulo');
     final response = await http.get(url);
 
@@ -1054,19 +1407,31 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
         double.tryParse(d?.toString().replaceAll(',', '.') ?? '') ?? 0;
 
     return dados.map((item) {
+      final artigo = item['Artigo'] ?? '';
+      final cor = item['Cor'] ?? '';
+      final artigoCompleto = _descricaoProduto(artigo, cor);
+      final peso = pDouble(item['Peso']);
+      final metrosApi = pDouble(item['Metros']);
+      final gramatura = _obterGramaturaPorArtigo(artigoCompleto);
+      final metrosCalculados = _calcularMetrosPorArtigo(artigoCompleto, peso);
+
       return Registro(
+        id: item['ID'] is int
+            ? item['ID']
+            : int.tryParse(item['ID']?.toString() ?? ''),
         data: DateTime.parse(item['Data']),
         ordemProducao: item['NrOrdem'] ?? 0,
         quantidade: pDouble(item['Quantidade']).toInt(),
-        artigo: item['Artigo'] ?? '',
-        cor: item['Cor'] ?? '',
-        peso: pDouble(item['Peso']),
+        artigo: artigo,
+        cor: cor,
+        peso: peso,
         conferente: item['Conferente'] ?? '',
         turno: item['Turno'] ?? '',
-        metros: pDouble(item['Metros']),
+        metros: gramatura != null ? metrosCalculados : metrosApi,
         dataTingimento: item['DataTingimento'] ?? '',
         numCorte: item['NumCorte'] ?? '',
         volumeProg: pDouble(item['VolumeProg']),
+        caixa: item['Caixa']?.toString(),
       );
     }).toList();
   }
@@ -1569,8 +1934,9 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
           return const Center(child: Text('Nenhum registro encontrado.'));
         }
 
-        // Estrutura: Map<Data, Map<Categoria, Map<Artigo, Peso>>>
-        final Map<String, Map<String, Map<String, double>>> groupedData = {};
+        // Estrutura: Map<Data, Map<Categoria, Map<Artigo, {kg, metros}>>>
+        final Map<String, Map<String, Map<String, _ResumoRelatorioValor>>>
+        groupedData = {};
 
         for (var r in registrosFiltrados) {
           final dateKey = DateTime(
@@ -1589,11 +1955,19 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
           groupedData[dateKey]!.putIfAbsent(categoria, () => {});
 
           final double pesoCalculado = r.peso * r.quantidade;
+          final double metrosCalculados =
+              (r.metros ?? 0) * r.quantidade;
 
           groupedData[dateKey]![categoria]!.update(
             r.artigo,
-            (currentWeight) => currentWeight + pesoCalculado,
-            ifAbsent: () => pesoCalculado,
+            (current) => _ResumoRelatorioValor(
+              kg: current.kg + pesoCalculado,
+              metros: current.metros + metrosCalculados,
+            ),
+            ifAbsent: () => _ResumoRelatorioValor(
+              kg: pesoCalculado,
+              metros: metrosCalculados,
+            ),
           );
         }
 
@@ -1608,14 +1982,21 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
             final categoriasMap = groupedData[dateKeyStr]!;
 
             double totalPreto = 0;
-            categoriasMap['PRETO 2']?.forEach((_, peso) => totalPreto += peso);
+            double totalPretoMetros = 0;
+            categoriasMap['PRETO 2']?.forEach((_, valor) {
+              totalPreto += valor.kg;
+              totalPretoMetros += valor.metros;
+            });
 
             double totalCores = 0;
-            categoriasMap['ARTIGOS DE CORES']?.forEach((_, peso) {
-              totalCores += peso;
+            double totalCoresMetros = 0;
+            categoriasMap['ARTIGOS DE CORES']?.forEach((_, valor) {
+              totalCores += valor.kg;
+              totalCoresMetros += valor.metros;
             });
 
             final totalGeral = totalPreto + totalCores;
+            final totalGeralMetros = totalPretoMetros + totalCoresMetros;
 
             return Container(
               margin: const EdgeInsets.only(bottom: 18),
@@ -1717,7 +2098,8 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
                               Expanded(
                                 child: _buildTotalCard(
                                   title: "TOTAL CORES",
-                                  value: totalCores,
+                                  kg: totalCores,
+                                  metros: totalCoresMetros,
                                   icon: Icons.palette,
                                   color: Colors.orangeAccent,
                                 ),
@@ -1726,7 +2108,8 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
                               Expanded(
                                 child: _buildTotalCard(
                                   title: "TOTAL PRETO 2",
-                                  value: totalPreto,
+                                  kg: totalPreto,
+                                  metros: totalPretoMetros,
                                   icon: Icons.dark_mode,
                                   color: Colors.white,
                                   textColor: Colors.black,
@@ -1759,7 +2142,7 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
                                   ),
                                 ),
                                 Text(
-                                  "${_kBrThreeDecimalFormatter.format(totalGeral)} Kg",
+                                  "${_kBrThreeDecimalFormatter.format(totalGeral)} Kg  |  ${_kBrThreeDecimalFormatter.format(totalGeralMetros)} m",
                                   style: const TextStyle(
                                     color: Colors.white,
                                     fontWeight: FontWeight.w900,
@@ -1787,7 +2170,11 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
                           final isPreto2 = categoria == 'PRETO 2';
 
                           final sortedArtigos = artigosMap.entries.toList()
-                            ..sort((a, b) => b.value.compareTo(a.value));
+                            ..sort((a, b) {
+                              final byKg = b.value.kg.compareTo(a.value.kg);
+                              if (byKg != 0) return byKg;
+                              return b.value.metros.compareTo(a.value.metros);
+                            });
 
                           return Container(
                             margin: const EdgeInsets.only(bottom: 16),
@@ -1845,6 +2232,51 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
 
                                 const SizedBox(height: 10),
                                 const Divider(height: 12),
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 4),
+                                  child: Row(
+                                    children: const [
+                                      Expanded(
+                                        child: Text(
+                                          'ARTIGO',
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w800,
+                                            color: Colors.black45,
+                                            letterSpacing: 0.5,
+                                          ),
+                                        ),
+                                      ),
+                                      SizedBox(
+                                        width: 108,
+                                        child: Text(
+                                          'KG',
+                                          textAlign: TextAlign.center,
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w800,
+                                            color: Colors.black45,
+                                            letterSpacing: 0.5,
+                                          ),
+                                        ),
+                                      ),
+                                      SizedBox(width: 8),
+                                      SizedBox(
+                                        width: 108,
+                                        child: Text(
+                                          'METROS',
+                                          textAlign: TextAlign.center,
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w800,
+                                            color: Colors.black45,
+                                            letterSpacing: 0.5,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
 
                                 // Artigos listados
                                 ...sortedArtigos.map((artigoEntry) {
@@ -1866,28 +2298,60 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
                                           ),
                                         ),
                                         const SizedBox(width: 10),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 10,
-                                            vertical: 6,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: Colors.white,
-                                            borderRadius: BorderRadius.circular(
-                                              12,
+                                        SizedBox(
+                                          width: 108,
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 10,
+                                              vertical: 6,
                                             ),
-                                            border: Border.all(
-                                              color: Colors.black.withOpacity(
-                                                0.08,
+                                            decoration: BoxDecoration(
+                                              color: Colors.white,
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                              border: Border.all(
+                                                color: Colors.black.withOpacity(
+                                                  0.08,
+                                                ),
+                                              ),
+                                            ),
+                                            child: Text(
+                                              "${_kBrThreeDecimalFormatter.format(artigoEntry.value.kg)} Kg",
+                                              textAlign: TextAlign.center,
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w900,
+                                                color: _kPrimaryColorEmbalagem,
                                               ),
                                             ),
                                           ),
-                                          child: Text(
-                                            "${_kBrThreeDecimalFormatter.format(artigoEntry.value)} Kg",
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.w900,
-                                              color: _kPrimaryColorEmbalagem,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        SizedBox(
+                                          width: 108,
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 10,
+                                              vertical: 6,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: Colors.white,
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                              border: Border.all(
+                                                color: Colors.black.withOpacity(
+                                                  0.08,
+                                                ),
+                                              ),
+                                            ),
+                                            child: Text(
+                                              "${_kBrThreeDecimalFormatter.format(artigoEntry.value.metros)} m",
+                                              textAlign: TextAlign.center,
+                                              style: const TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w900,
+                                                color: Color(0xFF7C3AED),
+                                              ),
                                             ),
                                           ),
                                         ),
@@ -1916,7 +2380,8 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
   // =======================================================
   Widget _buildTotalCard({
     required String title,
-    required double value,
+    required double kg,
+    required double metros,
     required IconData icon,
     required Color color,
     Color textColor = Colors.white,
@@ -1951,11 +2416,20 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
           ),
           const SizedBox(height: 6),
           Text(
-            "${_kBrThreeDecimalFormatter.format(value)} Kg",
+            "${_kBrThreeDecimalFormatter.format(kg)} Kg",
             style: TextStyle(
               color: textColor,
               fontSize: 14,
               fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            "Metros: ${_kBrThreeDecimalFormatter.format(metros)} m",
+            style: TextStyle(
+              color: textColor,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
             ),
           ),
         ],
@@ -2142,6 +2616,10 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
             final grupo = sortedGrupos[index];
 
             final totalPeso = grupo.value.fold<double>(0, (s, r) => s + r.peso);
+            final totalMetros = grupo.value.fold<double>(
+              0,
+              (s, r) => s + (r.metros ?? 0),
+            );
             final totalQuantidade = grupo.value.fold<int>(
               0,
               (s, r) => s + r.quantidade,
@@ -2226,6 +2704,11 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
                             icon: Icons.scale_outlined,
                             label:
                                 "${_kBrThreeDecimalFormatter.format(totalPeso)} Kg",
+                          ),
+                          _buildInfoChip(
+                            icon: Icons.straighten_outlined,
+                            label:
+                                "${_kBrThreeDecimalFormatter.format(totalMetros)} m",
                           ),
                           _buildInfoChip(
                             icon: Icons.inventory_2_outlined,
@@ -2343,6 +2826,9 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
   Widget _buildRegistroEmbalagemCard(Registro r) {
     final key = _getRegistroKey(r);
     final isSelected = _selectedEmbalagemKeys.contains(key);
+    final gramatura = _obterGramaturaPorArtigo(
+      _descricaoProduto(r.artigo, r.cor),
+    );
 
     final dataTingimentoStr =
         (r.dataTingimento != null && r.dataTingimento!.isNotEmpty)
@@ -2366,7 +2852,7 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        onTap: () => _toggleEmbalagemSelection(r),
+        onTap: () => _editarRegistroApi(r),
         onLongPress: () {
           showModalBottomSheet(
             context: context,
@@ -2387,7 +2873,7 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
                     ),
                     onTap: () {
                       Navigator.pop(context);
-                      _editarRegistro(r, 0);
+                      _editarRegistroApi(r);
                     },
                   ),
                   ListTile(
@@ -2475,6 +2961,16 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
                     icon: Icons.scale_outlined,
                     label:
                         "Peso: ${_kBrThreeDecimalFormatter.format(r.peso)} Kg",
+                  ),
+                  _buildMiniChip(
+                    icon: Icons.straighten_outlined,
+                    label:
+                        "Metros: ${_kBrThreeDecimalFormatter.format(r.metros ?? 0)} m",
+                  ),
+                  _buildMiniChip(
+                    icon: Icons.science_outlined,
+                    label:
+                        "Gram.: ${gramatura != null ? _kBrThreeDecimalFormatter.format(gramatura) : '-'}",
                   ),
                   _buildMiniChip(
                     icon: Icons.person_outline,
