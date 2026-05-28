@@ -2,7 +2,7 @@ name: tracx
 description: "A new Flutter project."
 publish_to: "none"
 
-version: 2.0.20+20
+version: 2.0.22+22
 
 environment:
   sdk: ^3.8.1
@@ -23,6 +23,7 @@ dependencies:
   share_plus: ^11.0.0
   path_provider: ^2.1.2
   http: ^1.4.0
+  barcode: ^2.2.9
   shared_preferences: ^2.0.15
   webdav_client: ^1.0.0
   printing: ^5.14.2

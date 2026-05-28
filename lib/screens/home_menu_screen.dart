@@ -1,3 +1,5 @@
+// ignore_for_file: avoid_print, deprecated_member_use
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:tracx/screens/login_screen.dart';
@@ -8,11 +10,10 @@ import 'package:tracx/screens/AlterarSenhaScreen.dart';
 import 'package:tracx/screens/LocalizacaoScreen.dart';
 import 'package:tracx/screens/HistoricoMovimentacaoScreen.dart';
 import 'package:tracx/screens/RegistroPrincipalScreen.dart';
-import 'package:tracx/screens/MapaProducaoScreen.dart';
 import 'package:tracx/screens/ConsultaMapaProducaoScreen.dart';
 import 'package:tracx/screens/ApontamentoProdutividadeScreen.dart';
 import 'package:tracx/screens/RegistrosApontamento.dart';
-import 'package:tracx/screens/ImpressaoQrScreen.dart';
+import 'package:tracx/screens/ImprimirEtiquetaScreen.dart';
 import 'package:tracx/services/estoque_db_helper.dart';
 //import 'package:tracx/widgets/widgets_dados_integrados.dart';
 import 'package:tracx/services/update_service.dart';
@@ -67,7 +68,6 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
 
     _controller.forward();
     _gerenciarDadosProducao();
-    
   }
 
   // void _carregarDadosProducao() {
@@ -79,27 +79,6 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
   //     _carregarDadosProducao();
   //   });
   // }
-
-  Widget _buildLoadingCard() {
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(14),
-        color: const Color(0xFF101B34),
-        border: Border.all(color: const Color(0x33FFFFFF)),
-      ),
-      child: const Center(
-        child: SizedBox(
-          height: 40,
-          width: 40,
-          child: CircularProgressIndicator(
-            valueColor: AlwaysStoppedAnimation(Color(0xFF60A5FA)),
-            strokeWidth: 2,
-          ),
-        ),
-      ),
-    );
-  }
 
   @override
   void dispose() {
@@ -731,8 +710,6 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
   // ---------------- AÇÕES ----------------
 
   Widget _buildCadastros() {
-    final nome = widget.conferente.trim().toLowerCase();
-    final podeImprimirQr = nome == 'joao' || nome == 'admin';
     final List<_ActionItem> actions = [
       _ActionItem(
         title: "Registrar",
@@ -803,6 +780,26 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
       //       );
       //     },
       //   ),
+      // _ActionItem(
+      //   title: "Gestao de Amostras",
+      //   subtitle: "Fluxo comercial, PCP e engenharia",
+      //   icon: Icons.view_kanban_outlined,
+      //   onTap: () {
+      //     _navigateWithTransition(
+      //       context,
+      //       GestaoAmostrasScreen(usuario: widget.conferente),
+      //     );
+      //   },
+      // ),
+      _ActionItem(
+        title: "Etiquetas",
+        subtitle: "Produtividade",
+        icon: Icons.stacked_line_chart_outlined,
+        onTap: () {
+          _navigateWithTransition(context, const EtiquetasPage(grupoId: 0));
+        },
+      ),
+
       _ActionItem(
         title: "Apontamento",
         subtitle: "Produtividade",
@@ -1043,6 +1040,7 @@ class _PremiumHeader extends StatelessWidget {
   }
 }
 
+// ignore: unused_element
 class _QuickCircleAction extends StatelessWidget {
   final IconData icon;
   final String title;
@@ -1183,6 +1181,7 @@ class _BigModuleCard extends StatelessWidget {
   }
 }
 
+// ignore: unused_element
 class _MiniModuleCard extends StatelessWidget {
   final String title;
   final String subtitle;
@@ -1458,6 +1457,7 @@ class _ConfigTile extends StatelessWidget {
   }
 }
 
+// ignore: unused_element
 class _InfoCard extends StatelessWidget {
   final IconData icon;
   final String title;

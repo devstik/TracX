@@ -15,11 +15,9 @@ import '../services/auth_service.dart' as top_auth;
 // CONFIGURAÇÃO DE REDE
 // =========================================================================
 const String _kBaseUrlFlask = "http://168.190.90.2:5000";
-const String _kMapaEficienciaEmbEndpoint =
-    "/apontamento/mapa-eficiencia-emb";
+const String _kMapaEficienciaEmbEndpoint = "/apontamento/mapa-eficiencia-emb";
 const String _kFalhaTipoBEndpoint = "/consultar/falha-tipo-b";
-const String _kConsultaApiBase =
-    "https://mediumpurple-loris-159660.hostingersite.com";
+const String _kConsultaApiBase = "https://api.stiktech.com.br";
 
 // =========================================================================
 // 🎨 PALETA OFICIAL (PADRÃO HOME + SPLASH)
@@ -452,49 +450,86 @@ class DatabaseService {
 class AuthService {
   static const String _tokenKey = 'jwt_token';
   static const String _expiryKey = 'jwt_expiry';
-  static const String _loginUrl =
-      "https://mediumpurple-loris-159660.hostingersite.com/auth/login";
+  static const String _loginUrl = "$_kConsultaApiBase/auth/login";
+
+  static String _resumirCorpo(String body) {
+    final normalizado = body.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (normalizado.length <= 500) return normalizado;
+    return '${normalizado.substring(0, 500)}...';
+  }
 
   static Future<void> limparToken() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_tokenKey);
     await prefs.remove(_expiryKey);
+    debugPrint('[AUTH_ARTIGOS] Token local removido.');
   }
 
   static Future<String?> obterToken() async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString(_tokenKey);
     final expiry = prefs.getString(_expiryKey);
-    if (token != null &&
-        expiry != null &&
-        DateTime.now().isBefore(DateTime.parse(expiry))) {
-      return token;
+    debugPrint(
+      '[AUTH_ARTIGOS] Verificando token salvo. '
+      'temToken=${token != null && token.isNotEmpty}, expiry=$expiry',
+    );
+
+    if (token != null && token.isNotEmpty && expiry != null) {
+      try {
+        final expiryDate = DateTime.parse(expiry);
+        if (DateTime.now().isBefore(expiryDate)) {
+          debugPrint('[AUTH_ARTIGOS] Token salvo valido, reutilizando.');
+          return token;
+        }
+        debugPrint('[AUTH_ARTIGOS] Token salvo expirado em $expiry.');
+      } catch (e) {
+        debugPrint('[AUTH_ARTIGOS] Expiracao do token invalida: $expiry. $e');
+      }
     }
+
+    debugPrint('[AUTH_ARTIGOS] Token ausente/expirado. Iniciando login.');
     return await _login();
   }
 
   static Future<String?> _login() async {
     try {
+      final loginUri = Uri.parse(_loginUrl);
+      debugPrint('[AUTH_ARTIGOS] POST login em $loginUri');
       final response = await http.post(
-        Uri.parse(_loginUrl),
+        loginUri,
         headers: {"Content-Type": "application/json"},
         body: jsonEncode({"username": "anderson", "password": "142046"}),
+      );
+      debugPrint(
+        '[AUTH_ARTIGOS] Resposta login: HTTP ${response.statusCode}. '
+        'Body=${_resumirCorpo(response.body)}',
       );
       if (response.statusCode == 200) {
         final json = jsonDecode(response.body);
         final token = json["accessToken"];
+        if (token == null || token.toString().isEmpty) {
+          debugPrint(
+            '[AUTH_ARTIGOS] Login HTTP 200, mas accessToken nao veio no JSON.',
+          );
+          return null;
+        }
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setString(_tokenKey, token);
+        await prefs.setString(_tokenKey, token.toString());
         await prefs.setString(
           _expiryKey,
           DateTime.now().add(const Duration(hours: 2)).toIso8601String(),
         );
-        return token;
+        debugPrint('[AUTH_ARTIGOS] Login OK. Token salvo por 2 horas.');
+        return token.toString();
       } else {
-        debugPrint("Erro login: ${response.statusCode} - ${response.body}");
+        debugPrint(
+          '[AUTH_ARTIGOS] Falha no login. HTTP ${response.statusCode}. '
+          'Body=${_resumirCorpo(response.body)}',
+        );
       }
-    } catch (e) {
-      debugPrint("Erro login JWT: $e");
+    } catch (e, st) {
+      debugPrint('[AUTH_ARTIGOS] Excecao no login: $e');
+      debugPrint('[AUTH_ARTIGOS] Stack login: $st');
     }
     return null;
   }
@@ -1043,7 +1078,7 @@ class _ProducaoTabsScreenState extends State<ProducaoTabsScreen>
               )
             : FormularioGeral(
                 tipo: 'A',
-                
+
                 turno: turnoNum,
                 turnoLetra: turnoLetra,
                 artigoEsperadoId: widget.artigoEsperadoId,
@@ -1922,12 +1957,18 @@ class _FormularioGeralState extends State<FormularioGeral> {
 
       final decoded = jsonDecode(response.body);
       final data = decoded is List ? decoded : <dynamic>[];
-      final defeitos = data
-          .whereType<Map<String, dynamic>>()
-          .map(_DefeitoTipoB.fromJson)
-          .where((item) => item.codigo.isNotEmpty && item.nome.isNotEmpty)
-          .toList()
-        ..sort((a, b) => _compareAlpha(a.codigo.padLeft(4, '0'), b.codigo.padLeft(4, '0')));
+      final defeitos =
+          data
+              .whereType<Map<String, dynamic>>()
+              .map(_DefeitoTipoB.fromJson)
+              .where((item) => item.codigo.isNotEmpty && item.nome.isNotEmpty)
+              .toList()
+            ..sort(
+              (a, b) => _compareAlpha(
+                a.codigo.padLeft(4, '0'),
+                b.codigo.padLeft(4, '0'),
+              ),
+            );
 
       if (!mounted) return;
       setState(() {
@@ -1936,10 +1977,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
     } catch (e) {
       debugPrint('[ERRO_DEFEITO_TIPOB] $e');
       if (mostrarErro && mounted) {
-        _showSnack(
-          "Erro ao carregar defeitos do Tipo B",
-          Colors.red,
-        );
+        _showSnack("Erro ao carregar defeitos do Tipo B", Colors.red);
       }
     } finally {
       if (mounted) {
@@ -2073,14 +2111,12 @@ class _FormularioGeralState extends State<FormularioGeral> {
                           : ListView.separated(
                               shrinkWrap: true,
                               itemCount: itens.length,
-                              separatorBuilder: (_, __) => const SizedBox(
-                                height: 10,
-                              ),
+                              separatorBuilder: (_, __) =>
+                                  const SizedBox(height: 10),
                               itemBuilder: (_, index) {
                                 final defeito = itens[index];
                                 final ativo =
-                                    _defeitoSelecionadoCodigo ==
-                                    defeito.codigo;
+                                    _defeitoSelecionadoCodigo == defeito.codigo;
                                 return Material(
                                   color: Colors.transparent,
                                   child: InkWell(
@@ -2109,9 +2145,8 @@ class _FormularioGeralState extends State<FormularioGeral> {
                                               width: 38,
                                               height: 38,
                                               decoration: BoxDecoration(
-                                                color: _kAccentColor.withOpacity(
-                                                  0.15,
-                                                ),
+                                                color: _kAccentColor
+                                                    .withOpacity(0.15),
                                                 borderRadius:
                                                     BorderRadius.circular(12),
                                               ),
@@ -2316,10 +2351,12 @@ class _FormularioGeralState extends State<FormularioGeral> {
                                   const Divider(color: _kBorderSoft, height: 1),
                               itemBuilder: (_, index) {
                                 final item = resultados[index];
-                                final codigo =
-                                    (item['objetoID'] ?? '').toString().trim();
-                                final nome =
-                                    (item['objeto'] ?? '').toString().trim();
+                                final codigo = (item['objetoID'] ?? '')
+                                    .toString()
+                                    .trim();
+                                final nome = (item['objeto'] ?? '')
+                                    .toString()
+                                    .trim();
                                 return ListTile(
                                   title: Text(
                                     nome,
@@ -2471,10 +2508,12 @@ class _FormularioGeralState extends State<FormularioGeral> {
                                   const Divider(color: _kBorderSoft, height: 1),
                               itemBuilder: (_, index) {
                                 final item = resultados[index];
-                                final codigo =
-                                    (item['detalheID'] ?? '').toString().trim();
-                                final nome =
-                                    (item['detalhe'] ?? '').toString().trim();
+                                final codigo = (item['detalheID'] ?? '')
+                                    .toString()
+                                    .trim();
+                                final nome = (item['detalhe'] ?? '')
+                                    .toString()
+                                    .trim();
                                 return ListTile(
                                   title: Text(
                                     nome,
@@ -2610,10 +2649,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
                 ),
                 if (widget.tipo == 'B')
                   ListTile(
-                    leading: const Icon(
-                      Icons.edit_note,
-                      color: _kAccentColor,
-                    ),
+                    leading: const Icon(Icons.edit_note, color: _kAccentColor),
                     title: const Text(
                       'Manual',
                       style: TextStyle(color: _kTextPrimary),
@@ -2710,18 +2746,26 @@ class _FormularioGeralState extends State<FormularioGeral> {
   Future<void> _processarBuscaProduto(String code) async {
     setState(() => _isLoading = true);
     try {
+      debugPrint('[APONTAMENTO_QR] Leitura recebida: "$code"');
       String buscadoObjID = "";
       String buscadoDetID = "";
 
       if (code.startsWith('{')) {
         final decoded = jsonDecode(code);
+        debugPrint('[APONTAMENTO_QR] QR JSON decodificado: $decoded');
         buscadoObjID = decoded['CdObj']?.toString() ?? "";
         buscadoDetID = decoded['Detalhe']?.toString() ?? "";
       } else {
         buscadoObjID = code;
       }
 
+      debugPrint(
+        '[APONTAMENTO_QR] Campos extraidos: '
+        'CdObj="$buscadoObjID", Detalhe="$buscadoDetID"',
+      );
+
       if (buscadoObjID.isEmpty) {
+        debugPrint('[APONTAMENTO_QR] Codigo invalido: CdObj vazio.');
         _showSnack("Código inválido", Colors.orange);
         return;
       }
@@ -2729,17 +2773,26 @@ class _FormularioGeralState extends State<FormularioGeral> {
       final esperado = _normalizarCodigo(_artigoEsperadoId);
       final recebido = _normalizarCodigo(buscadoObjID);
       if (esperado.isNotEmpty && recebido != esperado) {
+        debugPrint(
+          '[APONTAMENTO_QR] Artigo diferente do esperado. '
+          'esperado="$esperado", recebido="$recebido"',
+        );
         setState(() => _coletorArtigoAtivo = false);
         _showSnack("Artigo diferente do selecionado", Colors.red);
         return;
       }
 
+      debugPrint(
+        '[APONTAMENTO_QR] Consultando SQLite: '
+        'objetoID="$buscadoObjID", detalheID="$buscadoDetID"',
+      );
       final produto = await DatabaseService.buscarProduto(
         buscadoObjID,
         buscadoDetID,
       );
 
       if (produto != null) {
+        debugPrint('[APONTAMENTO_QR] Produto encontrado no SQLite: $produto');
         final artigoCodigo = (produto['objetoID'] ?? '').toString();
         final artigoNome = (produto['objeto'] ?? '').toString();
         final loteCodigo = (produto['detalheID'] ?? '').toString();
@@ -2758,10 +2811,15 @@ class _FormularioGeralState extends State<FormularioGeral> {
         await _buscarOrdemProducaoParaObjeto(artigoCodigo);
         _showSnack("Produto encontrado!", Colors.green);
       } else {
+        debugPrint(
+          '[APONTAMENTO_QR] Produto nao encontrado no SQLite. '
+          'Consultando API de artigos.',
+        );
         await _buscarNaAPI(buscadoObjID, buscadoDetID);
       }
-    } catch (e) {
-      debugPrint('[ERRO] $e');
+    } catch (e, st) {
+      debugPrint('[APONTAMENTO_QR] Erro ao processar leitura: $e');
+      debugPrint('[APONTAMENTO_QR] Stack processamento: $st');
       _showSnack("Erro ao buscar produto", Colors.red);
     } finally {
       setState(() => _isLoading = false);
@@ -2770,26 +2828,42 @@ class _FormularioGeralState extends State<FormularioGeral> {
 
   Future<void> _buscarNaAPI(String objetoID, String detalheID) async {
     try {
+      debugPrint(
+        '[APONTAMENTO_QR] Iniciando consulta API. '
+        'objetoID="$objetoID", detalheID="$detalheID"',
+      );
       String? token = await AuthService.obterToken();
       if (token == null) {
+        debugPrint(
+          '[APONTAMENTO_QR] AuthService.obterToken retornou null. '
+          'A consulta de artigos nao sera feita.',
+        );
         _showSnack("Erro: não foi possível autenticar", Colors.red);
         return;
       }
+      debugPrint('[APONTAMENTO_QR] Token obtido. Consultando artigos.');
 
       final uri = Uri.parse(
-        "https://mediumpurple-loris-159660.hostingersite.com/api/artigos?CdObj=$objetoID",
-      );
+        "$_kConsultaApiBase/api/artigos",
+      ).replace(queryParameters: {'CdObj': objetoID});
+      debugPrint('[APONTAMENTO_QR] GET artigos: $uri');
 
       final response = await http.get(
         uri,
         headers: {'Authorization': 'Bearer $token'},
       );
+      debugPrint(
+        '[APONTAMENTO_QR] Resposta artigos: HTTP ${response.statusCode}. '
+        'Body=${AuthService._resumirCorpo(response.body)}',
+      );
 
       if (response.statusCode == 200) {
         final json = jsonDecode(response.body);
         final List<dynamic> data = json["data"] ?? [];
+        debugPrint('[APONTAMENTO_QR] Itens retornados pela API: ${data.length}');
 
         if (data.isEmpty) {
+          debugPrint('[APONTAMENTO_QR] API retornou lista vazia para o artigo.');
           _showSnack("Produto não encontrado", Colors.orange);
           return;
         }
@@ -2797,13 +2871,25 @@ class _FormularioGeralState extends State<FormularioGeral> {
         Map<String, dynamic>? loteEncontrado;
         for (var item in data) {
           final List<dynamic> cdLotList = item["CdLot"] ?? [];
-          if (cdLotList.contains(int.parse(detalheID))) {
+          final detalheInt = int.tryParse(detalheID);
+          if (detalheInt == null) {
+            debugPrint(
+              '[APONTAMENTO_QR] Detalhe nao numerico, nao da para comparar '
+              'com CdLot. detalheID="$detalheID"',
+            );
+            break;
+          }
+          if (cdLotList.contains(detalheInt)) {
             loteEncontrado = item;
             break;
           }
         }
 
         if (loteEncontrado == null) {
+          debugPrint(
+            '[APONTAMENTO_QR] Lote nao encontrado na API para '
+            'detalheID="$detalheID".',
+          );
           _showSnack(
             "Lote correspondente ao detalhe não encontrado",
             Colors.orange,
@@ -2828,13 +2914,19 @@ class _FormularioGeralState extends State<FormularioGeral> {
         await _buscarOrdemProducaoParaObjeto(objetoID);
         _showSnack("✅ Produto e lote encontrados", Colors.green);
       } else if (response.statusCode == 401) {
+        debugPrint('[APONTAMENTO_QR] API artigos retornou 401. Limpando token.');
         await AuthService.limparToken();
         _showSnack("Token expirado, tente novamente", Colors.orange);
       } else {
+        debugPrint(
+          '[APONTAMENTO_QR] Erro HTTP ao consultar artigo: '
+          '${response.statusCode}.',
+        );
         _showSnack("Erro ao consultar artigo", Colors.red);
       }
-    } catch (e) {
-      debugPrint("[ERRO API] $e");
+    } catch (e, st) {
+      debugPrint("[APONTAMENTO_QR] Excecao ao consultar API: $e");
+      debugPrint("[APONTAMENTO_QR] Stack API: $st");
       _showSnack("Erro ao consultar artigo", Colors.red);
     }
   }
@@ -3003,7 +3095,11 @@ class _FormularioGeralState extends State<FormularioGeral> {
     }
 
     try {
-      final uri = Uri.https(_kTopmanagerBaseUrl, _kOrdensFabricacaoPath, queryParams);
+      final uri = Uri.https(
+        _kTopmanagerBaseUrl,
+        _kOrdensFabricacaoPath,
+        queryParams,
+      );
       final response = await http
           .get(
             uri,
@@ -3024,7 +3120,9 @@ class _FormularioGeralState extends State<FormularioGeral> {
         throw Exception('HTTP ${response.statusCode}: ${response.body}');
       }
 
-      final decoded = response.body.isNotEmpty ? jsonDecode(response.body) : null;
+      final decoded = response.body.isNotEmpty
+          ? jsonDecode(response.body)
+          : null;
       final ordens = _normalizarRespostaOrdens(decoded);
       final ordemSelecionada = ordens
           .map<int?>((o) => _extrairIdOrdem(o))
@@ -3032,16 +3130,12 @@ class _FormularioGeralState extends State<FormularioGeral> {
 
       if (!mounted) return;
       setState(() {
-        _ordemProducaoController.text =
-            ordemSelecionada?.toString() ?? '';
+        _ordemProducaoController.text = ordemSelecionada?.toString() ?? '';
       });
     } catch (e) {
       debugPrint('[ERRO_ORDEM] Falha ao buscar ordens de produção: $e');
       if (mounted) {
-        _showSnack(
-          "Erro ao consultar Ordens de Produção.",
-          Colors.orange,
-        );
+        _showSnack("Erro ao consultar Ordens de Produção.", Colors.orange);
       }
     } finally {
       if (mounted) {
@@ -3179,7 +3273,8 @@ class _FormularioGeralState extends State<FormularioGeral> {
     if (_cdObjReal.isEmpty) return _showSnack("Bipe um Artigo", Colors.orange);
 
     final codigoDefeito =
-        (_defeitoSelecionadoCodigo ?? _normalizarCodigo(_defeitoController.text))
+        (_defeitoSelecionadoCodigo ??
+                _normalizarCodigo(_defeitoController.text))
             .trim();
 
     if (widget.tipo == 'B') {
@@ -3481,10 +3576,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 gradient: RadialGradient(
-                  colors: [
-                    _kAccentColor.withOpacity(0.14),
-                    Colors.transparent,
-                  ],
+                  colors: [_kAccentColor.withOpacity(0.14), Colors.transparent],
                 ),
               ),
             ),
@@ -4292,7 +4384,8 @@ class _FormularioGeralState extends State<FormularioGeral> {
 
   Widget _buildDetalheDropdownTipoB() {
     final possuiOpcoes = _lotesDisponiveis.isNotEmpty;
-    final valorAtual = possuiOpcoes &&
+    final valorAtual =
+        possuiOpcoes &&
             _lotesDisponiveis.any(
               (item) => (item['detalheID'] ?? '').toString() == _detalheReal,
             )
@@ -4355,8 +4448,8 @@ class _FormularioGeralState extends State<FormularioGeral> {
                     );
                     setState(() {
                       _detalheReal = value;
-                      _detalheController.text =
-                          (selecionado['detalhe'] ?? '').toString();
+                      _detalheController.text = (selecionado['detalhe'] ?? '')
+                          .toString();
                     });
                   },
           ),

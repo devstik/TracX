@@ -227,8 +227,14 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
           .toStringAsFixed(3)
           .replaceAll('.', ','),
     );
+    const localizacoesDisponiveis = ['Mesas', 'Imatecs'];
     final caixaController = TextEditingController(text: registro.caixa ?? '0');
-    String? localizacaoSelecionada = registro.localizacao;
+    final String? localizacaoInicial = registro.localizacao?.trim();
+    String? localizacaoSelecionada =
+        localizacaoInicial != null &&
+            localizacoesDisponiveis.contains(localizacaoInicial)
+        ? localizacaoInicial
+        : null;
 
     showDialog(
       context: context,
@@ -294,7 +300,8 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
               DropdownButtonFormField<String>(
                 value: localizacaoSelecionada,
                 decoration: const InputDecoration(labelText: 'Localização'),
-                items: const ['Mesas', 'Imatecs']
+                hint: const Text('Selecione a localizacao'),
+                items: localizacoesDisponiveis
                     .map(
                       (loc) => DropdownMenuItem(value: loc, child: Text(loc)),
                     )

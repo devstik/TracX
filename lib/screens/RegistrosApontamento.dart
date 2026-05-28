@@ -293,6 +293,12 @@ class _EditorRegistroApontamentoSheet extends StatefulWidget {
 
 class _EditorRegistroApontamentoSheetState
     extends State<_EditorRegistroApontamentoSheet> {
+  static const List<DropdownMenuItem<int>> _turnoItens = [
+    DropdownMenuItem(value: 3, child: Text('Manhã')),
+    DropdownMenuItem(value: 4, child: Text('Tarde')),
+    DropdownMenuItem(value: 6, child: Text('Noite')),
+  ];
+
   final _formKey = GlobalKey<FormState>();
   final _artigoController = TextEditingController();
   final _artigoCodigoController = TextEditingController();
@@ -308,7 +314,7 @@ class _EditorRegistroApontamentoSheetState
   String? _operadorSelecionado;
   apontamento.Setor? _setorSelecionado;
   apontamento.Maquina? _maquinaSelecionada;
-  int _turnoSelecionado = 8;
+  int _turnoSelecionado = 3;
 
   bool _carregando = true;
   bool _salvando = false;
@@ -383,8 +389,10 @@ class _EditorRegistroApontamentoSheetState
         apontamento.SetorMaquinaService.buscarSetores(),
       ]);
 
-      final operadores = results[0] as List<apontamento.UsuarioOperador>;
-      final setores = results[1] as List<apontamento.Setor>;
+      final operadores = _operadoresUnicos(
+        results[0] as List<apontamento.UsuarioOperador>,
+      );
+      final setores = _setoresUnicos(results[1] as List<apontamento.Setor>);
       final setorCodigo = _toInt(widget.item['Setor'] ?? widget.item['setor']);
 
       apontamento.Setor? setorSelecionado;
@@ -399,8 +407,10 @@ class _EditorRegistroApontamentoSheetState
       apontamento.Maquina? maquinaSelecionada;
 
       if (_isTipoA && setorSelecionado != null && !_nomeSetorRevisao(setorSelecionado)) {
-        maquinas = await apontamento.SetorMaquinaService.buscarMaquinas(
-          setorSelecionado.codigo,
+        maquinas = _maquinasUnicas(
+          await apontamento.SetorMaquinaService.buscarMaquinas(
+            setorSelecionado.codigo,
+          ),
         );
         final maquinaCodigo = _toInt(widget.item['Maq']);
         for (final maquina in maquinas) {
@@ -438,10 +448,15 @@ class _EditorRegistroApontamentoSheetState
 
   int _turnoParaValor(dynamic raw) {
     final texto = (raw ?? '').toString().trim().toUpperCase();
-    if (texto == 'A' || texto == '8') return 8;
-    if (texto == 'B' || texto == '9') return 9;
-    if (texto == 'C' || texto == '10') return 10;
-    return int.tryParse(texto) ?? 8;
+    if (texto == 'A' || texto == 'MANHÃ' || texto == 'MANHA' || texto == '3') {
+      return 3;
+    }
+    if (texto == 'B' || texto == 'TARDE' || texto == '4') return 4;
+    if (texto == 'C' || texto == 'NOITE' || texto == '6') return 6;
+    if (texto == '8') return 3;
+    if (texto == '9') return 4;
+    if (texto == '10') return 6;
+    return int.tryParse(texto) ?? 3;
   }
 
   int? _toInt(dynamic value) {
@@ -457,6 +472,36 @@ class _EditorRegistroApontamentoSheetState
     if (n == null) return valor;
     if (n == n.toInt()) return n.toInt().toString();
     return valor;
+  }
+
+  List<apontamento.UsuarioOperador> _operadoresUnicos(
+    List<apontamento.UsuarioOperador> operadores,
+  ) {
+    final unicos = <String, apontamento.UsuarioOperador>{};
+    for (final operador in operadores) {
+      final chave = operador.cdUser.trim();
+      if (chave.isEmpty) continue;
+      unicos.putIfAbsent(chave, () => operador);
+    }
+    return unicos.values.toList();
+  }
+
+  List<apontamento.Setor> _setoresUnicos(List<apontamento.Setor> setores) {
+    final unicos = <int, apontamento.Setor>{};
+    for (final setor in setores) {
+      unicos.putIfAbsent(setor.codigo, () => setor);
+    }
+    return unicos.values.toList();
+  }
+
+  List<apontamento.Maquina> _maquinasUnicas(
+    List<apontamento.Maquina> maquinas,
+  ) {
+    final unicos = <int, apontamento.Maquina>{};
+    for (final maquina in maquinas) {
+      unicos.putIfAbsent(maquina.codigo, () => maquina);
+    }
+    return unicos.values.toList();
   }
 
   InputDecoration _inputDecoration(String label, IconData icon) {
@@ -498,8 +543,8 @@ class _EditorRegistroApontamentoSheetState
 
     if (!_isTipoA || setor == null || _nomeSetorRevisao(setor)) return;
 
-    final maquinas = await apontamento.SetorMaquinaService.buscarMaquinas(
-      setor.codigo,
+    final maquinas = _maquinasUnicas(
+      await apontamento.SetorMaquinaService.buscarMaquinas(setor.codigo),
     );
     if (!mounted) return;
     setState(() {
@@ -681,18 +726,18 @@ class _EditorRegistroApontamentoSheetState
                         ),
                         const SizedBox(height: 20),
                         DropdownButtonFormField<int>(
-                          initialValue: _turnoSelecionado,
+                          initialValue: _turnoItens.any(
+                                (item) => item.value == _turnoSelecionado,
+                              )
+                              ? _turnoSelecionado
+                              : null,
                           dropdownColor: _kSurface,
                           style: const TextStyle(color: _kTextPrimary),
                           decoration: _inputDecoration(
                             'Turno',
                             Icons.schedule_outlined,
                           ),
-                          items: const [
-                            DropdownMenuItem(value: 8, child: Text('Turno A')),
-                            DropdownMenuItem(value: 9, child: Text('Turno B')),
-                            DropdownMenuItem(value: 10, child: Text('Turno C')),
-                          ],
+                          items: _turnoItens,
                           onChanged: (value) {
                             if (value == null) return;
                             setState(() => _turnoSelecionado = value);
