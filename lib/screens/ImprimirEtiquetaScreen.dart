@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:barcode/barcode.dart';
@@ -100,7 +99,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
   String _printerIp = ZebraPrinterService.defaultIp;
   int _printerPort = ZebraPrinterService.defaultPort;
 
-  _EtiquetaModelo _modelo = _EtiquetaModelo.palete;
+  _EtiquetaModelo _modelo = _EtiquetaModelo.caixa;
   List<PaleteEmbalagemItemEntry> _itens = const [];
   bool _consultando = false;
   bool _consultandoBusca = false;
@@ -440,43 +439,6 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     }).toList();
   }
 
-  Map<String, dynamic> _aplicarOperadorNoQr(
-    Map<String, dynamic> data,
-    int operadorCodigo,
-  ) {
-    if (operadorCodigo <= 0) return data;
-
-    final atualizado = Map<String, dynamic>.from(data);
-    atualizado['Operador'] = operadorCodigo;
-    atualizado['operador'] = operadorCodigo;
-
-    final qrRaw = (atualizado['QrCode'] ?? atualizado['qr_code'] ?? '')
-        .toString()
-        .trim();
-    Map<String, dynamic> qrPayload = {};
-
-    if (qrRaw.isNotEmpty) {
-      try {
-        final decoded = jsonDecode(qrRaw);
-        if (decoded is Map) {
-          qrPayload = Map<String, dynamic>.from(decoded);
-        }
-      } catch (_) {
-        qrPayload = {};
-      }
-    }
-
-    qrPayload['operador'] = operadorCodigo;
-    if (qrPayload.containsKey('o')) {
-      qrPayload['o'] = operadorCodigo;
-    }
-
-    final qrCorrigido = jsonEncode(qrPayload);
-    atualizado['QrCode'] = qrCorrigido;
-    atualizado['qr_code'] = qrCorrigido;
-    return atualizado;
-  }
-
   // ────────────────────────────────────────────────────────────
   // Caixa — Etapa 2: Imprimir (valida + v2 + imprime)
   // ────────────────────────────────────────────────────────────
@@ -542,11 +504,10 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
 
       if (!mounted) return;
 
-      final dataComOperador = _aplicarOperadorNoQr(data, operadorCodigo);
-      final naoImprime = dataComOperador['NaoImprimeLoteLinha'] == true;
+      final naoImprime = data['NaoImprimeLoteLinha'] == true;
 
       if (naoImprime && lote.isNotEmpty && !_loteInline) {
-        final nmObj = (dataComOperador['NmObj'] ?? '').toString();
+        final nmObj = (data['NmObj'] ?? '').toString();
         final querInline = await _perguntarLoteInline(nmObj);
         if (!mounted) return;
         if (querInline) {
@@ -560,12 +521,12 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       }
 
       setState(() {
-        _etiquetaCaixa = dataComOperador;
+        _etiquetaCaixa = data;
         _naoImprimeLoteLinha = naoImprime;
       });
 
       await _zebraPrinterService.imprimirEtiquetaCaixa(
-        dados: dataComOperador,
+        dados: data,
         ip: _printerIp,
         port: _printerPort,
       );
@@ -962,12 +923,6 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       ),
       child: Row(
         children: [
-          _modelOption(
-            modelo: _EtiquetaModelo.palete,
-            icon: Icons.inventory_2_rounded,
-            label: 'Palete',
-            subtitle: '',
-          ),
           _modelOption(
             modelo: _EtiquetaModelo.caixa,
             icon: Icons.qr_code_2_rounded,
