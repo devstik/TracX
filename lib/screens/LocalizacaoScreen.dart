@@ -1011,6 +1011,43 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
     );
   }
 
+  Widget _buildMoveButton({
+    required IconData icon,
+    required String label,
+    required Color backgroundColor,
+    required VoidCallback? onPressed,
+    Color foregroundColor = Colors.white,
+    BorderSide? side,
+  }) {
+    return ElevatedButton(
+      onPressed: onPressed,
+      style: ElevatedButton.styleFrom(
+        backgroundColor: backgroundColor,
+        foregroundColor: foregroundColor,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        minimumSize: const Size.fromHeight(52),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        elevation: 0,
+        side: side,
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              softWrap: true,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showMoveAndDeleteSheet(Registro registro) {
     final currentLoc = registro.localizacao;
     final nextOptions = _getValidNextOptions(currentLoc);
@@ -1020,19 +1057,25 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
     showModalBottomSheet(
       context: context,
       backgroundColor: _kSurface,
+      isScrollControlled: true,
+      useSafeArea: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
       ),
       builder: (context) {
-        return Padding(
-          padding: const EdgeInsets.only(
-            top: 25,
-            left: 20,
-            right: 20,
-            bottom: 30,
-          ),
-          child: SingleChildScrollView(
-            child: Column(
+        return Center(
+          heightFactor: 1,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720),
+            child: Padding(
+              padding: const EdgeInsets.only(
+                top: 25,
+                left: 20,
+                right: 20,
+                bottom: 30,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -1070,28 +1113,14 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
                       ...nextOptions.map(
                         (nextLoc) => Padding(
                           padding: const EdgeInsets.only(bottom: 10),
-                          child: ElevatedButton.icon(
-                            icon: const Icon(
-                              Icons.content_cut_rounded,
-                              size: 20,
-                            ),
-                            label: Text(
-                              'MOVER PARCIAL P/ ${nextLoc.toUpperCase()}',
-                              style: const TextStyle(fontSize: 15),
-                            ),
+                          child: _buildMoveButton(
+                            icon: Icons.content_cut_rounded,
+                            label: 'Parcial para ${nextLoc.toUpperCase()}',
+                            backgroundColor: const Color(0xFF14B8A6),
                             onPressed: () {
                               Navigator.pop(context);
                               _showParcialMoveDialog(registro, nextLoc);
                             },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF14B8A6),
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                              elevation: 0,
-                            ),
                           ),
                         ),
                       ),
@@ -1099,15 +1128,10 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
                       ...nextOptions.map(
                         (nextLoc) => Padding(
                           padding: const EdgeInsets.only(bottom: 10),
-                          child: ElevatedButton.icon(
-                            icon: const Icon(
-                              Icons.arrow_forward_ios_rounded,
-                              size: 20,
-                            ),
-                            label: Text(
-                              'MOVER COMPLETO P/ ${nextLoc.toUpperCase()}',
-                              style: const TextStyle(fontSize: 15),
-                            ),
+                          child: _buildMoveButton(
+                            icon: Icons.arrow_forward_ios_rounded,
+                            label: 'Completo para ${nextLoc.toUpperCase()}',
+                            backgroundColor: _kPrimaryColor,
                             onPressed: () {
                               Navigator.pop(context);
                               _updateRegistroLocationCompleta(
@@ -1115,15 +1139,6 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
                                 nextLoc,
                               );
                             },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: _kPrimaryColor,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                              elevation: 0,
-                            ),
                           ),
                         ),
                       ),
@@ -1132,28 +1147,13 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
                 else if (currentLoc == 'Expedição')
                   Padding(
                     padding: const EdgeInsets.only(bottom: 10),
-                    child: ElevatedButton.icon(
-                      icon: const Icon(Icons.check_circle_outline_rounded),
-                      label: const Text(
-                        'MOVIMENTO FINALIZADO (EXPEDIDO)',
-                        style: TextStyle(fontSize: 15),
-                      ),
+                    child: _buildMoveButton(
+                      icon: Icons.check_circle_outline_rounded,
+                      label: 'Movimento finalizado',
                       onPressed: null,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green.shade900.withOpacity(
-                          0.15,
-                        ),
-                        foregroundColor: Colors.green.shade200,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        elevation: 0,
-                        side: BorderSide(
-                          color: Colors.green.shade700,
-                          width: 1,
-                        ),
-                      ),
+                      backgroundColor: Colors.green.shade900.withOpacity(0.15),
+                      foregroundColor: Colors.green.shade200,
+                      side: BorderSide(color: Colors.green.shade700, width: 1),
                     ),
                   )
                 else
@@ -1232,7 +1232,9 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
                         ),
                     ],
                   ),
-              ],
+                  ],
+                ),
+              ),
             ),
           ),
         );

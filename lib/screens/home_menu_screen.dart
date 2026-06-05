@@ -838,18 +838,34 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
           ),
           const SizedBox(height: 18),
 
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: actions.length,
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: MediaQuery.of(context).size.width < 600 ? 2 : 4,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-              childAspectRatio: 0.95,
-            ),
-            itemBuilder: (context, index) {
-              return _ActionTile(item: actions[index]);
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final width = constraints.maxWidth;
+              final crossAxisCount = width < 520
+                  ? 2
+                  : width < 920
+                  ? 3
+                  : 4;
+              final childAspectRatio = width < 520
+                  ? 0.98
+                  : width < 920
+                  ? 1.18
+                  : 1.08;
+
+              return GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: actions.length,
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: crossAxisCount,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                  childAspectRatio: childAspectRatio,
+                ),
+                itemBuilder: (context, index) {
+                  return _ActionTile(item: actions[index]);
+                },
+              );
             },
           ),
         ],
@@ -1327,64 +1343,71 @@ class _ActionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(26),
-      onTap: item.onTap,
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(26),
-          color: const Color(0xFF0B1220),
-          border: Border.all(color: Colors.white10),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(18),
-                color: Colors.white.withOpacity(0.04),
-              ),
-              child: Icon(item.icon, color: const Color(0xFF4DA3FF)),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 190;
+
+        return InkWell(
+          borderRadius: BorderRadius.circular(22),
+          onTap: item.onTap,
+          child: Container(
+            padding: EdgeInsets.all(compact ? 12 : 14),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(22),
+              color: const Color(0xFF0B1220),
+              border: Border.all(color: Colors.white10),
             ),
-            const SizedBox(height: 12),
-            Text(
-              item.title,
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w900,
-                color: Colors.white,
-              ),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              softWrap: true,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: compact ? 42 : 48,
+                  height: compact ? 42 : 48,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(16),
+                    color: Colors.white.withOpacity(0.04),
+                  ),
+                  child: Icon(item.icon, color: const Color(0xFF4DA3FF)),
+                ),
+                SizedBox(height: compact ? 10 : 12),
+                Text(
+                  item.title,
+                  style: TextStyle(
+                    fontSize: compact ? 13 : 14,
+                    fontWeight: FontWeight.w900,
+                    color: Colors.white,
+                    height: 1.15,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  softWrap: true,
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  item.subtitle,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Colors.white54,
+                    height: 1.25,
+                  ),
+                  maxLines: compact ? 1 : 2,
+                  overflow: TextOverflow.ellipsis,
+                  softWrap: true,
+                ),
+                const Spacer(),
+                const Align(
+                  alignment: Alignment.bottomRight,
+                  child: Icon(
+                    Icons.arrow_forward_ios_rounded,
+                    size: 14,
+                    color: Colors.white38,
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 6),
-            Text(
-              item.subtitle,
-              style: const TextStyle(
-                fontSize: 12,
-                color: Colors.white54,
-                height: 1.3,
-              ),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              softWrap: true,
-            ),
-            const Spacer(),
-            const Align(
-              alignment: Alignment.bottomRight,
-              child: Icon(
-                Icons.arrow_forward_ios_rounded,
-                size: 14,
-                color: Colors.white38,
-              ),
-            ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 }

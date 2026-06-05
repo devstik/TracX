@@ -219,6 +219,45 @@ class EtiquetasService {
     return [];
   }
 
+  static Future<List<Map<String, dynamic>>> listarTodosArtigos() async {
+    final response = await http.get(
+      Uri.parse("$baseUrl/consulta/allArtigos"),
+    );
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      final decoded = jsonDecode(response.body);
+      final data = decoded is Map<String, dynamic> ? decoded["data"] : decoded;
+      if (data is List) {
+        return data.whereType<Map>().map((item) {
+          final registro = Map<String, dynamic>.from(item);
+          final cdObj =
+              registro['CdObj'] ??
+              registro['cdObj'] ??
+              registro['cd_obj'] ??
+              registro['ObjetoID'] ??
+              registro['objetoID'] ??
+              registro['Codigo'] ??
+              registro['codigo'] ??
+              '';
+          final nmObj =
+              registro['NmObj'] ??
+              registro['nmObj'] ??
+              registro['nm_obj'] ??
+              registro['Artigo'] ??
+              registro['artigo'] ??
+              registro['Objeto'] ??
+              registro['objeto'] ??
+              '';
+          return {
+            ...registro,
+            'CdObj': cdObj,
+            'NmObj': nmObj,
+          };
+        }).toList();
+      }
+    }
+    return [];
+  }
+
   static Future<List<Map<String, dynamic>>> buscarArtigoLotes(
       int cdObj) async {
     if (cdObj <= 0) throw "Informe o código do artigo.";

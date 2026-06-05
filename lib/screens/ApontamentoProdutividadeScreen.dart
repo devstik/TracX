@@ -791,6 +791,7 @@ class _ProducaoTabsScreenState extends State<ProducaoTabsScreen>
   late TabController _tabController;
 
   @override
+  
   void initState() {
     super.initState();
     _tabController = TabController(
@@ -1152,6 +1153,10 @@ class _FormularioGeralState extends State<FormularioGeral> {
   // ── Coletor HID – Artigo ──────────────────────────────────────────────
   final _coletorArtigoController = TextEditingController();
   final FocusNode _coletorArtigoFocus = FocusNode();
+  final _coletorOperadorController = TextEditingController();
+  final FocusNode _coletorOperadorFocus = FocusNode();
+  final _coletorOperador2Controller = TextEditingController();
+  final FocusNode _coletorOperador2Focus = FocusNode();
 
   // ── Dropdown ──────────────────────────────────────────────────────────
   List<Setor> _setores = [];
@@ -1173,6 +1178,8 @@ class _FormularioGeralState extends State<FormularioGeral> {
 
   // ── Estado visual do coletor ──────────────────────────────────────────
   bool _coletorArtigoAtivo = false;
+  bool _coletorOperadorAtivo = false;
+  bool _coletorOperadorSegundo = false;
 
   bool get _isRevisao =>
       _setorSelecionado != null &&
@@ -1252,6 +1259,10 @@ class _FormularioGeralState extends State<FormularioGeral> {
     _palletController.dispose();
     _coletorArtigoController.dispose();
     _coletorArtigoFocus.dispose();
+    _coletorOperadorController.dispose();
+    _coletorOperadorFocus.dispose();
+    _coletorOperador2Controller.dispose();
+    _coletorOperador2Focus.dispose();
     super.dispose();
   }
 
@@ -1305,6 +1316,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
     String? helperText,
     bool mostrarLimpar = false,
     VoidCallback? onClear,
+    List<Widget> suffixActions = const [],
   }) {
     return TextFormField(
       controller: controller,
@@ -1326,6 +1338,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
         suffixIcon: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            ...suffixActions,
             Icon(
               selecionado
                   ? Icons.check_circle
@@ -1530,6 +1543,209 @@ class _FormularioGeralState extends State<FormularioGeral> {
         _operadorController.text = nome;
       }
     });
+  }
+
+  String _extrairCodigoOperadorLido(String leitura) {
+    final texto = leitura.trim();
+    if (texto.isEmpty) return '';
+
+    try {
+      final decoded = jsonDecode(texto);
+      if (decoded is Map) {
+        final valor = _valorOperadorNoQr(decoded);
+        final codigo = _normalizarCodigo(valor?.toString() ?? '');
+        if (codigo.isNotEmpty) return codigo;
+      }
+    } catch (_) {
+      // Continua tentando extrair de leituras parciais ou texto puro.
+    }
+
+    final matchJson = RegExp(
+      r'"operador"\s*:\s*"?([^",}\s]+)"?',
+      caseSensitive: false,
+    ).firstMatch(texto);
+    if (matchJson != null) {
+      return _normalizarCodigo(matchJson.group(1) ?? '');
+    }
+
+    return _normalizarCodigo(texto);
+  }
+
+  dynamic _valorOperadorNoQr(Map<dynamic, dynamic> decoded) {
+    const chavesAceitas = {
+      'operador',
+      'cduser',
+      'codigo',
+      'id',
+    };
+
+    for (final entry in decoded.entries) {
+      final chave = entry.key
+          .toString()
+          .trim()
+          .toLowerCase()
+          .replaceAll('_', '');
+      if (chavesAceitas.contains(chave)) return entry.value;
+    }
+    return null;
+  }
+
+  UsuarioOperador? _buscarOperadorPorCodigo(String codigo) {
+    final alvo = _normalizarCodigo(codigo);
+    if (alvo.isEmpty) return null;
+
+    for (final usuario in _usuariosOperadores) {
+      if (_normalizarCodigo(usuario.cdUser) == alvo) {
+        return usuario;
+      }
+    }
+    return null;
+  }
+
+  void _aplicarOperadorSelecionado(
+    UsuarioOperador usuario, {
+    required bool segundo,
+  }) {
+    setState(() {
+      if (segundo) {
+        _operador2CdUserSelecionado = usuario.cdUser;
+        _operador2Controller.text = usuario.nmUser;
+      } else {
+        _operadorCdUserSelecionado = usuario.cdUser;
+        _operadorController.text = usuario.nmUser;
+      }
+      _coletorOperadorAtivo = false;
+    });
+    FocusScope.of(context).unfocus();
+  }
+
+  Future<void> _processarLeituraOperador(
+    String leitura, {
+    required bool segundo,
+  }) async {
+    if (_usuariosOperadores.isEmpty) {
+      await _carregarUsuariosOperadores();
+    }
+    if (!mounted) return;
+
+    final codigo = _extrairCodigoOperadorLido(leitura);
+    if (codigo.isEmpty) {
+      _showSnack('QR Code sem codigo de operador.', Colors.orange);
+      return;
+    }
+
+    final usuario = _buscarOperadorPorCodigo(codigo);
+    if (usuario == null) {
+      _showSnack('Operador $codigo nao encontrado.', Colors.orange);
+      return;
+    }
+
+    _aplicarOperadorSelecionado(usuario, segundo: segundo);
+    _showSnack('Operador preenchido automaticamente.', Colors.green);
+  }
+
+  void _ativarColetorOperador({required bool segundo}) {
+    SystemChannels.textInput.invokeMethod('TextInput.hide');
+    setState(() {
+      _coletorOperadorAtivo = true;
+      _coletorOperadorSegundo = segundo;
+    });
+    final controller = segundo
+        ? _coletorOperador2Controller
+        : _coletorOperadorController;
+    final focus = segundo ? _coletorOperador2Focus : _coletorOperadorFocus;
+    controller.clear();
+    focus.requestFocus();
+    Future.microtask(
+      () => SystemChannels.textInput.invokeMethod('TextInput.hide'),
+    );
+  }
+
+  Future<void> _escolherModoLeituraOperador({bool segundo = false}) async {
+    if (_coletorOperadorAtivo) {
+      setState(() => _coletorOperadorAtivo = false);
+      FocusScope.of(context).unfocus();
+    }
+
+    final escolha = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: _kSurface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 42,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.white24,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Como deseja ler o operador?',
+                  style: TextStyle(
+                    color: _kTextPrimary,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                ListTile(
+                  leading: const Icon(
+                    Icons.qr_code_scanner,
+                    color: _kAccentColor,
+                  ),
+                  title: const Text(
+                    'Camera',
+                    style: TextStyle(color: _kTextPrimary),
+                  ),
+                  onTap: () => Navigator.pop(ctx, 'camera'),
+                ),
+                ListTile(
+                  leading: const Icon(
+                    Icons.barcode_reader,
+                    color: _kAccentColor,
+                  ),
+                  title: const Text(
+                    'Coletor',
+                    style: TextStyle(color: _kTextPrimary),
+                  ),
+                  onTap: () => Navigator.pop(ctx, 'coletor'),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (!mounted || escolha == null) return;
+
+    if (escolha == 'camera') {
+      final String? code = await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) =>
+              const ScannerPage(modo: 'qr', titulo: 'Ler Operador'),
+        ),
+      );
+      if (code != null && code.trim().isNotEmpty) {
+        await _processarLeituraOperador(code, segundo: segundo);
+      }
+      return;
+    }
+
+    if (escolha == 'coletor') {
+      _ativarColetorOperador(segundo: segundo);
+    }
   }
 
   Future<void> _abrirSeletorSetor() async {
@@ -3473,6 +3689,8 @@ class _FormularioGeralState extends State<FormularioGeral> {
     _maquinaController.clear();
     _maquina2Controller.clear();
     _coletorArtigoController.clear();
+    _coletorOperadorController.clear();
+    _coletorOperador2Controller.clear();
     _defeitoController.clear();
     _defeitoSelecionadoCodigo = null;
     _operadorCdUserSelecionado = null;
@@ -3489,6 +3707,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
         _maquinaSelecionadaSecundaria = null;
         _maquinas = [];
         _coletorArtigoAtivo = false;
+        _coletorOperadorAtivo = false;
         _buscandoOrdemProducao = false;
       });
     } else {
@@ -3498,6 +3717,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
         _maquinaSelecionadaSecundaria = null;
         _maquinas = [];
         _coletorArtigoAtivo = false;
+        _coletorOperadorAtivo = false;
         _buscandoOrdemProducao = false;
         _palletController.text = _kPaleteTipoBFixo;
       });
@@ -3937,6 +4157,50 @@ class _FormularioGeralState extends State<FormularioGeral> {
   // CAMPO OPERADOR (dropdown com nomes da API)
   // -----------------------------------------------------------------------
 
+  Widget _buildBotaoLeituraOperador({required bool segundo}) {
+    return IconButton(
+      tooltip: 'Ler operador',
+      icon: const Icon(Icons.qr_code_scanner, color: _kAccentColor, size: 22),
+      onPressed: _usuariosOperadores.isEmpty
+          ? null
+          : () => _escolherModoLeituraOperador(segundo: segundo),
+    );
+  }
+
+  Widget _buildColetorOperadorOculto({required bool segundo}) {
+    final ativo = _coletorOperadorAtivo && _coletorOperadorSegundo == segundo;
+    final controller = segundo
+        ? _coletorOperador2Controller
+        : _coletorOperadorController;
+    final focus = segundo ? _coletorOperador2Focus : _coletorOperadorFocus;
+    return Positioned.fill(
+      child: IgnorePointer(
+        ignoring: !ativo,
+        child: Opacity(
+          opacity: 0,
+          child: TextField(
+            controller: controller,
+            focusNode: focus,
+            keyboardType: TextInputType.none,
+            textInputAction: TextInputAction.done,
+            onChanged: (_) {
+              SystemChannels.textInput.invokeMethod('TextInput.hide');
+            },
+            onSubmitted: (value) async {
+              final code = value.trim();
+              controller.clear();
+              setState(() => _coletorOperadorAtivo = false);
+              FocusScope.of(context).unfocus();
+              if (code.isNotEmpty) {
+                await _processarLeituraOperador(code, segundo: segundo);
+              }
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildOperadorDropdown() {
     final temOperador =
         (_operadorCdUserSelecionado ?? '').isNotEmpty &&
@@ -3946,8 +4210,10 @@ class _FormularioGeralState extends State<FormularioGeral> {
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: _loadingUsuariosOperadores
-          ? _buildCampoSelecao(
+      child: Stack(
+        children: [
+          _loadingUsuariosOperadores
+              ? _buildCampoSelecao(
               controller: _operadorController,
               label: 'Operador',
               hint: 'Carregando operadores...',
@@ -3957,7 +4223,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
               onTap: null,
               helperText: null,
             )
-          : _buildCampoSelecao(
+              : _buildCampoSelecao(
               controller: _operadorController,
               label: 'Operador',
               hint: semUsuarios
@@ -3970,6 +4236,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
               helperText: semUsuarios
                   ? null
                   : '$totalOperadores operadores disponíveis',
+              suffixActions: [_buildBotaoLeituraOperador(segundo: false)],
               mostrarLimpar: temOperador,
               onClear: () {
                 setState(() {
@@ -3978,6 +4245,9 @@ class _FormularioGeralState extends State<FormularioGeral> {
                 });
               },
             ),
+          _buildColetorOperadorOculto(segundo: false),
+        ],
+      ),
     );
   }
 
@@ -3989,8 +4259,10 @@ class _FormularioGeralState extends State<FormularioGeral> {
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: _loadingUsuariosOperadores
-          ? _buildCampoSelecao(
+      child: Stack(
+        children: [
+          _loadingUsuariosOperadores
+              ? _buildCampoSelecao(
               controller: _operador2Controller,
               label: 'Segundo operador (opcional)',
               hint: 'Carregando operadores...',
@@ -4000,7 +4272,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
               onTap: null,
               helperText: null,
             )
-          : _buildCampoSelecao(
+              : _buildCampoSelecao(
               controller: _operador2Controller,
               label: 'Segundo operador (opcional)',
               hint: semUsuarios
@@ -4013,6 +4285,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
                   ? null
                   : () => _abrirSeletorOperador(segundo: true),
               helperText: null,
+              suffixActions: [_buildBotaoLeituraOperador(segundo: true)],
               mostrarLimpar: temOperador,
               onClear: () {
                 setState(() {
@@ -4022,6 +4295,9 @@ class _FormularioGeralState extends State<FormularioGeral> {
                 });
               },
             ),
+          _buildColetorOperadorOculto(segundo: true),
+        ],
+      ),
     );
   }
 
@@ -4823,23 +5099,42 @@ class _FormularioGeralState extends State<FormularioGeral> {
 class ScannerPage extends StatelessWidget {
   final String modo;
   final String titulo;
+  final bool usarCameraFrontal;
 
-  const ScannerPage({super.key, this.modo = 'all', this.titulo = 'Scanner'});
+  const ScannerPage({
+    super.key,
+    this.modo = 'all',
+    this.titulo = 'Scanner',
+    this.usarCameraFrontal = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     if (defaultTargetPlatform == TargetPlatform.macOS) {
-      return _MacScannerPage(modo: modo, titulo: titulo);
+      return _MacScannerPage(
+        modo: modo,
+        titulo: titulo,
+        usarCameraFrontal: usarCameraFrontal,
+      );
     }
-    return _AndroidScannerPage(modo: modo, titulo: titulo);
+    return _AndroidScannerPage(
+      modo: modo,
+      titulo: titulo,
+      usarCameraFrontal: usarCameraFrontal,
+    );
   }
 }
 
 class _MacScannerPage extends StatefulWidget {
   final String modo;
   final String titulo;
+  final bool usarCameraFrontal;
 
-  const _MacScannerPage({required this.modo, required this.titulo});
+  const _MacScannerPage({
+    required this.modo,
+    required this.titulo,
+    required this.usarCameraFrontal,
+  });
 
   @override
   State<_MacScannerPage> createState() => _MacScannerPageState();
@@ -4860,7 +5155,7 @@ class _MacScannerPageState extends State<_MacScannerPage>
     _controller = MobileScannerController(
       detectionSpeed: DetectionSpeed.unrestricted,
       autoStart: true,
-      facing: CameraFacing.back,
+      facing: widget.usarCameraFrontal ? CameraFacing.front : CameraFacing.back,
       onPermissionSet: (granted) {
         if (!mounted) return;
         setState(() => _cameraPermissionGranted = granted);
@@ -5210,8 +5505,13 @@ class _MacScannerPageState extends State<_MacScannerPage>
 class _AndroidScannerPage extends StatefulWidget {
   final String modo;
   final String titulo;
+  final bool usarCameraFrontal;
 
-  const _AndroidScannerPage({required this.modo, required this.titulo});
+  const _AndroidScannerPage({
+    required this.modo,
+    required this.titulo,
+    required this.usarCameraFrontal,
+  });
 
   @override
   State<_AndroidScannerPage> createState() => _AndroidScannerPageState();
@@ -5233,7 +5533,7 @@ class _AndroidScannerPageState extends State<_AndroidScannerPage>
       detectionSpeed: DetectionSpeed.unrestricted,
       detectionTimeoutMs: 100,
       autoStart: true,
-      facing: CameraFacing.back,
+      facing: widget.usarCameraFrontal ? CameraFacing.front : CameraFacing.back,
       cameraResolution: const Size(1280, 720),
       onPermissionSet: (granted) {
         if (!mounted) return;

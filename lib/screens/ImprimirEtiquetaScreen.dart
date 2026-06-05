@@ -1,14 +1,17 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:barcode/barcode.dart';
 import 'package:flutter/services.dart';
 
+import 'ApontamentoProdutividadeScreen.dart' as produtividade;
 import '../services/alocacao_service.dart';
+import '../services/datawedge_service.dart';
 import '../services/etiquetas_service.dart';
 import '../services/zebra_printer_service.dart';
 
-enum _EtiquetaModelo { palete, caixa, operador }
+enum _EtiquetaModelo { palete, caixa, operador, produtividade }
 
 const _appBg = Color(0xFF050A14);
 const _appSurface = Color(0xFF0B1220);
@@ -56,6 +59,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
   List<Map<String, dynamic>> _buscaOpcoes = [];
   bool _buscandoOpcoes = false;
   bool _settingBuscaText = false;
+  bool _aguardandoQrColetor = false;
   Timer? _buscaDebounce;
 
   // ── Caixa — dropdown de detalhe/lote ────────────────────────
@@ -93,6 +97,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
   String? _operadorEtiquetaSelecionado;
   List<_OperadorEtiqueta> _operadores = [];
   bool _carregandoOperadores = false;
+  String _produtividadeTipo = 'A';
 
   final AlocacaoService _alocacaoService = AlocacaoService();
   final ZebraPrinterService _zebraPrinterService = ZebraPrinterService();
@@ -129,6 +134,8 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
   @override
   void initState() {
     super.initState();
+    DataWedgeService.init();
+    DataWedgeService.scanData.addListener(_onQrColetor);
     _carregarImpressora();
   }
 
@@ -145,6 +152,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
   @override
   void dispose() {
     _buscaDebounce?.cancel();
+    DataWedgeService.scanData.removeListener(_onQrColetor);
     _paleteController.dispose();
     _buscaController.dispose();
     _metrosController.dispose();
@@ -294,6 +302,33 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     }
   }
 
+  void _limparArtigoCaixa() {
+    _buscaDebounce?.cancel();
+    _settingBuscaText = true;
+    _buscaController.clear();
+    _settingBuscaText = false;
+    _ordemController.clear();
+    _detalheController.clear();
+    _loteController.clear();
+    _tipoCaixaController.clear();
+    setState(() {
+      _cdObjSelecionado = 0;
+      _buscaOpcoes = [];
+      _artigoInfo = null;
+      _etiquetaCaixa = null;
+      _tipoBaseArticle = '';
+      _naoImprimeLoteLinha = false;
+      _detalheObrigatorio = false;
+      _temPreto = false;
+      _loteInline = false;
+      _lotesList = [];
+      _detalheSelecionado = 0;
+      _filtroDetalhe = '';
+      _aguardandoQrColetor = false;
+      _erro = null;
+    });
+  }
+
   void _selecionarArtigo(Map<String, dynamic> artigo) {
     final cdObj = artigo['CdObj'] as int;
     final nmObj = (artigo['NmObj'] ?? '').toString().trim();
@@ -305,6 +340,233 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       _buscaOpcoes = [];
     });
     _buscarArtigo();
+  }
+
+  void _onQrColetor() {
+    final codigo = DataWedgeService.scanData.value;
+    if (!_aguardandoQrColetor || codigo == null || codigo.trim().isEmpty) {
+      return;
+    }
+    setState(() => _aguardandoQrColetor = false);
+    _processarQrArtigo(codigo);
+  }
+
+  Future<void> _abrirLeitorQrArtigo() async {
+    final origem = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: _appSurface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ListTile(
+              title: Text(
+                'Ler QR Code do artigo',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.camera_alt_rounded, color: _appAccent),
+              title: const Text(
+                'Câmera do celular',
+                style: TextStyle(color: Colors.white),
+              ),
+              onTap: () => Navigator.pop(ctx, 'camera'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.qr_code_scanner_rounded,
+                  color: _appAccent),
+              title: const Text(
+                'Bipe do coletor',
+                style: TextStyle(color: Colors.white),
+              ),
+              subtitle: const Text(
+                'Ativa a próxima leitura do DataWedge',
+                style: TextStyle(color: Colors.white60),
+              ),
+              onTap: () => Navigator.pop(ctx, 'coletor'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (!mounted || origem == null) return;
+    if (origem == 'camera') {
+      final codigo = await Navigator.push<String>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const produtividade.ScannerPage(
+            modo: 'qr',
+            titulo: 'Ler artigo',
+            usarCameraFrontal: true,
+          ),
+        ),
+      );
+      if (codigo != null && codigo.trim().isNotEmpty) {
+        await _processarQrArtigo(codigo);
+      }
+      return;
+    }
+
+    DataWedgeService.scanData.value = null;
+    setState(() => _aguardandoQrColetor = true);
+    _showSnackBar('Bipe o QR Code do artigo no coletor.', isError: false);
+  }
+
+  Future<void> _processarQrArtigo(String codigo) async {
+    try {
+      final decoded = jsonDecode(codigo.trim());
+      if (decoded is! Map) throw const FormatException();
+
+      var cdObj = _asInt(decoded['CdObj'] ?? decoded['cd_obj']);
+      final detalhe = _asInt(decoded['Detalhe'] ?? decoded['detalhe']);
+      final ordem = (decoded['Ordem'] ?? decoded['ordem'] ?? '')
+          .toString()
+          .trim();
+      final artigoNome = (decoded['Artigo'] ?? decoded['artigo'] ?? '')
+          .toString()
+          .trim();
+      final cor = (decoded['Cor'] ?? decoded['cor'] ?? '').toString().trim();
+      final artigoNomeCompleto = [artigoNome, cor]
+          .where((parte) => parte.isNotEmpty)
+          .join(' ');
+
+      Map<String, dynamic>? artigo;
+      if (cdObj <= 0 && artigoNomeCompleto.isNotEmpty) {
+        artigo = await _buscarArtigoQrPorNome(artigoNomeCompleto);
+        cdObj = _asInt(artigo['CdObj']);
+      } else if (cdObj > 0 && artigoNomeCompleto.isNotEmpty) {
+        artigo = {'CdObj': cdObj, 'NmObj': artigoNomeCompleto};
+      }
+      if (cdObj <= 0) throw const FormatException();
+
+      _settingBuscaText = true;
+      _buscaController.text = artigo == null
+          ? cdObj.toString()
+          : '$cdObj — ${(artigo['NmObj'] ?? artigoNomeCompleto).toString().trim()}';
+      _settingBuscaText = false;
+      setState(() {
+        _cdObjSelecionado = cdObj;
+        _buscaOpcoes = [];
+        _detalheSelecionado = detalhe;
+        _detalheController.text = detalhe > 0 ? detalhe.toString() : '';
+        if (ordem.isNotEmpty) _ordemController.text = ordem;
+      });
+
+      await _buscarArtigo();
+      if (!mounted) return;
+      if (detalhe > 0) {
+        _selecionarDetalhe(detalhe);
+      }
+    } on FormatException {
+      _showSnackBar('QR Code sem artigo válido.', isError: true);
+    } catch (e) {
+      _showSnackBar(e.toString().replaceFirst('Exception: ', ''), isError: true);
+    }
+  }
+
+  Future<Map<String, dynamic>> _buscarArtigoQrPorNome(String nome) async {
+    var opcoes = await EtiquetasService.buscarArtigosPorNome(nome);
+    if (opcoes.isEmpty) {
+      opcoes = await _buscarArtigoQrNoCatalogoCompleto(nome);
+    }
+    if (opcoes.isEmpty) {
+      throw Exception('Artigo "$nome" não encontrado.');
+    }
+
+    final alvo = _normalizarTextoQr(nome);
+    final exatas = opcoes.where((artigo) {
+      final candidato = _normalizarTextoQr(_nomeArtigoResultado(artigo));
+      return candidato == alvo || candidato.endsWith(' $alvo');
+    }).toList();
+
+    if (exatas.length == 1) return exatas.first;
+    if (exatas.isEmpty && opcoes.length == 1) return opcoes.first;
+    if (exatas.isEmpty) {
+      final parciais = opcoes.where((artigo) {
+        final candidato = _normalizarTextoQr(_nomeArtigoResultado(artigo));
+        return candidato.contains(alvo) || alvo.contains(candidato);
+      }).toList();
+      if (parciais.length == 1) return parciais.first;
+    }
+    if (exatas.isEmpty) {
+      throw Exception('Nenhuma correspondência exata para o artigo "$nome".');
+    }
+    throw Exception('Mais de um artigo corresponde ao nome "$nome".');
+  }
+
+  String _normalizarTextoQr(String value) {
+    return _removerAcentos(value)
+        .trim()
+        .toUpperCase()
+        .replaceAll(RegExp(r'[^A-Z0-9]+'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
+  String _removerAcentos(String value) {
+    return value
+        .replaceAll(RegExp(r'[\u00C0-\u00C5\u00E0-\u00E5]'), 'A')
+        .replaceAll(RegExp(r'[\u00C8-\u00CB\u00E8-\u00EB]'), 'E')
+        .replaceAll(RegExp(r'[\u00CC-\u00CF\u00EC-\u00EF]'), 'I')
+        .replaceAll(RegExp(r'[\u00D2-\u00D6\u00D8\u00F2-\u00F6\u00F8]'), 'O')
+        .replaceAll(RegExp(r'[\u00D9-\u00DC\u00F9-\u00FC]'), 'U')
+        .replaceAll(RegExp(r'[\u00C7\u00E7]'), 'C')
+        .replaceAll(RegExp(r'[\u00D1\u00F1]'), 'N');
+  }
+
+  String _nomeArtigoResultado(Map<String, dynamic> artigo) {
+    return (artigo['NmObj'] ??
+            artigo['nmObj'] ??
+            artigo['nm_obj'] ??
+            artigo['Artigo'] ??
+            artigo['artigo'] ??
+            artigo['Objeto'] ??
+            artigo['objeto'] ??
+            '')
+        .toString()
+        .trim();
+  }
+
+  Future<List<Map<String, dynamic>>> _buscarArtigoQrNoCatalogoCompleto(
+    String nome,
+  ) async {
+    final alvo = _normalizarTextoQr(nome);
+    if (alvo.isEmpty) return [];
+
+    final todos = await EtiquetasService.listarTodosArtigos();
+    return todos.where((artigo) {
+      final codigo = (artigo['CdObj'] ?? '').toString().trim();
+      final candidato = _normalizarTextoQr(_nomeArtigoResultado(artigo));
+      return codigo.isNotEmpty &&
+          candidato.isNotEmpty &&
+          (candidato == alvo ||
+              candidato.endsWith(' $alvo') ||
+              candidato.contains(alvo) ||
+              alvo.contains(candidato));
+    }).toList();
+  }
+
+  String _formatarTextoArtigo(int cdObj, Map<String, dynamic> artigo) {
+    final nmObj =
+        (artigo['NmObj'] ??
+                artigo['nm_obj'] ??
+                artigo['Artigo'] ??
+                artigo['artigo'] ??
+                artigo['Objeto'] ??
+                artigo['objeto'] ??
+                artigo['nome'] ??
+                '')
+            .toString()
+            .trim();
+    return nmObj.isEmpty ? cdObj.toString() : '$cdObj - $nmObj';
   }
 
   // ────────────────────────────────────────────────────────────
@@ -345,6 +607,9 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
 
       final tipoBase = (data['TipoCaixa'] ?? '').toString().trim();
       setState(() {
+        _settingBuscaText = true;
+        _buscaController.text = _formatarTextoArtigo(cdObj, data);
+        _settingBuscaText = false;
         _artigoInfo = data;
         _tipoBaseArticle = tipoBase;
         // Tipos fixos preenchem imediatamente; P/G dependem dos metros
@@ -358,7 +623,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       // Recalcula tipo de caixa caso metros já esteja preenchido
       _atualizarTipoCaixa();
 
-      _carregarLotes(cdObj);
+      await _carregarLotes(cdObj);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -669,6 +934,71 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     return int.tryParse(match?.group(0) ?? texto) ?? 0;
   }
 
+  String _normalizarCodigoOperador(String value) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) return '';
+    final asInt = int.tryParse(trimmed);
+    if (asInt != null) return asInt.toString();
+    return trimmed;
+  }
+
+  String _extrairCodigoOperadorQr(String leitura) {
+    final texto = leitura.trim();
+    if (texto.isEmpty) return '';
+
+    try {
+      final decoded = jsonDecode(texto);
+      if (decoded is Map) {
+        final valor = _valorOperadorNoQr(decoded);
+        final codigo = _normalizarCodigoOperador(valor?.toString() ?? '');
+        if (codigo.isNotEmpty) return codigo;
+      }
+    } catch (_) {
+      // Continua tentando extrair de leituras parciais ou texto puro.
+    }
+
+    final matchJson = RegExp(
+      r'"operador"\s*:\s*"?([^",}\s]+)"?',
+      caseSensitive: false,
+    ).firstMatch(texto);
+    if (matchJson != null) {
+      return _normalizarCodigoOperador(matchJson.group(1) ?? '');
+    }
+
+    return _normalizarCodigoOperador(texto);
+  }
+
+  dynamic _valorOperadorNoQr(Map<dynamic, dynamic> decoded) {
+    const chavesAceitas = {
+      'operador',
+      'cduser',
+      'codigo',
+      'id',
+    };
+
+    for (final entry in decoded.entries) {
+      final chave = entry.key
+          .toString()
+          .trim()
+          .toLowerCase()
+          .replaceAll('_', '');
+      if (chavesAceitas.contains(chave)) return entry.value;
+    }
+    return null;
+  }
+
+  _OperadorEtiqueta? _buscarOperadorPorCodigo(String codigo) {
+    final alvo = _normalizarCodigoOperador(codigo);
+    if (alvo.isEmpty) return null;
+
+    for (final operador in _operadores) {
+      if (_normalizarCodigoOperador(operador.codigo) == alvo) {
+        return operador;
+      }
+    }
+    return null;
+  }
+
   List<_OperadorEtiqueta> _ordenarOperadores(List<_OperadorEtiqueta> operadores) {
     final ordenados = List<_OperadorEtiqueta>.from(operadores);
     ordenados.sort((a, b) => a.nome.toUpperCase().compareTo(b.nome.toUpperCase()));
@@ -819,6 +1149,44 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     });
   }
 
+  Future<void> _lerQrOperador({
+    required TextEditingController controller,
+    required ValueChanged<String?> onSelecionado,
+  }) async {
+    final leitura = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const produtividade.ScannerPage(
+          modo: 'qr',
+          titulo: 'Ler operador',
+          usarCameraFrontal: true,
+        ),
+      ),
+    );
+    if (!mounted || leitura == null || leitura.trim().isEmpty) return;
+
+    await _carregarOperadores();
+    if (!mounted) return;
+
+    final codigo = _extrairCodigoOperadorQr(leitura);
+    if (codigo.isEmpty) {
+      _showSnackBar('QR Code sem operador valido.', isError: true);
+      return;
+    }
+
+    final operador = _buscarOperadorPorCodigo(codigo);
+    if (operador == null) {
+      _showSnackBar('Operador $codigo nao encontrado.', isError: true);
+      return;
+    }
+
+    setState(() {
+      controller.text = operador.label;
+      onSelecionado(operador.codigo);
+    });
+    _showSnackBar('Operador preenchido automaticamente.', isError: false);
+  }
+
   // ────────────────────────────────────────────────────────────
   // Build
   // ────────────────────────────────────────────────────────────
@@ -852,8 +1220,10 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                     _buildPaletePanel()
                   else if (_modelo == _EtiquetaModelo.caixa)
                     _buildCaixaPanel()
-                  else
+                  else if (_modelo == _EtiquetaModelo.operador)
                     _buildOperadorPanel(),
+                  if (_modelo == _EtiquetaModelo.produtividade)
+                    _buildProdutividadePanel(),
                   const SizedBox(height: 18),
                   if (_erro != null) _buildError(),
                   if (_modelo == _EtiquetaModelo.palete &&
@@ -1136,12 +1506,34 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                                   ),
                                 ),
                               )
-                            : _cdObjSelecionado > 0
-                                ? const Icon(
-                                    Icons.check_circle_rounded,
-                                    color: _appMint,
-                                  )
-                                : null,
+                            : Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (_buscaController.text.isNotEmpty)
+                                    IconButton(
+                                      tooltip: 'Limpar artigo',
+                                      onPressed:
+                                          busy ? null : _limparArtigoCaixa,
+                                      icon: const Icon(
+                                        Icons.close_rounded,
+                                        color: Colors.white70,
+                                      ),
+                                    ),
+                                  IconButton(
+                                    tooltip: 'Ler QR Code do artigo',
+                                    onPressed:
+                                        busy ? null : _abrirLeitorQrArtigo,
+                                    icon: Icon(
+                                      _aguardandoQrColetor
+                                          ? Icons.qr_code_scanner_rounded
+                                          : Icons.qr_code_2_rounded,
+                                      color: _aguardandoQrColetor
+                                          ? _appMint
+                                          : _appAccent,
+                                    ),
+                                  ),
+                                ],
+                              ),
                       ),
                     ),
                   ),
@@ -1425,6 +1817,84 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       ),
     );
   }
+
+  Widget _buildProdutividadePanel() {
+    final hora = DateTime.now().hour;
+    final turno = hora >= 6 && hora < 14
+        ? 8
+        : hora >= 14 && hora < 22
+        ? 9
+        : 10;
+    final turnoLetra = turno == 8
+        ? 'A'
+        : turno == 9
+        ? 'B'
+        : 'C';
+
+    return _panel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Icon(Icons.factory_rounded, color: _appAccent, size: 42),
+          const SizedBox(height: 12),
+          const Text(
+            'Apontamento de produtividade',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 20,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Informe operador, setor, máquina, artigo, detalhe e quantidade.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.white70),
+          ),
+          const SizedBox(height: 14),
+          SegmentedButton<String>(
+            segments: const [
+              ButtonSegment(value: 'A', label: Text('Tipo A')),
+              ButtonSegment(value: 'B', label: Text('Tipo B')),
+            ],
+            selected: {_produtividadeTipo},
+            onSelectionChanged: (selecionado) {
+              setState(() => _produtividadeTipo = selecionado.first);
+            },
+          ),
+          const SizedBox(height: 18),
+          SizedBox(
+            height: 760,
+            child: produtividade.FormularioGeral(
+              key: ValueKey(_produtividadeTipo),
+              tipo: _produtividadeTipo,
+              turno: turno,
+              turnoLetra: turnoLetra,
+            ),
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            height: 54,
+            child: FilledButton.icon(
+              style: _primaryButtonStyle(),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const produtividade.ProducaoTabsScreen(),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.open_in_new_rounded),
+              label: const Text('Abrir produtividade em tela cheia'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildOperadorPreview() {
     return Container(
       padding: const EdgeInsets.all(14),
@@ -1680,8 +2150,24 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
             ? 'Carregando operadores...'
             : 'Toque para selecionar',
         icon: Icons.badge_rounded,
-        suffix: selecionado
-            ? IconButton(
+        suffix: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              tooltip: 'Ler QR Code do operador',
+              icon: const Icon(
+                Icons.qr_code_scanner_rounded,
+                color: _appAccent,
+              ),
+              onPressed: enabled
+                  ? () => _lerQrOperador(
+                        controller: controller,
+                        onSelecionado: onSelecionado,
+                      )
+                  : null,
+            ),
+            if (selecionado)
+              IconButton(
                 tooltip: 'Limpar operador',
                 icon: const Icon(Icons.close_rounded, color: Colors.white70),
                 onPressed: enabled
@@ -1691,7 +2177,10 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                         })
                     : null,
               )
-            : const Icon(Icons.arrow_drop_down_rounded, color: Colors.white70),
+            else
+              const Icon(Icons.arrow_drop_down_rounded, color: Colors.white70),
+          ],
+        ),
       ),
     );
   }
@@ -2023,22 +2512,28 @@ class _EtiquetaCaixaPainter extends CustomPainter {
       FontWeight.w700
     ];
 
+    final double mw = _qr.left - 18 - 12;
     for (var i = 0; i < lines.length; i++) {
       if (lines[i].trim().isEmpty) continue;
-      (TextPainter(
-        text: TextSpan(
-            text: lines[i],
-            style: TextStyle(
-                color: Colors.black,
-                fontSize: fs[i],
-                fontWeight: fw[i],
-                letterSpacing: 0)),
-        textAlign: TextAlign.left,
-        textDirection: TextDirection.ltr,
-        maxLines: 1,
-        ellipsis: '',
-      )..layout(maxWidth: _qr.left - 18 - 12))
-          .paint(canvas, Offset(18, _top + yy[i]));
+      var fontSize = fs[i];
+      while (fontSize >= 12) {
+        final tp = TextPainter(
+          text: TextSpan(
+              text: lines[i],
+              style: TextStyle(
+                  color: Colors.black,
+                  fontSize: fontSize,
+                  fontWeight: fw[i],
+                  letterSpacing: 0)),
+          textAlign: TextAlign.left,
+          textDirection: TextDirection.ltr,
+        )..layout();
+        if (tp.width <= mw) {
+          tp.paint(canvas, Offset(18, _top + yy[i]));
+          break;
+        }
+        fontSize -= 2;
+      }
     }
 
     final qrData = _v(['QrCode', 'qr_code']);
