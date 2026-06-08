@@ -55,12 +55,14 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
 
   // ── Caixa — busca por nome/código ────────────────────────────
   final TextEditingController _buscaController = TextEditingController();
+  final FocusNode _buscaFocus = FocusNode();
   int _cdObjSelecionado = 0;
   List<Map<String, dynamic>> _buscaOpcoes = [];
   bool _buscandoOpcoes = false;
   bool _settingBuscaText = false;
   bool _aguardandoQrColetor = false;
   Timer? _buscaDebounce;
+  Timer? _qrDigitadoDebounce;
 
   // ── Caixa — dropdown de detalhe/lote ────────────────────────
   List<Map<String, dynamic>> _lotesList = [];
@@ -137,6 +139,9 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     DataWedgeService.init();
     DataWedgeService.scanData.addListener(_onQrColetor);
     _carregarImpressora();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _focarBuscaArtigoCaixa(ativarColetor: true);
+    });
   }
 
   Future<void> _carregarImpressora() async {
@@ -152,9 +157,11 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
   @override
   void dispose() {
     _buscaDebounce?.cancel();
+    _qrDigitadoDebounce?.cancel();
     DataWedgeService.scanData.removeListener(_onQrColetor);
     _paleteController.dispose();
     _buscaController.dispose();
+    _buscaFocus.dispose();
     _metrosController.dispose();
     _ordemController.dispose();
     _detalheController.dispose();
@@ -253,6 +260,15 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
   void _onBuscaChanged(String value) {
     if (_settingBuscaText) return;
     _buscaDebounce?.cancel();
+    _qrDigitadoDebounce?.cancel();
+
+    final q = value.trim();
+    if (_pareceQrArtigo(q)) {
+      _qrDigitadoDebounce = Timer(const Duration(milliseconds: 250), () {
+        if (mounted) _processarEntradaArtigo(q);
+      });
+      return;
+    }
 
     // Se tinha item selecionado e o usuário editou o campo, limpa tudo
     if (_cdObjSelecionado > 0) {
@@ -273,7 +289,6 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       });
     }
 
-    final q = value.trim();
     if (q.length < 2) {
       setState(() => _buscaOpcoes = []);
       return;
@@ -304,6 +319,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
 
   void _limparArtigoCaixa() {
     _buscaDebounce?.cancel();
+    _qrDigitadoDebounce?.cancel();
     _settingBuscaText = true;
     _buscaController.clear();
     _settingBuscaText = false;
@@ -327,6 +343,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       _aguardandoQrColetor = false;
       _erro = null;
     });
+    _focarBuscaArtigoCaixa(ativarColetor: true);
   }
 
   void _selecionarArtigo(Map<String, dynamic> artigo) {
@@ -344,7 +361,10 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
 
   void _onQrColetor() {
     final codigo = DataWedgeService.scanData.value;
-    if (!_aguardandoQrColetor || codigo == null || codigo.trim().isEmpty) {
+    final podeLer =
+        _modelo == _EtiquetaModelo.caixa &&
+        (_aguardandoQrColetor || _buscaFocus.hasFocus);
+    if (!podeLer || codigo == null || codigo.trim().isEmpty) {
       return;
     }
     setState(() => _aguardandoQrColetor = false);
@@ -417,7 +437,41 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
 
     DataWedgeService.scanData.value = null;
     setState(() => _aguardandoQrColetor = true);
+    _focarBuscaArtigoCaixa();
     _showSnackBar('Bipe o QR Code do artigo no coletor.', isError: false);
+  }
+
+  void _focarBuscaArtigoCaixa({bool ativarColetor = false}) {
+    if (!mounted || _modelo != _EtiquetaModelo.caixa) return;
+    if (ativarColetor) {
+      setState(() => _aguardandoQrColetor = true);
+    }
+    _buscaFocus.requestFocus();
+    Future.microtask(
+      () => SystemChannels.textInput.invokeMethod('TextInput.hide'),
+    );
+  }
+
+  bool _pareceQrArtigo(String value) => value.startsWith('{');
+
+  Future<void> _processarEntradaArtigo(String value) async {
+    final texto = value.trim();
+    if (texto.isEmpty) return;
+    if (_pareceQrArtigo(texto)) {
+      await _processarQrArtigo(texto);
+      return;
+    }
+    if (_cdObjSelecionado > 0) {
+      await _buscarArtigo();
+    } else if (_buscaOpcoes.isNotEmpty) {
+      _selecionarArtigo(_buscaOpcoes.first);
+    } else {
+      final code = int.tryParse(texto) ?? 0;
+      if (code > 0) {
+        setState(() => _cdObjSelecionado = code);
+        await _buscarArtigo();
+      }
+    }
   }
 
   Future<void> _processarQrArtigo(String codigo) async {
@@ -809,6 +863,8 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
   }
 
   void _resetarCaixa() {
+    _buscaDebounce?.cancel();
+    _qrDigitadoDebounce?.cancel();
     _settingBuscaText = true;
     _buscaController.clear();
     _settingBuscaText = false;
@@ -836,6 +892,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       _operadorCaixaSelecionado = null;
       _erro = null;
     });
+    _focarBuscaArtigoCaixa(ativarColetor: true);
   }
 
   Future<bool> _perguntarLoteInline(String nmObj) async {
@@ -910,6 +967,11 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       _modelo = modelo;
       _erro = null;
     });
+    if (modelo == _EtiquetaModelo.caixa) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _focarBuscaArtigoCaixa(ativarColetor: true);
+      });
+    }
   }
 
   void _showSnackBar(String message, {required bool isError}) {
@@ -1473,23 +1535,11 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                     width: compact ? maxWidth : maxWidth - 174,
                     child: TextField(
                       controller: _buscaController,
+                      focusNode: _buscaFocus,
                       enabled: !busy,
                       style: const TextStyle(color: Colors.white),
                       onChanged: _onBuscaChanged,
-                      onSubmitted: (_) {
-                        if (_cdObjSelecionado > 0) {
-                          _buscarArtigo();
-                        } else if (_buscaOpcoes.isNotEmpty) {
-                          _selecionarArtigo(_buscaOpcoes.first);
-                        } else {
-                          final code =
-                              int.tryParse(_buscaController.text.trim()) ?? 0;
-                          if (code > 0) {
-                            setState(() => _cdObjSelecionado = code);
-                            _buscarArtigo();
-                          }
-                        }
-                      },
+                      onSubmitted: _processarEntradaArtigo,
                       decoration: _fieldDecoration(
                         label: 'Artigo - nome ou codigo *',
                         hint: 'Digite o nome ou codigo...',
