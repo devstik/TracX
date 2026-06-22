@@ -28,12 +28,28 @@ class _OperadorEtiqueta {
 
   factory _OperadorEtiqueta.fromJson(Map<String, dynamic> json) {
     return _OperadorEtiqueta(
-      codigo: (json['CdUser'] ?? json['cdUser'] ?? json['codigo'] ?? '')
-          .toString()
-          .trim(),
-      nome: (json['NmUser'] ?? json['nmUser'] ?? json['nome'] ?? '')
-          .toString()
-          .trim(),
+      codigo:
+          (json['CdUser'] ??
+                  json['cdUser'] ??
+                  json['cd_user'] ??
+                  json['CD_USER'] ??
+                  json['Operador'] ??
+                  json['operador'] ??
+                  json['codigo'] ??
+                  json['Codigo'] ??
+                  '')
+              .toString()
+              .trim(),
+      nome:
+          (json['NmUser'] ??
+                  json['nmUser'] ??
+                  json['nm_user'] ??
+                  json['NM_USER'] ??
+                  json['nome'] ??
+                  json['Nome'] ??
+                  '')
+              .toString()
+              .trim(),
     );
   }
 
@@ -63,6 +79,8 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
   bool _aguardandoQrColetor = false;
   Timer? _buscaDebounce;
   Timer? _qrDigitadoDebounce;
+  String _ultimoQrArtigoProcessado = '';
+  DateTime? _ultimoQrArtigoEm;
 
   // ── Caixa — dropdown de detalhe/lote ────────────────────────
   List<Map<String, dynamic>> _lotesList = [];
@@ -77,8 +95,9 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
   final TextEditingController _loteController = TextEditingController();
   final TextEditingController _operadorController = TextEditingController();
   String? _operadorCaixaSelecionado;
-  final TextEditingController _qtdeController =
-      TextEditingController(text: '1');
+  final TextEditingController _qtdeController = TextEditingController(
+    text: '1',
+  );
 
   // ── Caixa — readonly ─────────────────────────────────────────
   final TextEditingController _tipoCaixaController = TextEditingController();
@@ -92,8 +111,9 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
 
   // ── Operador ─────────────────────────────────────────────────
   final TextEditingController _etiquetaOpController = TextEditingController();
-  final TextEditingController _opQtdeController =
-      TextEditingController(text: '1');
+  final TextEditingController _opQtdeController = TextEditingController(
+    text: '1',
+  );
   bool _imprimindoOp = false;
   int _opPreview = 0;
   String? _operadorEtiquetaSelecionado;
@@ -212,8 +232,9 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
   }
 
   Future<void> _imprimir() async {
-    final palete =
-        (_paleteConsultado ?? _paleteController.text).trim().toUpperCase();
+    final palete = (_paleteConsultado ?? _paleteController.text)
+        .trim()
+        .toUpperCase();
     if (palete.isEmpty) {
       _showSnackBar('Informe o endereço do palete.', isError: true);
       return;
@@ -264,8 +285,8 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
 
     final q = value.trim();
     if (_pareceQrArtigo(q)) {
-      _qrDigitadoDebounce = Timer(const Duration(milliseconds: 250), () {
-        if (mounted) _processarEntradaArtigo(q);
+      _qrDigitadoDebounce = Timer(const Duration(milliseconds: 700), () {
+        if (mounted) _processarEntradaArtigo(_buscaController.text);
       });
       return;
     }
@@ -400,8 +421,10 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
               onTap: () => Navigator.pop(ctx, 'camera'),
             ),
             ListTile(
-              leading: const Icon(Icons.qr_code_scanner_rounded,
-                  color: _appAccent),
+              leading: const Icon(
+                Icons.qr_code_scanner_rounded,
+                color: _appAccent,
+              ),
               title: const Text(
                 'Bipe do coletor',
                 style: TextStyle(color: Colors.white),
@@ -452,12 +475,47 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     );
   }
 
-  bool _pareceQrArtigo(String value) => value.startsWith('{');
+  bool _pareceQrArtigo(String value) {
+    final texto = value.trim();
+    return texto.startsWith('{') ||
+        texto.contains('"Ordem"') ||
+        texto.contains('"Artigo"') ||
+        texto.contains('"CdObj"') ||
+        texto.contains('"cd_obj"');
+  }
+
+  String _limparLeituraQr(String value) {
+    return value
+        .replaceAll('\uFEFF', '')
+        .replaceAll('\r', '')
+        .replaceAll('\n', '')
+        .replaceAll(RegExp(r'[\u0000-\u001F\u007F]'), '')
+        .trim();
+  }
+
+  String? _extrairJsonObjeto(String value) {
+    final texto = _limparLeituraQr(value);
+    final inicio = texto.indexOf('{');
+    final fim = texto.lastIndexOf('}');
+    if (inicio < 0 || fim <= inicio) return null;
+    return texto.substring(inicio, fim + 1).trim();
+  }
+
+  bool _jsonQrPareceCompleto(String value) {
+    final json = _extrairJsonObjeto(value);
+    if (json == null) return false;
+    try {
+      return jsonDecode(json) is Map;
+    } catch (_) {
+      return false;
+    }
+  }
 
   Future<void> _processarEntradaArtigo(String value) async {
-    final texto = value.trim();
+    final texto = _limparLeituraQr(value);
     if (texto.isEmpty) return;
     if (_pareceQrArtigo(texto)) {
+      if (!_jsonQrPareceCompleto(texto)) return;
       await _processarQrArtigo(texto);
       return;
     }
@@ -476,7 +534,17 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
 
   Future<void> _processarQrArtigo(String codigo) async {
     try {
-      final decoded = jsonDecode(codigo.trim());
+      final jsonQr = _extrairJsonObjeto(codigo) ?? _limparLeituraQr(codigo);
+      final agora = DateTime.now();
+      if (jsonQr == _ultimoQrArtigoProcessado &&
+          _ultimoQrArtigoEm != null &&
+          agora.difference(_ultimoQrArtigoEm!).inMilliseconds < 1200) {
+        return;
+      }
+      _ultimoQrArtigoProcessado = jsonQr;
+      _ultimoQrArtigoEm = agora;
+
+      final decoded = jsonDecode(jsonQr);
       if (decoded is! Map) throw const FormatException();
 
       var cdObj = _asInt(decoded['CdObj'] ?? decoded['cd_obj']);
@@ -488,13 +556,17 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
           .toString()
           .trim();
       final cor = (decoded['Cor'] ?? decoded['cor'] ?? '').toString().trim();
-      final artigoNomeCompleto = [artigoNome, cor]
-          .where((parte) => parte.isNotEmpty)
-          .join(' ');
+      final artigoNomeCompleto = [
+        artigoNome,
+        cor,
+      ].where((parte) => parte.isNotEmpty).join(' ');
 
       Map<String, dynamic>? artigo;
       if (cdObj <= 0 && artigoNomeCompleto.isNotEmpty) {
-        artigo = await _buscarArtigoQrPorNome(artigoNomeCompleto);
+        artigo = await _buscarArtigoQrPorNome(
+          artigoNomeCompleto,
+          alternativas: [if (artigoNome.isNotEmpty) artigoNome],
+        );
         cdObj = _asInt(artigo['CdObj']);
       } else if (cdObj > 0 && artigoNomeCompleto.isNotEmpty) {
         artigo = {'CdObj': cdObj, 'NmObj': artigoNomeCompleto};
@@ -516,17 +588,68 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
 
       await _buscarArtigo();
       if (!mounted) return;
+      if (artigoNomeCompleto.isNotEmpty) {
+        _settingBuscaText = true;
+        _buscaController.text = '$cdObj - $artigoNomeCompleto';
+        _settingBuscaText = false;
+      }
       if (detalhe > 0) {
         _selecionarDetalhe(detalhe);
       }
     } on FormatException {
       _showSnackBar('QR Code sem artigo válido.', isError: true);
     } catch (e) {
-      _showSnackBar(e.toString().replaceFirst('Exception: ', ''), isError: true);
+      _showSnackBar(
+        e.toString().replaceFirst('Exception: ', ''),
+        isError: true,
+      );
     }
   }
 
-  Future<Map<String, dynamic>> _buscarArtigoQrPorNome(String nome) async {
+  Future<Map<String, dynamic>> _buscarArtigoQrPorNome(
+    String nome, {
+    List<String> alternativas = const [],
+  }) async {
+    final alvo = _normalizarTextoQrSemMm(nome);
+    final consultas = <String>{
+      for (final item in [nome, ...alternativas])
+        ..._variantesConsultaArtigoQr(item),
+    };
+
+    final candidatosPorCodigo = <String, Map<String, dynamic>>{};
+    for (final consulta in consultas) {
+      final encontrados = await _buscarCandidatosArtigoQr(consulta);
+      for (final artigo in encontrados) {
+        final codigo = (artigo['CdObj'] ?? '').toString().trim();
+        if (codigo.isNotEmpty) {
+          candidatosPorCodigo[codigo] = artigo;
+        }
+      }
+    }
+
+    final exatos = candidatosPorCodigo.values.where((artigo) {
+      return _normalizarTextoQrSemMm(_nomeArtigoResultado(artigo)) == alvo;
+    }).toList();
+
+    if (exatos.length == 1) return exatos.first;
+    if (exatos.isEmpty) {
+      throw Exception('Artigo "$nome" nao encontrado.');
+    }
+    throw Exception('Mais de um artigo corresponde ao nome "$nome".');
+  }
+
+  Future<List<Map<String, dynamic>>> _buscarCandidatosArtigoQr(
+    String nome,
+  ) async {
+    final opcoes = await EtiquetasService.buscarArtigosPorNome(nome);
+    final catalogo = await _buscarArtigoQrNoCatalogoCompleto(nome);
+    return [...opcoes, ...catalogo];
+  }
+
+  // ignore: unused_element
+  Future<Map<String, dynamic>?> _resolverArtigoQrPorConsulta(
+    String nome,
+  ) async {
     var opcoes = await EtiquetasService.buscarArtigosPorNome(nome);
     if (opcoes.isEmpty) {
       opcoes = await _buscarArtigoQrNoCatalogoCompleto(nome);
@@ -536,17 +659,33 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     }
 
     final alvo = _normalizarTextoQr(nome);
+    final alvoCompat = _normalizarTextoQrCompat(nome);
     final exatas = opcoes.where((artigo) {
       final candidato = _normalizarTextoQr(_nomeArtigoResultado(artigo));
-      return candidato == alvo || candidato.endsWith(' $alvo');
+      final candidatoCompat = _normalizarTextoQrCompat(
+        _nomeArtigoResultado(artigo),
+      );
+      return candidato == alvo ||
+          candidato.endsWith(' $alvo') ||
+          candidatoCompat == alvoCompat ||
+          candidatoCompat.endsWith(' $alvoCompat');
     }).toList();
 
     if (exatas.length == 1) return exatas.first;
-    if (exatas.isEmpty && opcoes.length == 1) return opcoes.first;
+    if (exatas.isEmpty && opcoes.length == 1) {
+      final candidato = _normalizarTextoQrCompat(
+        _nomeArtigoResultado(opcoes.first),
+      );
+      if (_textosQrCompativeis(alvoCompat, candidato)) {
+        return opcoes.first;
+      }
+    }
     if (exatas.isEmpty) {
       final parciais = opcoes.where((artigo) {
-        final candidato = _normalizarTextoQr(_nomeArtigoResultado(artigo));
-        return candidato.contains(alvo) || alvo.contains(candidato);
+        final candidato = _normalizarTextoQrCompat(
+          _nomeArtigoResultado(artigo),
+        );
+        return _textosQrCompativeis(alvoCompat, candidato);
       }).toList();
       if (parciais.length == 1) return parciais.first;
     }
@@ -563,6 +702,47 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
         .replaceAll(RegExp(r'[^A-Z0-9]+'), ' ')
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
+  }
+
+  String _normalizarTextoQrCompat(String value) {
+    return _normalizarTextoQr(
+      value,
+    ).split(' ').where((parte) => parte != 'MM').join(' ').trim();
+  }
+
+  String _normalizarTextoQrSemMm(String value) {
+    return _normalizarTextoQr(
+      value,
+    ).split(' ').where((parte) => parte != 'MM').join(' ').trim();
+  }
+
+  Set<String> _variantesConsultaArtigoQr(String value) {
+    final texto = value.trim();
+    if (texto.isEmpty) return {};
+
+    final semUnidade = _normalizarTextoQrCompat(
+      texto,
+    ).split(' ').where((parte) => parte.isNotEmpty).join(' ');
+
+    return {texto, if (semUnidade.isNotEmpty) semUnidade};
+  }
+
+  bool _textosQrCompativeis(String alvo, String candidato) {
+    if (alvo.isEmpty || candidato.isEmpty) return false;
+    if (candidato == alvo ||
+        candidato.endsWith(' $alvo') ||
+        candidato.contains(alvo)) {
+      return true;
+    }
+
+    final alvoTokens = alvo.split(' ').where((item) => item.isNotEmpty).toSet();
+    final candidatoTokens = candidato
+        .split(' ')
+        .where((item) => item.isNotEmpty)
+        .toSet();
+    if (alvoTokens.isEmpty || candidatoTokens.isEmpty) return false;
+
+    return candidatoTokens.containsAll(alvoTokens);
   }
 
   String _removerAcentos(String value) {
@@ -593,18 +773,22 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     String nome,
   ) async {
     final alvo = _normalizarTextoQr(nome);
+    final alvoCompat = _normalizarTextoQrCompat(nome);
     if (alvo.isEmpty) return [];
 
     final todos = await EtiquetasService.listarTodosArtigos();
     return todos.where((artigo) {
       final codigo = (artigo['CdObj'] ?? '').toString().trim();
       final candidato = _normalizarTextoQr(_nomeArtigoResultado(artigo));
+      final candidatoCompat = _normalizarTextoQrCompat(
+        _nomeArtigoResultado(artigo),
+      );
       return codigo.isNotEmpty &&
           candidato.isNotEmpty &&
           (candidato == alvo ||
               candidato.endsWith(' $alvo') ||
               candidato.contains(alvo) ||
-              alvo.contains(candidato));
+              _textosQrCompativeis(alvoCompat, candidatoCompat));
     }).toList();
   }
 
@@ -633,8 +817,10 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
         : int.tryParse(_buscaController.text.trim()) ?? 0;
 
     if (cdObj <= 0) {
-      _showSnackBar('Selecione um artigo da lista ou informe o código.',
-          isError: true);
+      _showSnackBar(
+        'Selecione um artigo da lista ou informe o código.',
+        isError: true,
+      );
       return;
     }
     setState(() {
@@ -691,8 +877,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
   void _atualizarTipoCaixa() {
     if (const ['ENFE', 'ENFR', 'D'].contains(_tipoBaseArticle)) return;
     final metros = int.tryParse(_metrosController.text.trim()) ?? 0;
-    _tipoCaixaController.text =
-        metros > 0 ? (metros <= 1200 ? 'P' : 'G') : '';
+    _tipoCaixaController.text = metros > 0 ? (metros <= 1200 ? 'P' : 'G') : '';
   }
 
   int _asInt(dynamic value) {
@@ -766,8 +951,9 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     final cdObj = _cdObjSelecionado;
     final metros = _metrosController.text.trim();
     final nrOrdem = _ordemController.text.trim();
-    final detalhe =
-        _usaDropdownDetalhe ? _detalheSelecionado : (int.tryParse(_detalheController.text.trim()) ?? 0);
+    final detalhe = _usaDropdownDetalhe
+        ? _detalheSelecionado
+        : (int.tryParse(_detalheController.text.trim()) ?? 0);
     final lote = _loteController.text.trim();
 
     // Validações ao clicar em Imprimir
@@ -781,18 +967,23 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     }
     if (nrOrdem.isEmpty) {
       _showSnackBar(
-          'Nº da ordem não informado — será registrado como 0.',
-          isError: true);
+        'Nº da ordem não informado — será registrado como 0.',
+        isError: true,
+      );
       // Não bloqueia — imprime com ordem = 0 no JSON
     }
     if (_detalheObrigatorio && detalhe <= 0) {
-      _showSnackBar('Selecione o Detalhe — obrigatório para este artigo.',
-          isError: true);
+      _showSnackBar(
+        'Selecione o Detalhe — obrigatório para este artigo.',
+        isError: true,
+      );
       return;
     }
     if (_temPreto && detalhe <= 0) {
-      _showSnackBar('Artigo PRETO: selecione o Detalhe (Cor / Lote).',
-          isError: true);
+      _showSnackBar(
+        'Artigo PRETO: selecione o Detalhe (Cor / Lote).',
+        isError: true,
+      );
       return;
     }
     if (_temPreto && lote.isEmpty) {
@@ -930,7 +1121,10 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       _showSnackBar('Informe o número do operador.', isError: true);
       return;
     }
-    final qtde = (int.tryParse(_opQtdeController.text.trim()) ?? 1).clamp(1, 99);
+    final qtde = (int.tryParse(_opQtdeController.text.trim()) ?? 1).clamp(
+      1,
+      99,
+    );
     setState(() {
       _imprimindoOp = true;
       _opPreview = op;
@@ -979,8 +1173,9 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor:
-            isError ? const Color(0xFFB91C1C) : const Color(0xFF047857),
+        backgroundColor: isError
+            ? const Color(0xFFB91C1C)
+            : const Color(0xFF047857),
       ),
     );
   }
@@ -997,15 +1192,17 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
   }
 
   String _normalizarCodigoOperador(String value) {
-    final trimmed = value.trim();
+    final trimmed = _limparLeituraQr(value);
     if (trimmed.isEmpty) return '';
-    final asInt = int.tryParse(trimmed);
+    final match = RegExp(r'\d+').firstMatch(trimmed);
+    final numerico = match?.group(0) ?? trimmed;
+    final asInt = int.tryParse(numerico);
     if (asInt != null) return asInt.toString();
-    return trimmed;
+    return numerico.toUpperCase();
   }
 
   String _extrairCodigoOperadorQr(String leitura) {
-    final texto = leitura.trim();
+    final texto = _extrairJsonObjeto(leitura) ?? _limparLeituraQr(leitura);
     if (texto.isEmpty) return '';
 
     try {
@@ -1034,16 +1231,17 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     const chavesAceitas = {
       'operador',
       'cduser',
+      'usuario',
+      'user',
       'codigo',
       'id',
     };
 
     for (final entry in decoded.entries) {
-      final chave = entry.key
-          .toString()
-          .trim()
-          .toLowerCase()
-          .replaceAll('_', '');
+      final chave = entry.key.toString().trim().toLowerCase().replaceAll(
+        '_',
+        '',
+      );
       if (chavesAceitas.contains(chave)) return entry.value;
     }
     return null;
@@ -1054,16 +1252,22 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     if (alvo.isEmpty) return null;
 
     for (final operador in _operadores) {
-      if (_normalizarCodigoOperador(operador.codigo) == alvo) {
+      final candidato = _normalizarCodigoOperador(operador.codigo);
+      if (candidato == alvo ||
+          candidato.padLeft(6, '0') == alvo.padLeft(6, '0')) {
         return operador;
       }
     }
     return null;
   }
 
-  List<_OperadorEtiqueta> _ordenarOperadores(List<_OperadorEtiqueta> operadores) {
+  List<_OperadorEtiqueta> _ordenarOperadores(
+    List<_OperadorEtiqueta> operadores,
+  ) {
     final ordenados = List<_OperadorEtiqueta>.from(operadores);
-    ordenados.sort((a, b) => a.nome.toUpperCase().compareTo(b.nome.toUpperCase()));
+    ordenados.sort(
+      (a, b) => a.nome.toUpperCase().compareTo(b.nome.toUpperCase()),
+    );
     return ordenados;
   }
 
@@ -1144,7 +1348,8 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                       child: TextField(
                         autofocus: true,
                         style: const TextStyle(color: Colors.white),
-                        onChanged: (value) => setModalState(() => filtro = value),
+                        onChanged: (value) =>
+                            setModalState(() => filtro = value),
                         decoration: _fieldDecoration(
                           label: 'Buscar operador',
                           hint: 'Digite codigo ou nome',
@@ -1163,14 +1368,17 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                             )
                           : ListView.separated(
                               itemCount: filtrados.length,
-                              separatorBuilder: (_, __) =>
-                                  const Divider(height: 1, color: Colors.white12),
+                              separatorBuilder: (_, __) => const Divider(
+                                height: 1,
+                                color: Colors.white12,
+                              ),
                               itemBuilder: (_, index) {
                                 final operador = filtrados[index];
                                 return ListTile(
                                   leading: CircleAvatar(
-                                    backgroundColor:
-                                        _appAccent.withValues(alpha: 0.16),
+                                    backgroundColor: _appAccent.withValues(
+                                      alpha: 0.16,
+                                    ),
                                     child: const Icon(
                                       Icons.badge_rounded,
                                       color: _appAccent,
@@ -1188,7 +1396,9 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                                   ),
                                   subtitle: Text(
                                     'Codigo ${operador.codigo}',
-                                    style: const TextStyle(color: Colors.white60),
+                                    style: const TextStyle(
+                                      color: Colors.white60,
+                                    ),
                                   ),
                                   onTap: () => Navigator.of(ctx).pop(operador),
                                 );
@@ -1392,7 +1602,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                     color: Colors.black.withValues(alpha: 0.08),
                     blurRadius: 14,
                     offset: const Offset(0, 6),
-                  )
+                  ),
                 ]
               : null,
         ),
@@ -1404,16 +1614,17 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(icon,
-                    color: selected ? Colors.black : Colors.white60),
+                Icon(icon, color: selected ? Colors.black : Colors.white60),
                 const SizedBox(height: 6),
-                Text(label,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                       color: selected ? Colors.black : Colors.white70,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w900,
-                    )),
+                Text(
+                  label,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: selected ? Colors.black : Colors.white70,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
               ],
             ),
           ),
@@ -1562,8 +1773,9 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                                   if (_buscaController.text.isNotEmpty)
                                     IconButton(
                                       tooltip: 'Limpar artigo',
-                                      onPressed:
-                                          busy ? null : _limparArtigoCaixa,
+                                      onPressed: busy
+                                          ? null
+                                          : _limparArtigoCaixa,
                                       icon: const Icon(
                                         Icons.close_rounded,
                                         color: Colors.white70,
@@ -1571,8 +1783,9 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                                     ),
                                   IconButton(
                                     tooltip: 'Ler QR Code do artigo',
-                                    onPressed:
-                                        busy ? null : _abrirLeitorQrArtigo,
+                                    onPressed: busy
+                                        ? null
+                                        : _abrirLeitorQrArtigo,
                                     icon: Icon(
                                       _aguardandoQrColetor
                                           ? Icons.qr_code_scanner_rounded
@@ -1782,7 +1995,9 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                 height: 54,
                 child: FilledButton.icon(
                   style: _primaryButtonStyle(),
-                  onPressed: busy || _artigoInfo == null ? null : _imprimirCaixa,
+                  onPressed: busy || _artigoInfo == null
+                      ? null
+                      : _imprimirCaixa,
                   icon: _imprimindo
                       ? const SizedBox(
                           width: 18,
@@ -1802,13 +2017,16 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       ),
     );
   }
+
   Widget _buildOperadorPanel() {
     final busy = _imprimindoOp;
     return _panel(
       child: LayoutBuilder(
         builder: (context, constraints) {
           final compact = constraints.maxWidth < 520;
-          final fieldWidth = compact ? constraints.maxWidth : constraints.maxWidth - 144;
+          final fieldWidth = compact
+              ? constraints.maxWidth
+              : constraints.maxWidth - 144;
           final qtdeWidth = compact ? constraints.maxWidth : 132.0;
 
           return Column(
@@ -2004,8 +2222,8 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
           _lotesList.isEmpty
               ? 'Nenhum lote encontrado'
               : lotesFiltrados.isEmpty
-                  ? 'Nenhum detalhe para esse filtro'
-                  : 'Selecione...',
+              ? 'Nenhum detalhe para esse filtro'
+              : 'Selecione...',
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(color: Colors.white54),
         ),
@@ -2161,8 +2379,9 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       inputFormatters: numeric
           ? [FilteringTextInputFormatter.allow(RegExp(r'[0-9]'))]
           : null,
-      textCapitalization:
-          caps ? TextCapitalization.characters : TextCapitalization.none,
+      textCapitalization: caps
+          ? TextCapitalization.characters
+          : TextCapitalization.none,
       onChanged: onChanged,
       onSubmitted: onSubmit != null ? (_) => onSubmit() : null,
       decoration: _fieldDecoration(
@@ -2190,9 +2409,9 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       style: const TextStyle(color: Colors.white),
       onTap: enabled
           ? () => _selecionarOperador(
-                controller: controller,
-                onSelecionado: onSelecionado,
-              )
+              controller: controller,
+              onSelecionado: onSelecionado,
+            )
           : null,
       decoration: _fieldDecoration(
         label: label,
@@ -2211,9 +2430,9 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
               ),
               onPressed: enabled
                   ? () => _lerQrOperador(
-                        controller: controller,
-                        onSelecionado: onSelecionado,
-                      )
+                      controller: controller,
+                      onSelecionado: onSelecionado,
+                    )
                   : null,
             ),
             if (selecionado)
@@ -2222,9 +2441,9 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                 icon: const Icon(Icons.close_rounded, color: Colors.white70),
                 onPressed: enabled
                     ? () => setState(() {
-                          controller.clear();
-                          onSelecionado(null);
-                        })
+                        controller.clear();
+                        onSelecionado(null);
+                      })
                     : null,
               )
             else
@@ -2275,7 +2494,9 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
             child: Text(
               _erro!,
               style: const TextStyle(
-                  color: Color(0xFF7F1D1D), fontWeight: FontWeight.w600),
+                color: Color(0xFF7F1D1D),
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ],
@@ -2295,8 +2516,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
         child: SizedBox(
           width: 500,
           height: 350,
-          child:
-              CustomPaint(painter: _EtiquetaPaletePainter(data: _qrPalete!)),
+          child: CustomPaint(painter: _EtiquetaPaletePainter(data: _qrPalete!)),
         ),
       ),
     );
@@ -2317,9 +2537,10 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
             child: Text(
               'Conteúdo do palete',
               style: TextStyle(
-                  color: Color(0xFF0A2540),
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800),
+                color: Color(0xFF0A2540),
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+              ),
             ),
           ),
           const Divider(height: 1),
@@ -2344,23 +2565,27 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                       ? 'SKU ${item.codSku}'
                       : item.descricao,
                   style: const TextStyle(
-                      color: Color(0xFF0F172A),
-                      fontSize: 15,
-                      fontWeight: FontWeight.w800),
+                    color: Color(0xFF0F172A),
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   'SKU ${item.codSku} · Detalhe ${item.detalhe}',
                   style: const TextStyle(
-                      color: Color(0xFF64748B), fontWeight: FontWeight.w600),
+                    color: Color(0xFF64748B),
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ],
             ),
           ),
           _Pill(
-              label: 'Saldo',
-              value:
-                  '${item.qtAlocada == item.qtAlocada.roundToDouble() ? item.qtAlocada.toStringAsFixed(0) : item.qtAlocada.toStringAsFixed(2)} m'),
+            label: 'Saldo',
+            value:
+                '${item.qtAlocada == item.qtAlocada.roundToDouble() ? item.qtAlocada.toStringAsFixed(0) : item.qtAlocada.toStringAsFixed(2)} m',
+          ),
           const SizedBox(width: 8),
           _Pill(label: 'P', value: item.qtCaixaP.toString()),
           const SizedBox(width: 8),
@@ -2395,13 +2620,11 @@ class _ToggleChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        decoration: BoxDecoration(
+      duration: const Duration(milliseconds: 150),
+      decoration: BoxDecoration(
         color: value ? _appAccent : _appSurfaceAlt,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: value ? _appAccent : Colors.white24,
-        ),
+        border: Border.all(color: value ? _appAccent : Colors.white24),
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
@@ -2455,17 +2678,23 @@ class _Pill extends StatelessWidget {
       ),
       child: Column(
         children: [
-          Text(label,
-              style: const TextStyle(
-                  color: Color(0xFF64748B),
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700)),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Color(0xFF64748B),
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
           const SizedBox(height: 2),
-          Text(value,
-              style: const TextStyle(
-                  color: Color(0xFF0F172A),
-                  fontSize: 13,
-                  fontWeight: FontWeight.w900)),
+          Text(
+            value,
+            style: const TextStyle(
+              color: Color(0xFF0F172A),
+              fontSize: 13,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
         ],
       ),
     );
@@ -2492,15 +2721,17 @@ class _EtiquetaPaletePainter extends CustomPainter {
     final s = size.width / _w;
     canvas.save();
     canvas.scale(s);
-    canvas.drawRect(
-        Rect.fromLTWH(0, 0, _w, _h), Paint()..color = Colors.white);
+    canvas.drawRect(Rect.fromLTWH(0, 0, _w, _h), Paint()..color = Colors.white);
 
-    for (final e in _barcode.make(data,
-        width: _qr.width, height: _qr.height, drawText: false)) {
+    for (final e in _barcode.make(
+      data,
+      width: _qr.width,
+      height: _qr.height,
+      drawText: false,
+    )) {
       if (e is BarcodeBar && e.black) {
         canvas.drawRect(
-          Rect.fromLTWH(
-              _qr.left + e.left, _qr.top + e.top, e.width, e.height),
+          Rect.fromLTWH(_qr.left + e.left, _qr.top + e.top, e.width, e.height),
           Paint()..color = Colors.black,
         );
       }
@@ -2508,16 +2739,17 @@ class _EtiquetaPaletePainter extends CustomPainter {
 
     (TextPainter(
       text: TextSpan(
-          text: data,
-          style: const TextStyle(
-              color: Color(0xFF0F172A),
-              fontSize: 58,
-              fontWeight: FontWeight.w900)),
+        text: data,
+        style: const TextStyle(
+          color: Color(0xFF0F172A),
+          fontSize: 58,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
       textAlign: TextAlign.center,
       textDirection: TextDirection.ltr,
       maxLines: 1,
-    )..layout(minWidth: _w, maxWidth: _w))
-        .paint(canvas, Offset(0, _textY));
+    )..layout(minWidth: _w, maxWidth: _w)).paint(canvas, Offset(0, _textY));
 
     canvas.restore();
   }
@@ -2546,8 +2778,7 @@ class _EtiquetaCaixaPainter extends CustomPainter {
     final s = size.width / _w;
     canvas.save();
     canvas.scale(s);
-    canvas.drawRect(
-        Rect.fromLTWH(0, 0, _w, _h), Paint()..color = Colors.white);
+    canvas.drawRect(Rect.fromLTWH(0, 0, _w, _h), Paint()..color = Colors.white);
 
     final lines = _lines();
     final yy = [0.0, 52.0, 98.0, 128.0, 156.0, 184.0, 212.0];
@@ -2559,7 +2790,7 @@ class _EtiquetaCaixaPainter extends CustomPainter {
       FontWeight.w800,
       FontWeight.w800,
       FontWeight.w800,
-      FontWeight.w700
+      FontWeight.w700,
     ];
 
     final double mw = _qr.left - 18 - 12;
@@ -2569,12 +2800,14 @@ class _EtiquetaCaixaPainter extends CustomPainter {
       while (fontSize >= 12) {
         final tp = TextPainter(
           text: TextSpan(
-              text: lines[i],
-              style: TextStyle(
-                  color: Colors.black,
-                  fontSize: fontSize,
-                  fontWeight: fw[i],
-                  letterSpacing: 0)),
+            text: lines[i],
+            style: TextStyle(
+              color: Colors.black,
+              fontSize: fontSize,
+              fontWeight: fw[i],
+              letterSpacing: 0,
+            ),
+          ),
           textAlign: TextAlign.left,
           textDirection: TextDirection.ltr,
         )..layout();
@@ -2588,12 +2821,20 @@ class _EtiquetaCaixaPainter extends CustomPainter {
 
     final qrData = _v(['QrCode', 'qr_code']);
     if (qrData.isNotEmpty) {
-      for (final e in _barcode.make(qrData,
-          width: _qr.width, height: _qr.height, drawText: false)) {
+      for (final e in _barcode.make(
+        qrData,
+        width: _qr.width,
+        height: _qr.height,
+        drawText: false,
+      )) {
         if (e is BarcodeBar && e.black) {
           canvas.drawRect(
             Rect.fromLTWH(
-                _qr.left + e.left, _qr.top + e.top, e.width, e.height),
+              _qr.left + e.left,
+              _qr.top + e.top,
+              e.width,
+              e.height,
+            ),
             Paint()..color = Colors.black,
           );
         }
@@ -2673,19 +2914,26 @@ class _EtiquetaOperadorPainter extends CustomPainter {
     final s = size.width / _w;
     canvas.save();
     canvas.scale(s);
-    canvas.drawRect(
-        Rect.fromLTWH(0, 0, _w, _h), Paint()..color = Colors.white);
+    canvas.drawRect(Rect.fromLTWH(0, 0, _w, _h), Paint()..color = Colors.white);
 
     final qrData = '{"operador":$operador}';
     final black = Paint()..color = Colors.black;
 
     for (final offset in _offsets) {
-      for (final e in _barcode.make(qrData,
-          width: _qrSide, height: _qrSide, drawText: false)) {
+      for (final e in _barcode.make(
+        qrData,
+        width: _qrSide,
+        height: _qrSide,
+        drawText: false,
+      )) {
         if (e is BarcodeBar && e.black) {
           canvas.drawRect(
             Rect.fromLTWH(
-                offset.dx + e.left, offset.dy + e.top, e.width, e.height),
+              offset.dx + e.left,
+              offset.dy + e.top,
+              e.width,
+              e.height,
+            ),
             black,
           );
         }
