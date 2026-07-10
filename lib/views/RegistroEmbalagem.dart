@@ -758,7 +758,7 @@ class _RegistroScreenState extends State<RegistroScreen> {
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.45),
-            blurRadius: 18,
+            blurRadius: 12,
             offset: const Offset(0, 10),
           ),
         ],
@@ -788,7 +788,7 @@ class _RegistroScreenState extends State<RegistroScreen> {
               style: const TextStyle(
                 color: _kTextPrimary,
                 fontSize: 16,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w800,
               ),
             ),
           ),
@@ -1090,7 +1090,7 @@ class _RegistroScreenState extends State<RegistroScreen> {
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: _kTextPrimary,
-                      fontWeight: FontWeight.w900,
+                      fontWeight: FontWeight.w800,
                       fontSize: 14,
                     ),
                   ),
@@ -1108,7 +1108,7 @@ class _RegistroScreenState extends State<RegistroScreen> {
                 'Turno ${getTurno()}',
                 style: const TextStyle(
                   color: _kTextPrimary,
-                  fontWeight: FontWeight.w900,
+                  fontWeight: FontWeight.w800,
                   fontSize: 14,
                 ),
               ),
@@ -1139,7 +1139,7 @@ class _RegistroScreenState extends State<RegistroScreen> {
             : const Icon(Icons.save),
         label: Text(
           _isSaving ? 'Salvando...' : 'Salvar Registro',
-          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
         ),
         style: ElevatedButton.styleFrom(
           backgroundColor: _kPrimaryColor,

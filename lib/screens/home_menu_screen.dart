@@ -489,12 +489,8 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(26),
-        gradient: const LinearGradient(
-          colors: [Color(0xFF0B1220), Color(0xFF0D1630), Color(0xFF08101F)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        color: const Color(0xFF0B1220),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(color: Colors.white10),
         boxShadow: [
           BoxShadow(
@@ -510,7 +506,7 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
             width: 52,
             height: 52,
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(18),
+              borderRadius: BorderRadius.circular(14),
               gradient: const LinearGradient(
                 colors: [Color(0xFF4DA3FF), Color(0xFF5EF7C5)],
               ),
@@ -530,7 +526,7 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
                   "Status do Sistema",
                   style: TextStyle(
                     fontSize: 14,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w800,
                     color: Colors.white,
                   ),
                 ),
@@ -602,7 +598,7 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: const Color(0xFF0B1220),
-        borderRadius: BorderRadius.circular(26),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(color: Colors.white10),
       ),
       child: Column(
@@ -616,7 +612,7 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
                 "Produção do mês",
                 style: TextStyle(
                   fontSize: 16,
-                  fontWeight: FontWeight.w900,
+                  fontWeight: FontWeight.w800,
                   color: Colors.white,
                 ),
               ),
@@ -677,10 +673,8 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(26),
-        gradient: const LinearGradient(
-          colors: [Color(0xFF101B34), Color(0xFF0B1220)],
-        ),
+        color: const Color(0xFF0B1220),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(color: Colors.white10),
       ),
       child: Row(
@@ -692,7 +686,7 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
               "Apontamento disponível",
               style: TextStyle(
                 color: Colors.white,
-                fontWeight: FontWeight.w800,
+                fontWeight: FontWeight.w700,
               ),
             ),
           ),
@@ -827,7 +821,7 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
             "Ações do sistema",
             style: TextStyle(
               fontSize: 22,
-              fontWeight: FontWeight.w900,
+              fontWeight: FontWeight.w800,
               color: Colors.white,
             ),
           ),
@@ -885,7 +879,7 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
             "Indicadores",
             style: TextStyle(
               fontSize: 22,
-              fontWeight: FontWeight.w900,
+              fontWeight: FontWeight.w800,
               color: Colors.white,
             ),
           ),
@@ -924,7 +918,7 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
             "Conta",
             style: TextStyle(
               fontSize: 22,
-              fontWeight: FontWeight.w900,
+              fontWeight: FontWeight.w800,
               color: Colors.white,
             ),
           ),
@@ -992,12 +986,8 @@ class _PremiumHeader extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(26),
-        gradient: const LinearGradient(
-          colors: [Color(0xFF0B1220), Color(0xFF101B34)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        color: const Color(0xFF0B1220),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(color: Colors.white10),
       ),
       child: Row(
@@ -1006,7 +996,7 @@ class _PremiumHeader extends StatelessWidget {
             width: 52,
             height: 52,
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(18),
+              borderRadius: BorderRadius.circular(14),
               color: Colors.white.withOpacity(0.05),
               border: Border.all(color: Colors.white10),
             ),
@@ -1030,7 +1020,7 @@ class _PremiumHeader extends StatelessWidget {
                   nome,
                   style: const TextStyle(
                     fontSize: 18,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w800,
                     color: Colors.white,
                   ),
                   overflow: TextOverflow.ellipsis,
@@ -1075,13 +1065,13 @@ class _QuickCircleAction extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(right: 14),
       child: InkWell(
-        borderRadius: BorderRadius.circular(26),
+        borderRadius: BorderRadius.circular(16),
         onTap: onTap,
         child: Container(
           width: 86,
           padding: const EdgeInsets.symmetric(vertical: 10),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(26),
+            borderRadius: BorderRadius.circular(16),
             color: const Color(0xFF0B1220),
             border: Border.all(color: Colors.white10),
           ),
@@ -1134,17 +1124,12 @@ class _BigModuleCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      borderRadius: BorderRadius.circular(28),
+      borderRadius: BorderRadius.circular(18),
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(28),
-          gradient: LinearGradient(
-            colors: [accent.withOpacity(0.22), const Color(0xFF0B1220)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
+          color: const Color(0xFF0B1220),
           border: Border.all(color: Colors.white10),
         ),
         child: Row(
@@ -1153,7 +1138,7 @@ class _BigModuleCard extends StatelessWidget {
               width: 56,
               height: 56,
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(14),
                 color: accent.withOpacity(0.18),
               ),
               child: Icon(icon, color: accent, size: 30),
@@ -1167,7 +1152,7 @@ class _BigModuleCard extends StatelessWidget {
                     title,
                     style: const TextStyle(
                       fontSize: 16,
-                      fontWeight: FontWeight.w900,
+                      fontWeight: FontWeight.w800,
                       color: Colors.white,
                     ),
                   ),
@@ -1216,12 +1201,12 @@ class _MiniModuleCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      borderRadius: BorderRadius.circular(26),
+      borderRadius: BorderRadius.circular(16),
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(26),
+          borderRadius: BorderRadius.circular(16),
           color: const Color(0xFF0B1220),
           border: Border.all(color: Colors.white10),
         ),
@@ -1242,7 +1227,7 @@ class _MiniModuleCard extends StatelessWidget {
               title,
               style: const TextStyle(
                 fontSize: 14,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w800,
                 color: Colors.white,
               ),
               maxLines: 1,
@@ -1281,7 +1266,7 @@ class _MetricCard extends StatelessWidget {
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.03),
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: Colors.white10),
       ),
       child: Row(
@@ -1309,7 +1294,7 @@ class _MetricCard extends StatelessWidget {
                   value,
                   style: const TextStyle(
                     fontSize: 14,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w800,
                     color: Colors.white,
                   ),
                 ),
@@ -1348,12 +1333,12 @@ class _ActionTile extends StatelessWidget {
         final compact = constraints.maxWidth < 190;
 
         return InkWell(
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: BorderRadius.circular(16),
           onTap: item.onTap,
           child: Container(
             padding: EdgeInsets.all(compact ? 12 : 14),
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(22),
+              borderRadius: BorderRadius.circular(16),
               color: const Color(0xFF0B1220),
               border: Border.all(color: Colors.white10),
             ),
@@ -1374,7 +1359,7 @@ class _ActionTile extends StatelessWidget {
                   item.title,
                   style: TextStyle(
                     fontSize: compact ? 13 : 14,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w800,
                     color: Colors.white,
                     height: 1.15,
                   ),
@@ -1430,12 +1415,12 @@ class _ConfigTile extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: InkWell(
-        borderRadius: BorderRadius.circular(26),
+        borderRadius: BorderRadius.circular(16),
         onTap: onTap,
         child: Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(26),
+            borderRadius: BorderRadius.circular(16),
             color: const Color(0xFF0B1220),
             border: Border.all(color: Colors.white10),
           ),
@@ -1451,7 +1436,7 @@ class _ConfigTile extends StatelessWidget {
                       title,
                       style: const TextStyle(
                         fontSize: 14,
-                        fontWeight: FontWeight.w900,
+                        fontWeight: FontWeight.w800,
                         color: Colors.white,
                       ),
                     ),
@@ -1497,7 +1482,7 @@ class _InfoCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(26),
+        borderRadius: BorderRadius.circular(16),
         color: const Color(0xFF0B1220),
         border: Border.all(color: Colors.white10),
       ),
@@ -1513,7 +1498,7 @@ class _InfoCard extends StatelessWidget {
                     text: "$title\n",
                     style: const TextStyle(
                       fontSize: 14,
-                      fontWeight: FontWeight.w900,
+                      fontWeight: FontWeight.w800,
                       color: Colors.white,
                     ),
                   ),
@@ -1646,7 +1631,7 @@ class GaugePainter extends CustomPainter {
         text: labelText,
         style: const TextStyle(
           fontSize: 12,
-          fontWeight: FontWeight.w900,
+          fontWeight: FontWeight.w800,
           color: Colors.white,
         ),
       ),

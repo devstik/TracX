@@ -2031,14 +2031,7 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
                     Container(
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            _kPrimaryColorEmbalagem,
-                            _kPrimaryColorEmbalagem.withOpacity(0.85),
-                          ],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
+                        color: _kPrimaryColorEmbalagem,
                         borderRadius: const BorderRadius.vertical(
                           top: Radius.circular(16),
                         ),
@@ -2081,7 +2074,7 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
                                 ),
                                 decoration: BoxDecoration(
                                   color: Colors.white.withOpacity(0.15),
-                                  borderRadius: BorderRadius.circular(20),
+                                  borderRadius: BorderRadius.circular(12),
                                 ),
                                 child: Text(
                                   DateFormat('EEEE', 'pt_BR')
@@ -2152,7 +2145,7 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
                                   "${_kBrThreeDecimalFormatter.format(totalGeral)} Kg  |  ${_kBrThreeDecimalFormatter.format(totalGeralMetros)} m",
                                   style: const TextStyle(
                                     color: Colors.white,
-                                    fontWeight: FontWeight.w900,
+                                    fontWeight: FontWeight.w700,
                                     fontSize: 14,
                                   ),
                                 ),
@@ -2217,7 +2210,7 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
                                       child: Text(
                                         categoria,
                                         style: TextStyle(
-                                          fontWeight: FontWeight.w900,
+                                          fontWeight: FontWeight.w800,
                                           fontSize: 14,
                                           color: isPreto2
                                               ? Colors.black
@@ -2803,7 +2796,7 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
               "OP",
               style: TextStyle(
                 fontSize: 13,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w800,
                 color: _kTextPrimary,
                 letterSpacing: 0.5,
               ),
@@ -2815,7 +2808,7 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
               "Artigo / Cor",
               style: TextStyle(
                 fontSize: 13,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w800,
                 color: _kTextPrimary,
                 letterSpacing: 0.5,
               ),
@@ -2932,7 +2925,7 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
                       "OP ${r.ordemProducao}",
                       style: const TextStyle(
                         fontSize: 12.5,
-                        fontWeight: FontWeight.w900,
+                        fontWeight: FontWeight.w800,
                         color: _kTextPrimary,
                       ),
                     ),
@@ -3141,7 +3134,7 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
                             grupo.key,
                             style: const TextStyle(
                               fontSize: 16,
-                              fontWeight: FontWeight.w900,
+                              fontWeight: FontWeight.w800,
                               color: _kTextPrimary,
                               letterSpacing: 0.2,
                             ),
@@ -3207,7 +3200,7 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
               "Material",
               style: TextStyle(
                 fontSize: 13,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w800,
                 color: _kTextPrimary,
                 letterSpacing: 0.5,
               ),
@@ -3220,7 +3213,7 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
               textAlign: TextAlign.right,
               style: TextStyle(
                 fontSize: 13,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w800,
                 color: _kTextPrimary,
                 letterSpacing: 0.5,
               ),

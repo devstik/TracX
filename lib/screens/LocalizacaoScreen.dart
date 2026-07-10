@@ -1618,14 +1618,7 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
               child: Container(
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(18),
-                  gradient: LinearGradient(
-                    colors: [
-                      _kSurface.withOpacity(0.95),
-                      _kSurface2.withOpacity(0.95),
-                    ],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
+                  color: _kSurface.withOpacity(0.95),
                   border: Border.all(color: _kBorderSoft, width: 1),
                 ),
                 child: InkWell(
@@ -1644,7 +1637,7 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
                               child: Text(
                                 'OP ${r.ordemProducao}',
                                 style: const TextStyle(
-                                  fontWeight: FontWeight.w900,
+                                  fontWeight: FontWeight.w800,
                                   fontSize: 20,
                                   color: _kTextPrimary,
                                 ),

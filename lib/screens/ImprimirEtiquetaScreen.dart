@@ -1533,7 +1533,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
           width: 48,
           height: 48,
           decoration: BoxDecoration(
-            gradient: const LinearGradient(colors: [_appAccent, _appMint]),
+            color: _appAccent,
             borderRadius: BorderRadius.circular(14),
           ),
           child: const Icon(Icons.print_rounded, color: Colors.black, size: 28),
@@ -1547,7 +1547,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
             style: TextStyle(
               color: Colors.white,
               fontSize: 30,
-              fontWeight: FontWeight.w900,
+              fontWeight: FontWeight.w800,
             ),
           ),
         ),
@@ -1622,7 +1622,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                   style: TextStyle(
                     color: selected ? Colors.black : Colors.white70,
                     fontSize: 15,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
               ],
@@ -2111,7 +2111,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
             style: TextStyle(
               color: Colors.white,
               fontSize: 20,
-              fontWeight: FontWeight.w900,
+              fontWeight: FontWeight.w800,
             ),
           ),
           const SizedBox(height: 8),
@@ -2344,7 +2344,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       foregroundColor: Colors.black,
       disabledBackgroundColor: Colors.white10,
       disabledForegroundColor: Colors.white38,
-      textStyle: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15),
+      textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
     );
   }
@@ -2353,7 +2353,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     return OutlinedButton.styleFrom(
       foregroundColor: _appAccent,
       side: const BorderSide(color: _appAccent),
-      textStyle: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15),
+      textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
     );
   }
@@ -2692,7 +2692,7 @@ class _Pill extends StatelessWidget {
             style: const TextStyle(
               color: Color(0xFF0F172A),
               fontSize: 13,
-              fontWeight: FontWeight.w900,
+              fontWeight: FontWeight.w800,
             ),
           ),
         ],
@@ -2743,7 +2743,7 @@ class _EtiquetaPaletePainter extends CustomPainter {
         style: const TextStyle(
           color: Color(0xFF0F172A),
           fontSize: 58,
-          fontWeight: FontWeight.w900,
+          fontWeight: FontWeight.w800,
         ),
       ),
       textAlign: TextAlign.center,
@@ -2784,8 +2784,8 @@ class _EtiquetaCaixaPainter extends CustomPainter {
     final yy = [0.0, 52.0, 98.0, 128.0, 156.0, 184.0, 212.0];
     final fs = [52.0, 40.0, 24.0, 22.0, 22.0, 20.0, 18.0];
     final fw = [
-      FontWeight.w900,
-      FontWeight.w900,
+      FontWeight.w800,
+      FontWeight.w800,
       FontWeight.w800,
       FontWeight.w800,
       FontWeight.w800,

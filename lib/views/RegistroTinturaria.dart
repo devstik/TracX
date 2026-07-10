@@ -129,18 +129,14 @@ class _RegistroScreenTinturariaState extends State<RegistroScreenTinturaria> {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(22),
-        gradient: LinearGradient(
-          colors: [_kSurface.withOpacity(0.92), _kSurface2.withOpacity(0.92)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        color: _kSurface.withOpacity(0.92),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(color: _kBorderSoft),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.55),
-            blurRadius: 25,
-            offset: const Offset(0, 16),
+            color: Colors.black.withOpacity(0.35),
+            blurRadius: 12,
+            offset: const Offset(0, 8),
           ),
         ],
       ),
@@ -167,7 +163,7 @@ class _RegistroScreenTinturariaState extends State<RegistroScreenTinturaria> {
           style: const TextStyle(
             color: _kTextPrimary,
             fontSize: 16,
-            fontWeight: FontWeight.w800,
+            fontWeight: FontWeight.w700,
             letterSpacing: -0.2,
           ),
         ),
@@ -185,7 +181,7 @@ class _RegistroScreenTinturariaState extends State<RegistroScreenTinturaria> {
       ),
       floatingLabelStyle: const TextStyle(
         color: _kAccentColor,
-        fontWeight: FontWeight.w800,
+        fontWeight: FontWeight.w700,
       ),
       prefixIcon: Icon(icon, color: _kTextSecondary, size: 20),
       filled: true,
@@ -590,7 +586,7 @@ class _RegistroScreenTinturariaState extends State<RegistroScreenTinturaria> {
                             : "LER QR CODE",
                         style: TextStyle(
                           fontSize: 14,
-                          fontWeight: FontWeight.w900,
+                          fontWeight: FontWeight.w800,
                           letterSpacing: 0.8,
                         ),
                       ),
@@ -623,7 +619,7 @@ class _RegistroScreenTinturariaState extends State<RegistroScreenTinturaria> {
                       icon: const Icon(Icons.cleaning_services_outlined),
                       label: const Text(
                         'LIMPAR CAMPOS',
-                        style: TextStyle(fontWeight: FontWeight.w800),
+                        style: TextStyle(fontWeight: FontWeight.w700),
                       ),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: Colors.white,
@@ -724,7 +720,7 @@ class _RegistroScreenTinturariaState extends State<RegistroScreenTinturaria> {
                         "SALVAR REGISTRO",
                         style: TextStyle(
                           fontSize: 14,
-                          fontWeight: FontWeight.w900,
+                          fontWeight: FontWeight.w800,
                           letterSpacing: 0.8,
                         ),
                       ),

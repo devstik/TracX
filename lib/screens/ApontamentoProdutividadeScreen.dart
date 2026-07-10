@@ -3787,37 +3787,6 @@ class _FormularioGeralState extends State<FormularioGeral> {
               ),
             ),
           ),
-          Positioned(
-            top: -120,
-            right: -60,
-            child: Container(
-              width: 240,
-              height: 240,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [_kAccentColor.withOpacity(0.14), Colors.transparent],
-                ),
-              ),
-            ),
-          ),
-          Positioned(
-            bottom: -110,
-            left: -40,
-            child: Container(
-              width: 220,
-              height: 220,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [
-                    _kPrimaryColor.withOpacity(0.10),
-                    Colors.transparent,
-                  ],
-                ),
-              ),
-            ),
-          ),
           _buildTipoB(),
         ],
       );
@@ -3938,7 +3907,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
                   'AVANÇAR PARA PRODUÇÃO',
                   style: TextStyle(
                     color: Colors.white,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w800,
                     letterSpacing: 0.6,
                   ),
                 ),
@@ -4905,7 +4874,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
     margin: const EdgeInsets.only(bottom: 16),
     decoration: BoxDecoration(
       color: _kSurface2,
-      borderRadius: BorderRadius.circular(20),
+      borderRadius: BorderRadius.circular(16),
       border: Border.all(color: _kBorderSoft),
     ),
     child: Column(
@@ -4934,7 +4903,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
       margin: const EdgeInsets.only(bottom: 20),
       decoration: BoxDecoration(
         color: _kSurface2,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: _kBorderSoft),
         boxShadow: [
           BoxShadow(
@@ -5088,7 +5057,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
               'CONFIRMAR',
               style: TextStyle(
                 color: Colors.white,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w800,
                 letterSpacing: 0.6,
               ),
             ),
