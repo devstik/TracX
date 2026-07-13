@@ -508,7 +508,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 class ZebraPrinterService {
-  static const String defaultIp = '168.190.30.157';
+  static const String defaultIp = '168.190.30.181';
   static const int defaultPort = 9100;
   static const int _paleteWidth = 800;
   static const int _paleteHeight = 560;

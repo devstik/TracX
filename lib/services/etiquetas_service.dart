@@ -5,8 +5,8 @@ import 'package:http/http.dart' as http;
 
 class EtiquetasService {
   static const String baseUrl = "http://168.190.90.2:5000";
-  static const String zebraZd220Ip = "168.190.30.157";
-  static const String zebraZd220Name = "ZebraZd220";
+  static const String zebraZd220Ip = "168.190.30.181";
+  static const String zebraZd220Name = "EtqEmbalagem";
 
   static Future<List<Map<String, dynamic>>> buscarImpressoras() async {
     try {

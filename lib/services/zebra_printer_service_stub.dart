@@ -1,5 +1,5 @@
 class ZebraPrinterService {
-  static const String defaultIp = '168.190.30.157';
+  static const String defaultIp = '168.190.30.181';
   static const int defaultPort = 9100;
 
   Future<void> imprimirEtiquetaPalete({

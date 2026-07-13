@@ -56,6 +56,45 @@ class _OperadorEtiqueta {
   String get label => nome.isEmpty ? codigo : '$codigo - $nome';
 }
 
+class _ImpressoraEtiqueta {
+  final String nome;
+  final String ip;
+  final int porta;
+
+  const _ImpressoraEtiqueta({
+    required this.nome,
+    required this.ip,
+    required this.porta,
+  });
+
+  factory _ImpressoraEtiqueta.fromJson(Map<String, dynamic> json) {
+    var nome =
+        (json['nome'] ??
+                json['name'] ??
+                json['printer_name'] ??
+                json['printerName'] ??
+                EtiquetasService.zebraZd220Name)
+            .toString()
+            .trim();
+    final ip =
+        (json['ip'] ?? json['host'] ?? EtiquetasService.zebraZd220Ip)
+            .toString()
+            .trim();
+    if (ip == EtiquetasService.zebraZd220Ip) {
+      nome = EtiquetasService.zebraZd220Name;
+    }
+    final porta =
+        json['porta'] is int
+            ? json['porta'] as int
+            : int.tryParse('${json['porta']}') ?? ZebraPrinterService.defaultPort;
+
+    return _ImpressoraEtiqueta(nome: nome, ip: ip, porta: porta);
+  }
+
+  String get chave => '$nome|$ip|$porta';
+  String get label => '$nome ($ip:$porta)';
+}
+
 class EtiquetasPage extends StatefulWidget {
   final int grupoId;
 
@@ -66,6 +105,8 @@ class EtiquetasPage extends StatefulWidget {
 }
 
 class _EtiquetasPageState extends State<EtiquetasPage> {
+  static const String _adminPrintPassword = 'Berlin579';
+
   // ── Palete ───────────────────────────────────────────────────
   final TextEditingController _paleteController = TextEditingController();
 
@@ -98,6 +139,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
   final TextEditingController _qtdeController = TextEditingController(
     text: '1',
   );
+  final FocusNode _qtdeFocus = FocusNode();
 
   // ── Caixa — readonly ─────────────────────────────────────────
   final TextEditingController _tipoCaixaController = TextEditingController();
@@ -125,6 +167,10 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
   final ZebraPrinterService _zebraPrinterService = ZebraPrinterService();
   String _printerIp = ZebraPrinterService.defaultIp;
   int _printerPort = ZebraPrinterService.defaultPort;
+  List<_ImpressoraEtiqueta> _impressoras = const [];
+  String? _impressoraSelecionada;
+  bool _carregandoImpressoras = false;
+  bool _acessoImpressorasRestritasLiberado = false;
 
   _EtiquetaModelo _modelo = _EtiquetaModelo.caixa;
   List<PaleteEmbalagemItemEntry> _itens = const [];
@@ -165,12 +211,47 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
   }
 
   Future<void> _carregarImpressora() async {
+    setState(() => _carregandoImpressoras = true);
     final lista = await EtiquetasService.buscarImpressoras();
-    if (!mounted || lista.isEmpty) return;
-    final p = lista.first;
+    if (!mounted) return;
+
+    final impressoras = lista
+        .map(_ImpressoraEtiqueta.fromJson)
+        .where((item) => item.ip.isNotEmpty)
+        .toList();
+
+    final fallback = _ImpressoraEtiqueta(
+      nome: EtiquetasService.zebraZd220Name,
+      ip: EtiquetasService.zebraZd220Ip,
+      porta: ZebraPrinterService.defaultPort,
+    );
+
+    final selecionada = impressoras.cast<_ImpressoraEtiqueta?>().firstWhere(
+          (item) =>
+              item != null &&
+              (item.nome.trim().toLowerCase() == 'etqembalagem' ||
+                  item.ip == EtiquetasService.zebraZd220Ip),
+          orElse: () => impressoras.isNotEmpty ? impressoras.first : fallback,
+        )!;
+
+    final listaFinal = [...impressoras];
+    final jaTemFallback = listaFinal.any(
+      (item) =>
+          item.nome.trim().toLowerCase() ==
+              fallback.nome.trim().toLowerCase() &&
+          item.ip == fallback.ip &&
+          item.porta == fallback.porta,
+    );
+    if (!jaTemFallback) {
+      listaFinal.insert(0, fallback);
+    }
+
     setState(() {
-      _printerIp = (p['ip'] as String?) ?? _printerIp;
-      _printerPort = (p['porta'] as int?) ?? _printerPort;
+      _impressoras = listaFinal;
+      _impressoraSelecionada = selecionada.chave;
+      _printerIp = selecionada.ip;
+      _printerPort = selecionada.porta;
+      _carregandoImpressoras = false;
     });
   }
 
@@ -188,6 +269,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     _loteController.dispose();
     _operadorController.dispose();
     _qtdeController.dispose();
+    _qtdeFocus.dispose();
     _tipoCaixaController.dispose();
     _etiquetaOpController.dispose();
     _opQtdeController.dispose();
@@ -232,6 +314,9 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
   }
 
   Future<void> _imprimir() async {
+    final autorizado = await _garantirPermissaoImpressaoRestrita();
+    if (!autorizado) return;
+
     final palete = (_paleteConsultado ?? _paleteController.text)
         .trim()
         .toUpperCase();
@@ -948,6 +1033,9 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
   // ────────────────────────────────────────────────────────────
 
   Future<void> _imprimirCaixa() async {
+    final autorizado = await _garantirPermissaoImpressaoRestrita();
+    if (!autorizado) return;
+
     final cdObj = _cdObjSelecionado;
     final metros = _metrosController.text.trim();
     final nrOrdem = _ordemController.text.trim();
@@ -1043,6 +1131,16 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       if (!mounted) return;
       setState(() => _imprimindo = false);
       _showSnackBar('Comando de impressão enviado.', isError: false);
+      final manterDados = await _perguntarPosImpressaoCaixa();
+      if (!mounted) return;
+      if (manterDados) {
+        _qtdeController.selection = TextSelection(
+          baseOffset: 0,
+          extentOffset: _qtdeController.text.length,
+        );
+        _qtdeFocus.requestFocus();
+        return;
+      }
       _resetarCaixa();
     } catch (e) {
       if (!mounted) return;
@@ -1112,7 +1210,34 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
         false;
   }
 
+  Future<bool> _perguntarPosImpressaoCaixa() async {
+    return await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Etiqueta impressa'),
+            content: const Text(
+              'Deseja manter as mesmas informacoes desta etiqueta para imprimir novamente com outra quantidade?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Descartar'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Manter dados'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
   Future<void> _imprimirOperador() async {
+    final autorizado = await _garantirPermissaoImpressaoRestrita();
+    if (!autorizado) return;
+
     final op = _codigoOperador(
       _etiquetaOpController,
       _operadorEtiquetaSelecionado,
@@ -1178,6 +1303,111 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
             : const Color(0xFF047857),
       ),
     );
+  }
+
+  bool get _usaEtqEmbalagem => _printerIp == EtiquetasService.zebraZd220Ip;
+
+  Future<bool> _garantirPermissaoImpressaoRestrita() async {
+    if (_usaEtqEmbalagem || _acessoImpressorasRestritasLiberado) {
+      return true;
+    }
+
+    final senhaController = TextEditingController();
+    bool obscure = true;
+    bool autorizado = false;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return AlertDialog(
+              backgroundColor: _appSurfaceAlt,
+              title: const Text(
+                'Senha de administrador',
+                style: TextStyle(color: Colors.white),
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'Somente a EtqEmbalagem imprime sem senha. Para as outras impressoras, informe a senha de administrador.',
+                    style: TextStyle(color: Colors.white70),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: senhaController,
+                    obscureText: obscure,
+                    autofocus: true,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: InputDecoration(
+                      labelText: 'Senha',
+                      labelStyle: const TextStyle(color: Colors.white70),
+                      enabledBorder: OutlineInputBorder(
+                        borderSide: BorderSide(color: Colors.white24),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderSide: const BorderSide(color: _appAccent),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      suffixIcon: IconButton(
+                        onPressed: () =>
+                            setModalState(() => obscure = !obscure),
+                        icon: Icon(
+                          obscure
+                              ? Icons.visibility_rounded
+                              : Icons.visibility_off_rounded,
+                          color: Colors.white70,
+                        ),
+                      ),
+                    ),
+                    onSubmitted: (_) {
+                      final senha = senhaController.text.trim();
+                      if (senha == _adminPrintPassword) {
+                        autorizado = true;
+                        Navigator.of(ctx).pop();
+                      }
+                    },
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: const Text('Cancelar'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    final senha = senhaController.text.trim();
+                    if (senha == _adminPrintPassword) {
+                      autorizado = true;
+                      Navigator.of(ctx).pop();
+                      return;
+                    }
+                    _showSnackBar('Senha de administrador inválida.', isError: true);
+                  },
+                  child: const Text('Liberar'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    senhaController.dispose();
+
+    if (autorizado && mounted) {
+      setState(() => _acessoImpressorasRestritasLiberado = true);
+      _showSnackBar(
+        'Impressão liberada para outras etiquetas nesta sessão.',
+        isError: false,
+      );
+    }
+
+    return autorizado;
   }
 
   int _codigoOperador(
@@ -1488,6 +1718,8 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                   const SizedBox(height: 22),
                   _buildModelSelector(),
                   const SizedBox(height: 18),
+                  _buildPrinterSelector(),
+                  const SizedBox(height: 18),
                   if (_modelo == _EtiquetaModelo.palete)
                     _buildPaletePanel()
                   else if (_modelo == _EtiquetaModelo.caixa)
@@ -1576,6 +1808,107 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
             icon: Icons.badge_rounded,
             label: 'Operador',
             subtitle: '',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPrinterSelector() {
+    final items = _impressoras.isEmpty
+        ? [
+            _ImpressoraEtiqueta(
+              nome: EtiquetasService.zebraZd220Name,
+              ip: _printerIp,
+              porta: _printerPort,
+            ),
+          ]
+        : _impressoras;
+
+    final selectedValue = items.any((item) => item.chave == _impressoraSelecionada)
+        ? _impressoraSelecionada
+        : items.first.chave;
+
+    return _panel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.print_rounded, color: _appAccent),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  'Impressora',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              if (_carregandoImpressoras)
+                const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: _appAccent,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(
+            initialValue: selectedValue,
+            dropdownColor: _appSurfaceAlt,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
+            ),
+            decoration: _fieldDecoration(
+              label: 'Selecionar impressora',
+              hint: 'Escolha uma impressora da API',
+              icon: Icons.router_rounded,
+            ),
+            items: items
+                .map(
+                  (item) => DropdownMenuItem<String>(
+                    value: item.chave,
+                    child: Text(
+                      item.label,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                )
+                .toList(),
+            onChanged: (value) {
+              if (value == null) return;
+              final impressora = items.firstWhere((item) => item.chave == value);
+              setState(() {
+                _impressoraSelecionada = value;
+                _printerIp = impressora.ip;
+                _printerPort = impressora.porta;
+                if (impressora.ip == EtiquetasService.zebraZd220Ip) {
+                  _acessoImpressorasRestritasLiberado = false;
+                }
+              });
+            },
+          ),
+          const SizedBox(height: 10),
+          Text(
+            _usaEtqEmbalagem
+                ? 'EtqEmbalagem liberada para impressão.'
+                : _acessoImpressorasRestritasLiberado
+                    ? 'Impressora extra liberada por senha de administrador.'
+                    : 'Outras impressoras exigem senha de administrador para imprimir.',
+            style: TextStyle(
+              color: _usaEtqEmbalagem || _acessoImpressorasRestritasLiberado
+                  ? _appMint
+                  : Colors.amberAccent,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ],
       ),
@@ -1970,6 +2303,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                   SizedBox(
                     width: compact ? maxWidth : 120,
                     child: _campo(
+                      focusNode: _qtdeFocus,
                       controller: _qtdeController,
                       label: 'Qtde',
                       hint: '1',
@@ -2363,6 +2697,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     required String label,
     required String hint,
     required IconData icon,
+    FocusNode? focusNode,
     bool numeric = false,
     bool caps = false,
     bool enabled = true,
@@ -2373,6 +2708,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
   }) {
     return TextField(
       controller: controller,
+      focusNode: focusNode,
       enabled: enabled,
       style: const TextStyle(color: Colors.white),
       keyboardType: numeric ? TextInputType.number : TextInputType.text,
