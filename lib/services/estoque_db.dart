@@ -60,6 +60,7 @@ class EstoqueDbHelper {
       await _createAlocacaoCacheTables(db);
     }
     if (oldVersion < 5) {
+      await _createCaixasTable(db);
       await db.execute('''
         UPDATE caixas
         SET caixa_p = 1200
@@ -67,6 +68,7 @@ class EstoqueDbHelper {
       ''');
     }
     if (oldVersion < 6) {
+      await _createCaixasTable(db);
       await db.execute('''
         UPDATE caixas
         SET caixa_p = 600
@@ -312,6 +314,7 @@ class EstoqueDbHelper {
   Future<Map<String, dynamic>?> buscarCaixaPorArtigo(String artigo) async {
     final db = await database;
     if (db == null) return null;
+    await _createCaixasTable(db);
     final result = await db.query(
       'caixas',
       where: 'LOWER(artigo) = ?',
@@ -324,6 +327,7 @@ class EstoqueDbHelper {
   Future<void> salvarPadraoCaixa(Map<String, dynamic> padrao) async {
     final db = await database;
     if (db == null) return;
+    await _createCaixasTable(db);
     final artigo = (padrao['artigo'] ?? '').toString().trim();
     if (artigo.isEmpty) return;
     await db.insert('caixas', {
@@ -339,6 +343,7 @@ class EstoqueDbHelper {
   Future<void> salvarPadroesCaixa(List<Map<String, dynamic>> padroes) async {
     final db = await database;
     if (db == null || padroes.isEmpty) return;
+    await _createCaixasTable(db);
     await db.transaction((txn) async {
       for (final padrao in padroes) {
         final artigo = (padrao['artigo'] ?? '').toString().trim();

@@ -13,7 +13,7 @@ import 'package:tracx/screens/RegistroPrincipalScreen.dart';
 import 'package:tracx/screens/ConsultaMapaProducaoScreen.dart';
 import 'package:tracx/screens/ApontamentoProdutividadeScreen.dart';
 import 'package:tracx/screens/RegistrosApontamento.dart';
-import 'package:tracx/screens/ImprimirEtiquetaScreen.dart';
+import 'package:tracx/screens/imprimir_etiquetas_page.dart';
 import 'package:tracx/services/estoque_db_helper.dart';
 //import 'package:tracx/widgets/widgets_dados_integrados.dart';
 import 'package:tracx/services/update_service.dart';

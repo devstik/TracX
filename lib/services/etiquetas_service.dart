@@ -5,30 +5,15 @@ import 'package:http/http.dart' as http;
 
 class EtiquetasService {
   static const String baseUrl = "http://168.190.90.2:5000";
-  static const String zebraZd220Ip = "168.190.30.181";
-  static const String zebraZd220Name = "EtqEmbalagem";
-
-  static Future<List<Map<String, dynamic>>> buscarImpressoras() async {
-    try {
-      final response = await http.get(
-        Uri.parse("$baseUrl/consulta/wms/impressoras"),
-      );
-      if (response.statusCode >= 200 && response.statusCode < 300) {
-        final decoded = jsonDecode(response.body);
-        if (decoded is Map<String, dynamic>) {
-          final data = decoded["data"];
-          if (data is List) return List<Map<String, dynamic>>.from(data);
-        }
-      }
-    } catch (_) {}
-    return [];
-  }
+  static const String zebraZd220Ip = "168.190.30.74";
+  static const String zebraZd220Name = "ZebraZd220";
+  static const Duration _quickTimeout = Duration(seconds: 8);
 
   static Future<List<Map<String, dynamic>>> buscarOperadores() async {
     final response = await http.get(
       Uri.parse("$baseUrl/consultar/usuarios"),
       headers: {"Content-Type": "application/json"},
-    );
+    ).timeout(_quickTimeout);
 
     if (response.statusCode >= 200 && response.statusCode < 300) {
       final decoded = jsonDecode(response.body);
@@ -40,6 +25,22 @@ class EtiquetasService {
     }
 
     throw "Erro ${response.statusCode} ao buscar operadores.";
+  }
+
+  static Future<List<Map<String, dynamic>>> buscarImpressoras() async {
+    try {
+      final response = await http.get(
+        Uri.parse("$baseUrl/consulta/wms/impressoras"),
+      ).timeout(_quickTimeout);
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map<String, dynamic>) {
+          final data = decoded["data"];
+          if (data is List) return List<Map<String, dynamic>>.from(data);
+        }
+      }
+    } catch (_) {}
+    return [];
   }
 
   static Future<List<Map<String, dynamic>>> listarObjetosPorGrupo(
@@ -165,15 +166,17 @@ class EtiquetasService {
       "lote_inline": loteInline,
     };
 
-    debugPrint('[ETIQUETA-V2] POST /etiqueta-caixa-v2 body=${jsonEncode(body)}');
-
+    final sw = Stopwatch()..start();
     final response = await http.post(
       Uri.parse("$baseUrl/consulta/wms/etiqueta-caixa-v2"),
       headers: {"Content-Type": "application/json"},
       body: jsonEncode(body),
-    );
+    ).timeout(_quickTimeout);
+    sw.stop();
 
-    debugPrint('[ETIQUETA-V2] status=${response.statusCode} body=${response.body}');
+    debugPrint(
+      '[ETIQUETA-V2] status=${response.statusCode} | tempo=${sw.elapsedMilliseconds}ms',
+    );
 
     if (response.statusCode >= 200 && response.statusCode < 300) {
       final decoded = jsonDecode(response.body);
@@ -186,6 +189,59 @@ class EtiquetasService {
 
     String message =
         "Erro ${response.statusCode} ao buscar etiqueta caixa.";
+    try {
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map<String, dynamic>) {
+        message =
+            (decoded["error"] ??
+                    decoded["message"] ??
+                    decoded["details"] ??
+                    message)
+                .toString();
+      }
+    } catch (_) {
+      if (response.body.trim().isNotEmpty) message = response.body.trim();
+    }
+    throw message;
+  }
+
+  static Future<Map<String, dynamic>> buscarEtiquetaCarretel({
+    required int cdObj,
+    String lote = '',
+    String operador = '',
+    int qtdeImp = 1,
+  }) async {
+    if (cdObj <= 0) throw "Informe o código do artigo.";
+
+    final body = {
+      "cd_obj": cdObj,
+      "lote": lote.trim(),
+      "operador": operador.trim(),
+      "qtde_imp": qtdeImp,
+    };
+
+    final sw = Stopwatch()..start();
+    final response = await http.post(
+      Uri.parse("$baseUrl/consulta/wms/etiqueta-carretel"),
+      headers: {"Content-Type": "application/json"},
+      body: jsonEncode(body),
+    ).timeout(_quickTimeout);
+    sw.stop();
+
+    debugPrint(
+      '[ETIQUETA-CARRETEL] status=${response.statusCode} | tempo=${sw.elapsedMilliseconds}ms',
+    );
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map<String, dynamic>) {
+        final data = decoded["data"];
+        if (data is Map<String, dynamic>) return data;
+        return decoded;
+      }
+    }
+
+    String message = "Erro ${response.statusCode} ao buscar etiqueta carretel.";
     try {
       final decoded = jsonDecode(response.body);
       if (decoded is Map<String, dynamic>) {
@@ -219,57 +275,29 @@ class EtiquetasService {
     return [];
   }
 
-  static Future<List<Map<String, dynamic>>> listarTodosArtigos() async {
-    final response = await http.get(
-      Uri.parse("$baseUrl/consulta/allArtigos"),
-    );
-    if (response.statusCode >= 200 && response.statusCode < 300) {
-      final decoded = jsonDecode(response.body);
-      final data = decoded is Map<String, dynamic> ? decoded["data"] : decoded;
-      if (data is List) {
-        return data.whereType<Map>().map((item) {
-          final registro = Map<String, dynamic>.from(item);
-          final cdObj =
-              registro['CdObj'] ??
-              registro['cdObj'] ??
-              registro['cd_obj'] ??
-              registro['ObjetoID'] ??
-              registro['objetoID'] ??
-              registro['Codigo'] ??
-              registro['codigo'] ??
-              '';
-          final nmObj =
-              registro['NmObj'] ??
-              registro['nmObj'] ??
-              registro['nm_obj'] ??
-              registro['Artigo'] ??
-              registro['artigo'] ??
-              registro['Objeto'] ??
-              registro['objeto'] ??
-              '';
-          return {
-            ...registro,
-            'CdObj': cdObj,
-            'NmObj': nmObj,
-          };
-        }).toList();
-      }
-    }
-    return [];
-  }
-
   static Future<List<Map<String, dynamic>>> buscarArtigoLotes(
       int cdObj) async {
     if (cdObj <= 0) throw "Informe o código do artigo.";
     final response = await http.get(
       Uri.parse("$baseUrl/consulta/wms/artigo-lotes")
           .replace(queryParameters: {"cd_obj": cdObj.toString()}),
-    );
+    ).timeout(_quickTimeout);
     if (response.statusCode >= 200 && response.statusCode < 300) {
       final decoded = jsonDecode(response.body);
+      if (decoded is List) {
+        return decoded
+            .whereType<Map<String, dynamic>>()
+            .map(_normalizarLote)
+            .toList();
+      }
       if (decoded is Map<String, dynamic>) {
-        final data = decoded["data"];
-        if (data is List) return List<Map<String, dynamic>>.from(data);
+        final data = decoded["data"] ?? decoded["lotes"] ?? decoded["items"];
+        if (data is List) {
+          return data
+              .whereType<Map<String, dynamic>>()
+              .map(_normalizarLote)
+              .toList();
+        }
       }
     }
     String message = "Erro ${response.statusCode} ao buscar lotes.";
@@ -280,6 +308,36 @@ class EtiquetasService {
       }
     } catch (_) {}
     throw message;
+  }
+
+  static Map<String, dynamic> _normalizarLote(Map<String, dynamic> lote) {
+    final cdLot =
+        lote["CdLot"] ??
+        lote["cdLot"] ??
+        lote["cd_lot"] ??
+        lote["DetalheId"] ??
+        lote["detalhe_id"] ??
+        lote["Detalhe"] ??
+        lote["detalhe"] ??
+        0;
+    final nmLot =
+        lote["NmLot"] ??
+        lote["nmLot"] ??
+        lote["nm_lot"] ??
+        lote["NmDetalhe"] ??
+        lote["nmDetalhe"] ??
+        lote["Nome"] ??
+        lote["nome"] ??
+        lote["Descricao"] ??
+        lote["descricao"] ??
+        lote["Detalhe"] ??
+        lote["detalhe"] ??
+        "";
+    return {
+      ...lote,
+      "CdLot": cdLot is int ? cdLot : int.tryParse("$cdLot".trim()) ?? 0,
+      "NmLot": "$nmLot".trim(),
+    };
   }
 
   static String gerarPreviewUrl(Map<String, dynamic> obj) {
@@ -320,12 +378,9 @@ class EtiquetasService {
       printerName: printerName,
       imprimir: true,
     );
+    final response = await http.get(uri).timeout(_quickTimeout);
     debugPrint(
-      '[ETIQUETA] Enviando impressão | palete=$palete | endpoint=$uri',
-    );
-    final response = await http.get(uri);
-    debugPrint(
-      '[ETIQUETA] Resposta impressão | status=${response.statusCode} | body=${response.body}',
+      '[ETIQUETA] Resposta impressao palete | status=${response.statusCode}',
     );
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
