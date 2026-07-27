@@ -150,6 +150,7 @@ class EtiquetasService {
     bool pedidoEspecial = false,
     int qtdeImp = 1,
     bool loteInline = false,
+    String? li,
   }) async {
     if (cdObj <= 0) throw "Informe o código do artigo.";
     if (metros.trim().isEmpty) throw "Informe os metros.";
@@ -164,6 +165,7 @@ class EtiquetasService {
       "pedido_especial": pedidoEspecial,
       "qtde_imp": qtdeImp,
       "lote_inline": loteInline,
+      if (li != null && li.trim().isNotEmpty) "li": li.trim(),
     };
 
     final sw = Stopwatch()..start();
@@ -273,6 +275,54 @@ class EtiquetasService {
       }
     }
     return [];
+  }
+
+  static Future<List<Map<String, dynamic>>> buscarOrdensExpedicao({
+    String skuName = '',
+    String productionFamily = '',
+    String plant = '',
+  }) async {
+    final params = <String, String>{};
+    if (skuName.trim().isNotEmpty) params['sku_name'] = skuName.trim();
+    if (productionFamily.trim().isNotEmpty) {
+      params['production_family'] = productionFamily.trim();
+    }
+    if (plant.trim().isNotEmpty) params['plant'] = plant.trim();
+
+    final response = await http
+        .get(
+          Uri.parse(
+            "$baseUrl/buffer_expedicao_ordem",
+          ).replace(queryParameters: params.isEmpty ? null : params),
+          headers: {"Content-Type": "application/json"},
+        )
+        .timeout(const Duration(seconds: 20));
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      final decoded = jsonDecode(response.body);
+      if (decoded is List) return List<Map<String, dynamic>>.from(decoded);
+      if (decoded is Map<String, dynamic>) {
+        final data = decoded["data"] ?? decoded["ordens"] ?? decoded["items"];
+        if (data is List) return List<Map<String, dynamic>>.from(data);
+      }
+    }
+
+    String message = "Erro ${response.statusCode} ao buscar ordens.";
+    try {
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map<String, dynamic>) {
+        message =
+            (decoded["erro"] ??
+                    decoded["error"] ??
+                    decoded["message"] ??
+                    decoded["details"] ??
+                    message)
+                .toString();
+      }
+    } catch (_) {
+      if (response.body.trim().isNotEmpty) message = response.body.trim();
+    }
+    throw message;
   }
 
   static Future<List<Map<String, dynamic>>> buscarArtigoLotes(

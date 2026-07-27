@@ -42,6 +42,7 @@ const String _kOrdensFabricacaoPath =
     '/Servidor_2.8.0_api/logtechwms/itemdemapadeproducao/ordensdefabricacao';
 const String _kIncluirOrdemFabricacaoPath =
     '/Servidor_2.8.0_api/logtechwms/itemdemapadeproducao/incluirordemdefabricacao';
+// ignore: unused_element
 const String _kErroOrdemFabricacaoGenerico =
     'Não foi possível criar a Ordem de Fabricação.';
 
@@ -59,6 +60,8 @@ const List<String> _kSetoresBloqueados = ['TECELAGEM', 'TINTURARIA'];
 
 // Setor que dispensa seleção de máquina
 const String _kSetorSemMaquina = 'REVISAO';
+const String _kSetorEnfestamento = 'ENFESTAMENTO';
+const int _kSetorIdEnfestamento = 4;
 
 // =========================================================================
 // MODELOS
@@ -99,11 +102,13 @@ class UsuarioOperador {
   final int id;
   final String cdUser;
   final String nmUser;
+  final int? setorId;
 
   UsuarioOperador({
     required this.id,
     required this.cdUser,
     required this.nmUser,
+    this.setorId,
   });
 
   factory UsuarioOperador.fromJson(Map<String, dynamic> json) {
@@ -111,6 +116,11 @@ class UsuarioOperador {
       id: json['Id'] is int ? json['Id'] : int.tryParse('${json['Id']}') ?? 0,
       cdUser: json['CdUser']?.toString() ?? '',
       nmUser: json['NmUser']?.toString() ?? '',
+      setorId: json['Setorid'] is int
+          ? json['Setorid']
+          : int.tryParse(
+              '${json['Setorid'] ?? json['SetorId'] ?? json['setorid'] ?? ''}',
+            ),
     );
   }
 }
@@ -795,7 +805,7 @@ class _ProducaoTabsScreenState extends State<ProducaoTabsScreen>
   void initState() {
     super.initState();
     _tabController = TabController(
-      length: widget.mostrarSomenteTipoB ? 1 : (widget.mostrarTipoB ? 2 : 1),
+      length: widget.mostrarSomenteTipoB ? 1 : (widget.mostrarTipoB ? 3 : 1),
       vsync: this,
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1039,6 +1049,10 @@ class _ProducaoTabsScreenState extends State<ProducaoTabsScreen>
                   tabs: const [
                     Tab(text: 'Tipo A', icon: Icon(Icons.factory_outlined)),
                     Tab(text: 'Tipo B', icon: Icon(Icons.factory_outlined)),
+                    Tab(
+                      text: 'Apontamentos',
+                      icon: Icon(Icons.analytics_outlined),
+                    ),
                   ],
                 )
               : null,
@@ -1075,6 +1089,7 @@ class _ProducaoTabsScreenState extends State<ProducaoTabsScreen>
                     onApontamentoConcluido: widget.onApontamentoConcluido,
                     fecharAoConcluir: widget.fecharAoConcluir,
                   ),
+                  const _ConsultaApontamentosTab(),
                 ],
               )
             : FormularioGeral(
@@ -1144,7 +1159,9 @@ class _FormularioGeralState extends State<FormularioGeral> {
   final _palletController = TextEditingController();
   String? _defeitoSelecionadoCodigo;
   String? _operadorCdUserSelecionado;
-  String? _operador2CdUserSelecionado;
+  final List<_OperadorApontamentoEntry> _operadoresApontamento = [
+    _OperadorApontamentoEntry(),
+  ];
   List<_DefeitoTipoB> _defeitosTipoB = [];
   bool _loadingDefeitosTipoB = false;
   List<UsuarioOperador> _usuariosOperadores = [];
@@ -1180,10 +1197,51 @@ class _FormularioGeralState extends State<FormularioGeral> {
   bool _coletorArtigoAtivo = false;
   bool _coletorOperadorAtivo = false;
   bool _coletorOperadorSegundo = false;
+  int _coletorOperadorIndex = 0;
 
   bool get _isRevisao =>
       _setorSelecionado != null &&
       _setorSelecionado!.nome.toUpperCase().trim().contains(_kSetorSemMaquina);
+
+  bool get _isEnfestamento =>
+      _setorSelecionado != null &&
+      _setorSelecionado!.nome
+          .toUpperCase()
+          .trim()
+          .contains(_kSetorEnfestamento);
+
+  List<UsuarioOperador> get _usuariosOperadoresDisponiveis {
+    if (!_isEnfestamento) return _usuariosOperadores;
+    return _usuariosOperadores
+        .where((usuario) => usuario.setorId == _kSetorIdEnfestamento)
+        .toList();
+  }
+
+  bool _operadorDisponivelNoSetor(String? cdUser) {
+    final codigo = (cdUser ?? '').trim();
+    if (codigo.isEmpty) return false;
+    return _usuariosOperadoresDisponiveis.any((usuario) {
+      return _normalizarCodigo(usuario.cdUser) == _normalizarCodigo(codigo);
+    });
+  }
+
+  void _limparOperadoresInvalidosParaSetor() {
+    if (!_isEnfestamento) return;
+
+    for (final entry in _operadoresApontamento) {
+      if (entry.cdUser != null && !_operadorDisponivelNoSetor(entry.cdUser)) {
+        entry.cdUser = null;
+        entry.operadorController.clear();
+        entry.quantidadeController.clear();
+      }
+    }
+
+    if (_operadorCdUserSelecionado != null &&
+        !_operadorDisponivelNoSetor(_operadorCdUserSelecionado)) {
+      _operadorCdUserSelecionado = null;
+      _operadorController.clear();
+    }
+  }
 
   bool get _maquinasSelecionadasDuplicadas =>
       !_isRevisao &&
@@ -1216,7 +1274,10 @@ class _FormularioGeralState extends State<FormularioGeral> {
 
   // ── Verifica se a Etapa 1 está completa para habilitar "Avançar" ──────
   bool get _etapa1Completa {
-    if ((_operadorCdUserSelecionado ?? '').trim().isEmpty) return false;
+    if (_operadoresApontamento.isEmpty ||
+        _operadoresApontamento.any((entry) => !entry.preenchido)) {
+      return false;
+    }
     if (_setorSelecionado == null) return false;
     if (!_isRevisao && _maquinaSelecionada == null) return false;
     return true;
@@ -1263,6 +1324,9 @@ class _FormularioGeralState extends State<FormularioGeral> {
     _coletorOperadorFocus.dispose();
     _coletorOperador2Controller.dispose();
     _coletorOperador2Focus.dispose();
+    for (final entry in _operadoresApontamento) {
+      entry.dispose();
+    }
     super.dispose();
   }
 
@@ -1291,6 +1355,25 @@ class _FormularioGeralState extends State<FormularioGeral> {
       return _compareAlpha(a.cdUser, b.cdUser);
     });
     return ordenados;
+  }
+
+  void _adicionarOperadorApontamento() {
+    setState(() => _operadoresApontamento.add(_OperadorApontamentoEntry()));
+  }
+
+  void _removerOperadorApontamento(int index) {
+    if (_operadoresApontamento.length <= 1 ||
+        index < 0 ||
+        index >= _operadoresApontamento.length) {
+      return;
+    }
+    setState(() {
+      final removido = _operadoresApontamento.removeAt(index);
+      removido.dispose();
+      if (_coletorOperadorIndex >= _operadoresApontamento.length) {
+        _coletorOperadorIndex = _operadoresApontamento.length - 1;
+      }
+    });
   }
 
   List<Setor> _ordenarSetores(List<Setor> setores) {
@@ -1385,8 +1468,9 @@ class _FormularioGeralState extends State<FormularioGeral> {
     );
   }
 
-  Future<void> _abrirSeletorOperador({bool segundo = false}) async {
-    if (_usuariosOperadores.isEmpty) return;
+  Future<void> _abrirSeletorOperador({bool segundo = false, int index = 0}) async {
+    final usuariosBase = _usuariosOperadoresDisponiveis;
+    if (usuariosBase.isEmpty) return;
 
     final String? selecionado = await showModalBottomSheet<String>(
       context: context,
@@ -1399,7 +1483,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
         String filtro = '';
         return StatefulBuilder(
           builder: (context, setModalState) {
-            final listaFiltrada = _usuariosOperadores.where((u) {
+            final listaFiltrada = usuariosBase.where((u) {
               final nome = u.nmUser.toUpperCase();
               final id = u.cdUser.toUpperCase();
               final termo = filtro.trim().toUpperCase();
@@ -1527,7 +1611,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
     if (!mounted || selecionado == null) return;
 
     String nome = '';
-    for (final usuario in _usuariosOperadores) {
+    for (final usuario in usuariosBase) {
       if (usuario.cdUser == selecionado) {
         nome = usuario.nmUser;
         break;
@@ -1535,8 +1619,12 @@ class _FormularioGeralState extends State<FormularioGeral> {
     }
 
     setState(() {
-      if (segundo) {
-        _operador2CdUserSelecionado = selecionado;
+      if ((widget.tipo == 'A' || widget.tipo == 'B') &&
+          index < _operadoresApontamento.length) {
+        final entry = _operadoresApontamento[index];
+        entry.cdUser = selecionado;
+        entry.operadorController.text = nome;
+      } else if (segundo) {
         _operador2Controller.text = nome;
       } else {
         _operadorCdUserSelecionado = selecionado;
@@ -1594,7 +1682,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
     final alvo = _normalizarCodigo(codigo);
     if (alvo.isEmpty) return null;
 
-    for (final usuario in _usuariosOperadores) {
+    for (final usuario in _usuariosOperadoresDisponiveis) {
       if (_normalizarCodigo(usuario.cdUser) == alvo) {
         return usuario;
       }
@@ -1605,10 +1693,15 @@ class _FormularioGeralState extends State<FormularioGeral> {
   void _aplicarOperadorSelecionado(
     UsuarioOperador usuario, {
     required bool segundo,
+    int index = 0,
   }) {
     setState(() {
-      if (segundo) {
-        _operador2CdUserSelecionado = usuario.cdUser;
+      if ((widget.tipo == 'A' || widget.tipo == 'B') &&
+          index < _operadoresApontamento.length) {
+        final entry = _operadoresApontamento[index];
+        entry.cdUser = usuario.cdUser;
+        entry.operadorController.text = usuario.nmUser;
+      } else if (segundo) {
         _operador2Controller.text = usuario.nmUser;
       } else {
         _operadorCdUserSelecionado = usuario.cdUser;
@@ -1622,6 +1715,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
   Future<void> _processarLeituraOperador(
     String leitura, {
     required bool segundo,
+    int index = 0,
   }) async {
     if (_usuariosOperadores.isEmpty) {
       await _carregarUsuariosOperadores();
@@ -1636,19 +1730,23 @@ class _FormularioGeralState extends State<FormularioGeral> {
 
     final usuario = _buscarOperadorPorCodigo(codigo);
     if (usuario == null) {
-      _showSnack('Operador $codigo nao encontrado.', Colors.orange);
+      final mensagem = _isEnfestamento
+          ? 'Operador $codigo nao pertence ao setor Enfestamento.'
+          : 'Operador $codigo nao encontrado.';
+      _showSnack(mensagem, Colors.orange);
       return;
     }
 
-    _aplicarOperadorSelecionado(usuario, segundo: segundo);
+    _aplicarOperadorSelecionado(usuario, segundo: segundo, index: index);
     _showSnack('Operador preenchido automaticamente.', Colors.green);
   }
 
-  void _ativarColetorOperador({required bool segundo}) {
+  void _ativarColetorOperador({required bool segundo, int index = 0}) {
     SystemChannels.textInput.invokeMethod('TextInput.hide');
     setState(() {
       _coletorOperadorAtivo = true;
       _coletorOperadorSegundo = segundo;
+      _coletorOperadorIndex = index;
     });
     final controller = segundo
         ? _coletorOperador2Controller
@@ -1661,7 +1759,10 @@ class _FormularioGeralState extends State<FormularioGeral> {
     );
   }
 
-  Future<void> _escolherModoLeituraOperador({bool segundo = false}) async {
+  Future<void> _escolherModoLeituraOperador({
+    bool segundo = false,
+    int index = 0,
+  }) async {
     if (_coletorOperadorAtivo) {
       setState(() => _coletorOperadorAtivo = false);
       FocusScope.of(context).unfocus();
@@ -1738,13 +1839,13 @@ class _FormularioGeralState extends State<FormularioGeral> {
         ),
       );
       if (code != null && code.trim().isNotEmpty) {
-        await _processarLeituraOperador(code, segundo: segundo);
+        await _processarLeituraOperador(code, segundo: segundo, index: index);
       }
       return;
     }
 
     if (escolha == 'coletor') {
-      _ativarColetorOperador(segundo: segundo);
+      _ativarColetorOperador(segundo: segundo, index: index);
     }
   }
 
@@ -1891,6 +1992,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
     setState(() {
       _setorSelecionado = selecionado;
       _setorController.text = selecionado.nome;
+      _limparOperadoresInvalidosParaSetor();
       _maquinaSelecionada = null;
       _maquinaSelecionadaSecundaria = null;
       _maquinaController.clear();
@@ -1898,7 +2000,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
       _maquinas = [];
     });
 
-    if (widget.tipo == 'A' &&
+    if ((widget.tipo == 'A' || widget.tipo == 'B') &&
         !selecionado.nome.toUpperCase().trim().contains(_kSetorSemMaquina)) {
       _carregarMaquinas(selecionado.codigo);
     }
@@ -2914,7 +3016,10 @@ class _FormularioGeralState extends State<FormularioGeral> {
     try {
       final usuarios = await UsuarioOperadorService.buscarUsuarios();
       if (!mounted) return;
-      setState(() => _usuariosOperadores = _ordenarUsuarios(usuarios));
+      setState(() {
+        _usuariosOperadores = _ordenarUsuarios(usuarios);
+        _limparOperadoresInvalidosParaSetor();
+      });
     } finally {
       if (mounted) setState(() => _loadingUsuariosOperadores = false);
     }
@@ -3169,6 +3274,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
     return DateFormat("yyyy-MM-dd'T'00:00:00").format(data);
   }
 
+  // ignore: unused_element
   int _toInt(dynamic value) {
     if (value == null) return 0;
     if (value is int) return value;
@@ -3362,6 +3468,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
     }
   }
 
+  // ignore: unused_element
   Future<_ResultadoOrdemFabricacao> _incluirOrdemFabricacao({
     required int objetoProduzidoId,
     required double quantidadePlanejada,
@@ -3497,18 +3604,9 @@ class _FormularioGeralState extends State<FormularioGeral> {
       if (codigoDefeito.isEmpty) {
         return _showSnack("Preencha o campo Defeito", Colors.orange);
       }
-      if (_palletController.text.trim().toUpperCase() != _kPaleteTipoBFixo) {
-        return _showSnack(
-          "Selecione o palete $_kPaleteTipoBFixo",
-          Colors.orange,
-        );
-      }
-      if ((_operadorCdUserSelecionado ?? '').trim().isEmpty) {
-        return _showSnack("Selecione o Operador", Colors.orange);
-      }
     }
 
-    if (widget.tipo == 'A') {
+    if (widget.tipo == 'A' || widget.tipo == 'B') {
       if (_setorSelecionado == null) {
         return _showSnack("Selecione o Setor", Colors.orange);
       }
@@ -3521,26 +3619,27 @@ class _FormularioGeralState extends State<FormularioGeral> {
           Colors.orange,
         );
       }
-      if ((_operadorCdUserSelecionado ?? '').trim().isEmpty) {
-        return _showSnack("Selecione o Operador", Colors.orange);
+      if (_operadoresApontamento.isEmpty ||
+          _operadoresApontamento.any((entry) => !entry.preenchido)) {
+        return _showSnack("Selecione todos os Operadores", Colors.orange);
       }
     }
 
-    if (_qtdeController.text.trim().isEmpty ||
-        int.tryParse(_qtdeController.text) == null) {
-      return _showSnack("Preencha a quantidade corretamente", Colors.orange);
-    }
-    if (widget.tipo == 'A') {
-      final operador2 = (_operador2CdUserSelecionado ?? '').trim();
-      if (operador2.isNotEmpty) {
-        if (_qtde2Controller.text.trim().isEmpty ||
-            int.tryParse(_qtde2Controller.text) == null) {
+    if (widget.tipo == 'A' || widget.tipo == 'B') {
+      for (var i = 0; i < _operadoresApontamento.length; i++) {
+        final quantidade = int.tryParse(
+          _operadoresApontamento[i].quantidadeController.text.trim(),
+        );
+        if (quantidade == null || quantidade <= 0) {
           return _showSnack(
-            "Preencha a quantidade do Operador 2 corretamente",
+            "Preencha a quantidade do Operador ${i + 1} corretamente",
             Colors.orange,
           );
         }
       }
+    } else if (_qtdeController.text.trim().isEmpty ||
+        int.tryParse(_qtdeController.text) == null) {
+      return _showSnack("Preencha a quantidade corretamente", Colors.orange);
     }
 
     setState(() => _isLoading = true);
@@ -3549,42 +3648,15 @@ class _FormularioGeralState extends State<FormularioGeral> {
         ? '/apontamento/tipoA'
         : '/apontamento/tipoB';
 
-    final quantidade = int.tryParse(_qtdeController.text) ?? 0;
-    final quantidade2 = int.tryParse(_qtde2Controller.text) ?? 0;
+    final quantidade = (widget.tipo == 'A' || widget.tipo == 'B')
+        ? _operadoresApontamento.fold<int>(
+            0,
+            (total, operador) =>
+                total +
+                (int.tryParse(operador.quantidadeController.text.trim()) ?? 0),
+          )
+        : int.tryParse(_qtdeController.text) ?? 0;
     final payloads = <Map<String, dynamic>>[];
-
-    if (widget.tipo == 'B') {
-      int? ordemProducaoId = int.tryParse(_ordemProducaoController.text.trim());
-      if (ordemProducaoId == null) {
-        final token = await top_auth.AuthService.obterTokenLogtech();
-        if (token == null) {
-          setState(() => _isLoading = false);
-          return _showSnack(
-            "Falha na autenticação. Não foi possível gerar a Ordem de Produção.",
-            Colors.red,
-          );
-        }
-
-        final resultado = await _incluirOrdemFabricacao(
-          objetoProduzidoId: _toInt(_cdObjReal),
-          quantidadePlanejada: quantidade.toDouble(),
-          token: token,
-        );
-
-        if (resultado.id == null) {
-          setState(() => _isLoading = false);
-          final erro = (resultado.erro ?? '').trim();
-          return _showSnack(
-            erro.isEmpty
-                ? _kErroOrdemFabricacaoGenerico
-                : '$_kErroOrdemFabricacaoGenerico $erro',
-            Colors.red,
-          );
-        }
-
-        _ordemProducaoController.text = resultado.id.toString();
-      }
-    }
 
     if (widget.tipo == 'A') {
       final base = <String, dynamic>{
@@ -3597,36 +3669,37 @@ class _FormularioGeralState extends State<FormularioGeral> {
         "turno": widget.turno,
       };
 
-      // Registro do Operador 1
-      payloads.add({
-        ...base,
-        "Maq": _setorSelecionado!.codigo,
-        "Operador": _operadorCdUserSelecionado,
-      });
-
-      // Se houver Operador 2, cria um segundo registro usando a mesma leitura de QR
-      final operador2 = (_operador2CdUserSelecionado ?? '').trim();
-      if (operador2.isNotEmpty) {
+      for (final operador in _operadoresApontamento) {
+        final quantidadeOperador =
+            int.tryParse(operador.quantidadeController.text.trim()) ?? 0;
         payloads.add({
           ...base,
           "Maq": _setorSelecionado!.codigo,
-          "Operador": operador2,
-          "Qtde": quantidade2,
+          "Operador": operador.cdUser,
+          "Qtde": quantidadeOperador,
         });
       }
     } else {
-      payloads.add({
+      final base = <String, dynamic>{
         "Setor": _setorSelecionado?.codigo,
         "Maq": _setorSelecionado?.codigo,
-        "Operador": _operadorCdUserSelecionado,
         "Artigo": _cdObjReal,
         "Detalhe": _detalheReal,
         "CdLot": _detalheReal,
         "Defeito": codigoDefeito,
-        "Qtde": quantidade,
         "TpMovimento": 1,
         "turno": widget.turno,
-      });
+      };
+
+      for (final operador in _operadoresApontamento) {
+        final quantidadeOperador =
+            int.tryParse(operador.quantidadeController.text.trim()) ?? 0;
+        payloads.add({
+          ...base,
+          "Operador": operador.cdUser,
+          "Qtde": quantidadeOperador,
+        });
+      }
     }
 
     try {
@@ -3694,12 +3767,17 @@ class _FormularioGeralState extends State<FormularioGeral> {
     _defeitoController.clear();
     _defeitoSelecionadoCodigo = null;
     _operadorCdUserSelecionado = null;
-    _operador2CdUserSelecionado = null;
+    for (final entry in _operadoresApontamento) {
+      entry.dispose();
+    }
+    _operadoresApontamento
+      ..clear()
+      ..add(_OperadorApontamentoEntry());
     _cdObjReal = "";
     _detalheReal = "";
     _lotesDisponiveis = [];
 
-    if (widget.tipo == 'A') {
+    if (widget.tipo == 'A' || widget.tipo == 'B') {
       setState(() {
         _etapaA = _EtapaA.identificacao;
         _setorSelecionado = null;
@@ -3737,8 +3815,9 @@ class _FormularioGeralState extends State<FormularioGeral> {
   void _avancarParaProducao() {
     if (!_etapa1Completa) {
       String msg = "Preencha todos os campos da Identificação";
-      if ((_operadorCdUserSelecionado ?? '').trim().isEmpty) {
-        msg = "Selecione o Operador";
+      if (_operadoresApontamento.isEmpty ||
+          _operadoresApontamento.any((entry) => !entry.preenchido)) {
+        msg = "Selecione todos os Operadores";
       } else if (_setorSelecionado == null) {
         msg = "Selecione o Setor";
       } else if (!_isRevisao && _maquinaSelecionada == null) {
@@ -3810,66 +3889,90 @@ class _FormularioGeralState extends State<FormularioGeral> {
 
   Widget _buildTipoB() {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(20),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildTipoBSection(
-            title: 'Informações do Documento',
-            children: [
-              _buildTipoBResponsiveFieldGroup([
-                _buildTipoBInfoField(
-                  label: 'Data (dd/MM/yyyy)',
-                  value: _dataController.text,
-                  icon: Icons.calendar_today_outlined,
+          _buildTurnoHeader(widget.turnoLetra),
+          _buildIndicadorEtapas(),
+          const SizedBox(height: 16),
+
+          if (_etapaA == _EtapaA.identificacao) ...[
+            _buildCardSection('Etapa 1 — Identificação', [
+              _buildOperadoresDinamicos(),
+              _buildSetorDropdown(),
+              if (!_isRevisao) _buildMaquinaDropdown(),
+              if (!_isRevisao) _buildMaquina2Dropdown(),
+            ]),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: ElevatedButton.icon(
+                onPressed: _etapa1Completa ? _avancarParaProducao : null,
+                icon: const Icon(Icons.arrow_forward, color: Colors.white),
+                label: const Text(
+                  'AVANÇAR PARA PRODUÇÃO',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.6,
+                  ),
                 ),
-                _buildTipoBInfoField(
-                  label: 'Turno',
-                  value: _turnoInfoController.text,
-                  icon: Icons.schedule,
-                ),
-              ]),
-            ],
-          ),
-          _buildTipoBSection(
-            title: 'Identificação da Produção',
-            children: [
-              _buildArtigoEsperadoInfo(),
-              _buildTipoBResponsiveFieldGroup([
-                _buildOrdemProducaoFieldTipoB(),
-                _buildArtigoField(),
-                _buildDetalheDropdownTipoB(),
-                _buildTextField(
-                  _qtdeController,
-                  'Quantidade',
-                  Icons.add_task,
-                  isNumeric: true,
-                ),
-                _buildPaleteFieldTipoB(),
-              ]),
-              const SizedBox(height: 2),
-              const Text(
-                'Palete permitido: PA-L1-R500-D-P1',
-                style: TextStyle(
-                  color: _kTextSecondary,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _etapa1Completa
+                      ? _kPrimaryColor
+                      : Colors.grey.shade800,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
                 ),
               ),
-            ],
-          ),
-          _buildTipoBSection(
-            title: 'Controle de Qualidade',
-            children: [
-              _buildTipoBResponsiveFieldGroup([
-                _buildOperadorDropdown(),
-                // _buildSetorDropdown(),
-                _buildDefeitoDropdownTipoB(),
-              ]),
-            ],
-          ),
-          const SizedBox(height: 8),
-          _buildBotaoConfirmar(),
+            ),
+          ] else ...[
+            _buildResumoIdentificacao(),
+            const SizedBox(height: 12),
+            _buildCardSection('Etapa 2 — Produção', [
+              _buildArtigoEsperadoInfo(),
+              _buildArtigoField(),
+              _buildTextField(
+                _detalheController,
+                'Detalhe (Lote)',
+                Icons.info_outline,
+                readOnly: true,
+              ),
+              _buildDefeitoDropdownTipoB(),
+              ..._buildCamposQuantidadeOperadores(),
+            ]),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                OutlinedButton.icon(
+                  onPressed: _voltarParaIdentificacao,
+                  icon: const Icon(
+                    Icons.arrow_back,
+                    color: _kTextSecondary,
+                    size: 18,
+                  ),
+                  label: const Text(
+                    'VOLTAR',
+                    style: TextStyle(color: _kTextSecondary),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: _kBorderSoft),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 14,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(child: _buildBotaoConfirmar()),
+              ],
+            ),
+          ],
         ],
       ),
     );
@@ -3890,8 +3993,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
 
           if (_etapaA == _EtapaA.identificacao) ...[
             _buildCardSection('Etapa 1 — Identificação', [
-              _buildOperadorDropdown(),
-              _buildOperador2Dropdown(),
+              _buildOperadoresDinamicos(),
               _buildSetorDropdown(),
               if (!_isRevisao) _buildMaquinaDropdown(),
               if (!_isRevisao) _buildMaquina2Dropdown(),
@@ -3936,19 +4038,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
                 Icons.info_outline,
                 readOnly: true,
               ),
-              _buildTextField(
-                _qtdeController,
-                'Quantidade',
-                Icons.add_task,
-                isNumeric: true,
-              ),
-              if ((_operador2CdUserSelecionado ?? '').trim().isNotEmpty)
-                _buildTextField(
-                  _qtde2Controller,
-                  'Quantidade Operador 2',
-                  Icons.add_task,
-                  isNumeric: true,
-                ),
+              ..._buildCamposQuantidadeOperadores(),
             ]),
             const SizedBox(height: 20),
             Row(
@@ -3990,7 +4080,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
   // -----------------------------------------------------------------------
 
   Widget _buildIndicadorEtapas() {
-    if (widget.tipo != 'A') return const SizedBox.shrink();
+    if (widget.tipo != 'A' && widget.tipo != 'B') return const SizedBox.shrink();
 
     final etapa1Ativa = _etapaA == _EtapaA.identificacao;
 
@@ -4081,24 +4171,17 @@ class _FormularioGeralState extends State<FormularioGeral> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Operador: ${_operadorController.text}',
-                  style: const TextStyle(
-                    color: _kTextPrimary,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                if (_operador2Controller.text.isNotEmpty) ...[
-                  const SizedBox(height: 2),
+                for (var i = 0; i < _operadoresApontamento.length; i++) ...[
                   Text(
-                    'Segundo operador: ${_operador2Controller.text}',
-                    style: const TextStyle(
-                      color: _kTextSecondary,
-                      fontSize: 12,
+                    'Operador ${i + 1}: ${_operadoresApontamento[i].operadorController.text}',
+                    style: TextStyle(
+                      color: i == 0 ? _kTextPrimary : _kTextSecondary,
+                      fontSize: i == 0 ? 13 : 12,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
+                  if (i < _operadoresApontamento.length - 1)
+                    const SizedBox(height: 2),
                 ],
                 const SizedBox(height: 2),
                 Text(
@@ -4126,22 +4209,32 @@ class _FormularioGeralState extends State<FormularioGeral> {
   // CAMPO OPERADOR (dropdown com nomes da API)
   // -----------------------------------------------------------------------
 
-  Widget _buildBotaoLeituraOperador({required bool segundo}) {
+  Widget _buildBotaoLeituraOperador({required bool segundo, int index = 0}) {
+    final semUsuarios = _usuariosOperadoresDisponiveis.isEmpty;
     return IconButton(
       tooltip: 'Ler operador',
       icon: const Icon(Icons.qr_code_scanner, color: _kAccentColor, size: 22),
-      onPressed: _usuariosOperadores.isEmpty
+      onPressed: semUsuarios
           ? null
-          : () => _escolherModoLeituraOperador(segundo: segundo),
+          : () => _escolherModoLeituraOperador(segundo: segundo, index: index),
     );
   }
 
-  Widget _buildColetorOperadorOculto({required bool segundo}) {
-    final ativo = _coletorOperadorAtivo && _coletorOperadorSegundo == segundo;
-    final controller = segundo
+  Widget _buildColetorOperadorOculto({required bool segundo, int index = 0}) {
+    final ativo =
+        _coletorOperadorAtivo &&
+        _coletorOperadorSegundo == segundo &&
+        _coletorOperadorIndex == index;
+    final controller = widget.tipo == 'A' || widget.tipo == 'B'
+        ? _coletorOperadorController
+        : segundo
         ? _coletorOperador2Controller
         : _coletorOperadorController;
-    final focus = segundo ? _coletorOperador2Focus : _coletorOperadorFocus;
+    final focus = widget.tipo == 'A' || widget.tipo == 'B'
+        ? _coletorOperadorFocus
+        : segundo
+        ? _coletorOperador2Focus
+        : _coletorOperadorFocus;
     return Positioned.fill(
       child: IgnorePointer(
         ignoring: !ativo,
@@ -4161,7 +4254,11 @@ class _FormularioGeralState extends State<FormularioGeral> {
               setState(() => _coletorOperadorAtivo = false);
               FocusScope.of(context).unfocus();
               if (code.isNotEmpty) {
-                await _processarLeituraOperador(code, segundo: segundo);
+                await _processarLeituraOperador(
+                  code,
+                  segundo: segundo,
+                  index: index,
+                );
               }
             },
           ),
@@ -4170,12 +4267,14 @@ class _FormularioGeralState extends State<FormularioGeral> {
     );
   }
 
+  // ignore: unused_element
   Widget _buildOperadorDropdown() {
+    final usuariosDisponiveis = _usuariosOperadoresDisponiveis;
     final temOperador =
         (_operadorCdUserSelecionado ?? '').isNotEmpty &&
         _operadorController.text.isNotEmpty;
-    final semUsuarios = _usuariosOperadores.isEmpty;
-    final totalOperadores = _usuariosOperadores.length;
+    final semUsuarios = usuariosDisponiveis.isEmpty;
+    final totalOperadores = usuariosDisponiveis.length;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -4220,11 +4319,39 @@ class _FormularioGeralState extends State<FormularioGeral> {
     );
   }
 
-  Widget _buildOperador2Dropdown() {
-    final temOperador =
-        (_operador2CdUserSelecionado ?? '').isNotEmpty &&
-        _operador2Controller.text.isNotEmpty;
-    final semUsuarios = _usuariosOperadores.isEmpty;
+  Widget _buildOperadoresDinamicos() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (var i = 0; i < _operadoresApontamento.length; i++)
+          _buildOperadorDinamico(i),
+        const SizedBox(height: 4),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: OutlinedButton.icon(
+            onPressed: _adicionarOperadorApontamento,
+            icon: const Icon(Icons.add, size: 18),
+            label: const Text('Adicionar operador'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: _kAccentColor,
+              side: const BorderSide(color: _kAccentColor),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildOperadorDinamico(int index) {
+    final usuariosDisponiveis = _usuariosOperadoresDisponiveis;
+    final entry = _operadoresApontamento[index];
+    final temOperador = entry.preenchido;
+    final semUsuarios = usuariosDisponiveis.isEmpty;
+    final totalOperadores = usuariosDisponiveis.length;
+    final podeRemover = _operadoresApontamento.length > 1;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -4232,42 +4359,68 @@ class _FormularioGeralState extends State<FormularioGeral> {
         children: [
           _loadingUsuariosOperadores
               ? _buildCampoSelecao(
-              controller: _operador2Controller,
-              label: 'Segundo operador (opcional)',
-              hint: 'Carregando operadores...',
-              icon: Icons.badge_outlined,
-              selecionado: false,
-              habilitado: false,
-              onTap: null,
-              helperText: null,
-            )
+                  controller: entry.operadorController,
+                  label: 'Operador ${index + 1}',
+                  hint: 'Carregando operadores...',
+                  icon: Icons.badge,
+                  selecionado: false,
+                  habilitado: false,
+                  onTap: null,
+                  helperText: null,
+                )
               : _buildCampoSelecao(
-              controller: _operador2Controller,
-              label: 'Segundo operador (opcional)',
-              hint: semUsuarios
-                  ? 'Nenhum operador encontrado'
-                  : 'Selecione o operador',
-              icon: Icons.badge_outlined,
-              selecionado: temOperador,
-              habilitado: !semUsuarios,
-              onTap: semUsuarios
-                  ? null
-                  : () => _abrirSeletorOperador(segundo: true),
-              helperText: null,
-              suffixActions: [_buildBotaoLeituraOperador(segundo: true)],
-              mostrarLimpar: temOperador,
-              onClear: () {
-                setState(() {
-                  _operador2CdUserSelecionado = null;
-                  _operador2Controller.clear();
-                  _qtde2Controller.clear();
-                });
-              },
-            ),
-          _buildColetorOperadorOculto(segundo: true),
+                  controller: entry.operadorController,
+                  label: 'Operador ${index + 1}',
+                  hint: semUsuarios
+                      ? 'Nenhum operador encontrado'
+                      : 'Selecione o operador',
+                  icon: Icons.badge,
+                  selecionado: temOperador,
+                  habilitado: !semUsuarios,
+                  onTap: semUsuarios
+                      ? null
+                      : () => _abrirSeletorOperador(index: index),
+                  helperText: semUsuarios
+                      ? null
+                      : '$totalOperadores operadores disponíveis',
+                  suffixActions: [
+                    _buildBotaoLeituraOperador(segundo: false, index: index),
+                    if (podeRemover)
+                      IconButton(
+                        tooltip: 'Remover operador',
+                        icon: const Icon(
+                          Icons.delete_outline,
+                          color: Colors.redAccent,
+                          size: 21,
+                        ),
+                        onPressed: () => _removerOperadorApontamento(index),
+                      ),
+                  ],
+                  mostrarLimpar: temOperador,
+                  onClear: () {
+                    setState(() {
+                      entry.cdUser = null;
+                      entry.operadorController.clear();
+                      entry.quantidadeController.clear();
+                    });
+                  },
+                ),
+          _buildColetorOperadorOculto(segundo: false, index: index),
         ],
       ),
     );
+  }
+
+  List<Widget> _buildCamposQuantidadeOperadores() {
+    return [
+      for (var i = 0; i < _operadoresApontamento.length; i++)
+        _buildTextField(
+          _operadoresApontamento[i].quantidadeController,
+          'Quantidade Operador ${i + 1}',
+          Icons.add_task,
+          isNumeric: true,
+        ),
+    ];
   }
 
   Widget _buildArtigoEsperadoInfo() {
@@ -4554,6 +4707,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
     setState(() => _palletController.text = selecionado);
   }
 
+  // ignore: unused_element
   Widget _buildOrdemProducaoFieldTipoB() {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -4608,6 +4762,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
     );
   }
 
+  // ignore: unused_element
   Widget _buildPaleteFieldTipoB() {
     final selecionado =
         _palletController.text.trim().toUpperCase() == _kPaleteTipoBFixo;
@@ -4627,6 +4782,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
     );
   }
 
+  // ignore: unused_element
   Widget _buildDetalheDropdownTipoB() {
     final possuiOpcoes = _lotesDisponiveis.isNotEmpty;
     final valorAtual =
@@ -4734,6 +4890,13 @@ class _FormularioGeralState extends State<FormularioGeral> {
               setState(() {
                 _setorSelecionado = null;
                 _setorController.clear();
+                for (final entry in _operadoresApontamento) {
+                  entry.cdUser = null;
+                  entry.operadorController.clear();
+                  entry.quantidadeController.clear();
+                }
+                _operadorCdUserSelecionado = null;
+                _operadorController.clear();
                 _maquinas = [];
                 _maquinaSelecionada = null;
                 _maquinaSelecionadaSecundaria = null;
@@ -4895,6 +5058,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
     ),
   );
 
+  // ignore: unused_element
   Widget _buildTipoBSection({
     required String title,
     required List<Widget> children,
@@ -4934,6 +5098,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
     );
   }
 
+  // ignore: unused_element
   Widget _buildTipoBInfoField({
     required String label,
     required String value,
@@ -4968,6 +5133,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
     );
   }
 
+  // ignore: unused_element
   Widget _buildTipoBResponsiveFieldGroup(List<Widget> fields) {
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -5091,6 +5257,23 @@ class ScannerPage extends StatelessWidget {
       titulo: titulo,
       usarCameraFrontal: usarCameraFrontal,
     );
+  }
+}
+
+class _OperadorApontamentoEntry {
+  _OperadorApontamentoEntry();
+
+  final operadorController = TextEditingController();
+  final quantidadeController = TextEditingController();
+  String? cdUser;
+
+  bool get preenchido =>
+      (cdUser ?? '').trim().isNotEmpty &&
+      operadorController.text.trim().isNotEmpty;
+
+  void dispose() {
+    operadorController.dispose();
+    quantidadeController.dispose();
   }
 }
 
@@ -5852,6 +6035,1338 @@ class _AndroidScannerPageState extends State<_AndroidScannerPage>
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+class _ConsultaApontamentosTab extends StatefulWidget {
+  const _ConsultaApontamentosTab();
+
+  @override
+  State<_ConsultaApontamentosTab> createState() =>
+      _ConsultaApontamentosTabState();
+}
+
+class _ConsultaApontamentosTabState extends State<_ConsultaApontamentosTab> {
+  final _dataInicioController = TextEditingController();
+  final _dataFimController = TextEditingController();
+  final _artigoController = TextEditingController();
+  final _turnoController = TextEditingController();
+  final _usuarioController = TextEditingController();
+  final _setorController = TextEditingController();
+
+  final _dateBr = DateFormat('dd/MM/yyyy');
+  final _dateApi = DateFormat('yyyyMMdd');
+  final _integerFormatter = NumberFormat('#,##0', 'pt_BR');
+  final _quantidadeFormatter = NumberFormat('#,##0.##', 'pt_BR');
+
+  bool _loading = false;
+  bool _loadingOpcoes = true;
+  bool _consultou = false;
+  String? _erro;
+  String? _artigoSelecionadoCodigo;
+  String? _turnoSelecionadoCodigo;
+  String? _usuarioSelecionadoCodigo;
+  String? _setorSelecionadoCodigo;
+  List<UsuarioOperador> _usuariosFiltro = [];
+  List<Setor> _setoresFiltro = [];
+  List<_ConsultaApontamento> _resultados = [];
+
+  static const List<_ConsultaTurno> _turnosFiltro = [
+    _ConsultaTurno('8', 'A'),
+    _ConsultaTurno('9', 'B'),
+    _ConsultaTurno('10', 'C'),
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    final hoje = DateTime.now();
+    _dataInicioController.text = _dateBr.format(hoje);
+    _dataFimController.text = _dateBr.format(hoje);
+    _carregarOpcoesFiltro();
+  }
+
+  @override
+  void dispose() {
+    _dataInicioController.dispose();
+    _dataFimController.dispose();
+    _artigoController.dispose();
+    _turnoController.dispose();
+    _usuarioController.dispose();
+    _setorController.dispose();
+    super.dispose();
+  }
+
+  DateTime? _parseDataBr(String value) {
+    final texto = value.trim();
+    if (texto.isEmpty) return null;
+    try {
+      return _dateBr.parseStrict(texto);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String? _dataApiOuNull(TextEditingController controller) {
+    final data = _parseDataBr(controller.text);
+    return data == null ? null : _dateApi.format(data);
+  }
+
+  Future<void> _carregarOpcoesFiltro() async {
+    try {
+      final results = await Future.wait([
+        UsuarioOperadorService.buscarUsuarios(),
+        SetorMaquinaService.buscarSetores(),
+      ]);
+
+      if (!mounted) return;
+      setState(() {
+        _usuariosFiltro = _usuariosUnicos(
+          results[0] as List<UsuarioOperador>,
+        );
+        _setoresFiltro = _setoresUnicos(results[1] as List<Setor>);
+        _loadingOpcoes = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _loadingOpcoes = false);
+      _mostrarMensagem('Erro ao carregar filtros.', erro: true);
+    }
+  }
+
+  List<UsuarioOperador> _usuariosUnicos(List<UsuarioOperador> usuarios) {
+    final mapa = <String, UsuarioOperador>{};
+    for (final usuario in usuarios) {
+      final chave = usuario.cdUser.trim();
+      if (chave.isNotEmpty) mapa[chave] = usuario;
+    }
+    final ordenados = mapa.values.toList();
+    ordenados.sort((a, b) {
+      final nomeCmp = _compareAlpha(a.nmUser, b.nmUser);
+      if (nomeCmp != 0) return nomeCmp;
+      return _compareAlpha(a.cdUser, b.cdUser);
+    });
+    return ordenados;
+  }
+
+  int _compareAlpha(String a, String b) {
+    return a.toUpperCase().trim().compareTo(b.toUpperCase().trim());
+  }
+
+  List<Setor> _setoresUnicos(List<Setor> setores) {
+    final mapa = <int, Setor>{};
+    for (final setor in setores) {
+      if (setor.codigo > 0) mapa[setor.codigo] = setor;
+    }
+    final ordenados = mapa.values.toList();
+    ordenados.sort((a, b) => _compareAlpha(a.nome, b.nome));
+    return ordenados;
+  }
+
+  String? _validarDatas() {
+    final inicioTexto = _dataInicioController.text.trim();
+    final fimTexto = _dataFimController.text.trim();
+    final inicio = _parseDataBr(inicioTexto);
+    final fim = _parseDataBr(fimTexto);
+
+    if (inicioTexto.isNotEmpty && inicio == null) {
+      return 'Data inicial invalida.';
+    }
+    if (fimTexto.isNotEmpty && fim == null) {
+      return 'Data final invalida.';
+    }
+    if (inicio != null && fim != null && fim.isBefore(inicio)) {
+      return 'Data final nao pode ser menor que a inicial.';
+    }
+    return null;
+  }
+
+  Future<void> _selecionarData(TextEditingController controller) async {
+    final dataAtual = _parseDataBr(controller.text) ?? DateTime.now();
+    final selecionada = await showDatePicker(
+      context: context,
+      initialDate: dataAtual,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
+      locale: const Locale('pt', 'BR'),
+      builder: (context, child) {
+        return Theme(
+          data: ThemeData.dark().copyWith(
+            colorScheme: const ColorScheme.dark(
+              primary: _kPrimaryColor,
+              onPrimary: Colors.white,
+              surface: _kSurface,
+              onSurface: _kTextPrimary,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (selecionada != null) {
+      setState(() => controller.text = _dateBr.format(selecionada));
+    }
+  }
+
+  void _mostrarMensagem(String mensagem, {bool erro = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(mensagem),
+        backgroundColor: erro ? Colors.red.shade700 : Colors.green.shade700,
+      ),
+    );
+  }
+
+  Future<void> _consultar() async {
+    FocusScope.of(context).unfocus();
+    final erroDatas = _validarDatas();
+    if (erroDatas != null) {
+      _mostrarMensagem(erroDatas, erro: true);
+      return;
+    }
+
+    setState(() {
+      _loading = true;
+      _consultou = true;
+      _erro = null;
+    });
+
+    try {
+      final params = <String, String>{};
+
+      void addParam(String key, String? value) {
+        final clean = (value ?? '').trim();
+        if (clean.isNotEmpty) params[key] = clean;
+      }
+
+      addParam('DataInicio', _dataApiOuNull(_dataInicioController));
+      addParam('DataFim', _dataApiOuNull(_dataFimController));
+      addParam('Artigo', _artigoSelecionadoCodigo);
+      addParam('Turno', _turnoSelecionadoCodigo);
+      addParam('Usuario', _usuarioSelecionadoCodigo);
+      addParam('Setor', _setorSelecionadoCodigo);
+
+      final uri = Uri.parse(
+        '$_kBaseUrlFlask/consultar/apontamentos',
+      ).replace(queryParameters: params.isEmpty ? null : params);
+
+      final response = await http.get(uri).timeout(const Duration(seconds: 45));
+      if (response.statusCode != 200) {
+        throw Exception(_mensagemErroApi(response));
+      }
+
+      final decoded = jsonDecode(response.body);
+      if (decoded is! List) {
+        throw Exception('Resposta invalida da API.');
+      }
+
+      final resultados = decoded
+          .whereType<Map>()
+          .map((item) => _ConsultaApontamento.fromJson(item))
+          .toList();
+
+      if (!mounted) return;
+      setState(() {
+        _resultados = resultados;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _resultados = [];
+        _erro = e.toString().replaceFirst('Exception: ', '');
+      });
+    }
+  }
+
+  String _mensagemErroApi(http.Response response) {
+    try {
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map<String, dynamic>) {
+        final detalhe = decoded['error'] ?? decoded['message'];
+        if (detalhe != null && detalhe.toString().trim().isNotEmpty) {
+          return detalhe.toString();
+        }
+      }
+    } catch (_) {}
+    return 'Erro ${response.statusCode} ao consultar apontamentos.';
+  }
+
+  void _limparFiltros() {
+    setState(() {
+      _dataInicioController.clear();
+      _dataFimController.clear();
+      _artigoController.clear();
+      _turnoController.clear();
+      _usuarioController.clear();
+      _setorController.clear();
+      _artigoSelecionadoCodigo = null;
+      _turnoSelecionadoCodigo = null;
+      _usuarioSelecionadoCodigo = null;
+      _setorSelecionadoCodigo = null;
+      _erro = null;
+      _consultou = false;
+      _resultados = [];
+    });
+  }
+
+  Future<void> _abrirSeletorArtigo() async {
+    final selecionado = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: _kSurface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        String filtro = '';
+        List<Map<String, dynamic>> itens = [];
+        bool carregando = true;
+
+        Future<void> buscar(
+          String termo,
+          void Function(void Function()) setModalState,
+        ) async {
+          setModalState(() {
+            carregando = true;
+            filtro = termo;
+          });
+          final encontrados = await DatabaseService.buscarArtigosPorNome(termo);
+          if (!ctx.mounted) return;
+          setModalState(() {
+            itens = encontrados;
+            carregando = false;
+          });
+        }
+
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            if (carregando && itens.isEmpty) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                buscar(filtro, setModalState);
+              });
+            }
+
+            return SafeArea(
+              child: SizedBox(
+                height: MediaQuery.of(context).size.height * 0.78,
+                child: Column(
+                  children: [
+                    const SizedBox(height: 10),
+                    Container(
+                      width: 42,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.white24,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Selecionar artigo',
+                      style: TextStyle(
+                        color: _kTextPrimary,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: TextField(
+                        onChanged: (value) => buscar(value, setModalState),
+                        style: const TextStyle(color: _kTextPrimary),
+                        decoration: InputDecoration(
+                          hintText: 'Buscar por codigo ou nome',
+                          hintStyle: const TextStyle(color: _kTextSecondary),
+                          prefixIcon: const Icon(
+                            Icons.search,
+                            color: _kTextSecondary,
+                          ),
+                          filled: true,
+                          fillColor: _kSurface2,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(color: _kBorderSoft),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Expanded(
+                      child: carregando
+                          ? const Center(
+                              child: CircularProgressIndicator(
+                                color: _kAccentColor,
+                              ),
+                            )
+                          : itens.isEmpty
+                          ? const Center(
+                              child: Text(
+                                'Nenhum artigo encontrado',
+                                style: TextStyle(color: _kTextSecondary),
+                              ),
+                            )
+                          : ListView.separated(
+                              itemCount: itens.length,
+                              separatorBuilder: (_, __) =>
+                                  const Divider(height: 1, color: _kBorderSoft),
+                              itemBuilder: (_, index) {
+                                final item = itens[index];
+                                final codigo =
+                                    item['objetoID']?.toString().trim() ?? '';
+                                final nome =
+                                    item['objeto']?.toString().trim() ?? '';
+                                return ListTile(
+                                  leading: const Icon(
+                                    Icons.inventory_2_outlined,
+                                    color: _kAccentColor,
+                                  ),
+                                  title: Text(
+                                    nome.isEmpty ? codigo : nome,
+                                    style: const TextStyle(
+                                      color: _kTextPrimary,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  subtitle: Text(
+                                    'Codigo $codigo',
+                                    style: const TextStyle(
+                                      color: _kTextSecondary,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                  onTap: () => Navigator.of(ctx).pop(item),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    if (!mounted || selecionado == null) return;
+    final codigo = selecionado['objetoID']?.toString().trim() ?? '';
+    final nome = selecionado['objeto']?.toString().trim() ?? '';
+    setState(() {
+      _artigoSelecionadoCodigo = codigo;
+      _artigoController.text = nome.isEmpty ? codigo : '$codigo - $nome';
+    });
+  }
+
+  Future<void> _abrirSeletorTurno() async {
+    final selecionado = await _abrirSeletorFiltro<_ConsultaTurno>(
+      titulo: 'Selecionar turno',
+      itens: _turnosFiltro,
+      itemTitle: (item) => 'Turno ${item.nome}',
+      itemSubtitle: (item) => 'Codigo ${item.codigo}',
+      itemIcon: Icons.schedule_outlined,
+      filtro: (item, termo) =>
+          item.nome.toUpperCase().contains(termo) || item.codigo.contains(termo),
+    );
+
+    if (!mounted || selecionado == null) return;
+    setState(() {
+      _turnoSelecionadoCodigo = selecionado.codigo;
+      _turnoController.text = 'Turno ${selecionado.nome}';
+    });
+  }
+
+  Future<void> _abrirSeletorUsuario() async {
+    final selecionado = await _abrirSeletorFiltro<UsuarioOperador>(
+      titulo: 'Selecionar usuario',
+      itens: _usuariosFiltro,
+      itemTitle: (item) => item.nmUser,
+      itemSubtitle: (item) => 'Codigo ${item.cdUser}',
+      itemIcon: Icons.person_outline,
+      filtro: (item, termo) {
+        return item.nmUser.toUpperCase().contains(termo) ||
+            item.cdUser.toUpperCase().contains(termo);
+      },
+    );
+
+    if (!mounted || selecionado == null) return;
+    setState(() {
+      _usuarioSelecionadoCodigo = selecionado.cdUser;
+      _usuarioController.text = '${selecionado.cdUser} - ${selecionado.nmUser}';
+    });
+  }
+
+  Future<void> _abrirSeletorSetor() async {
+    final selecionado = await _abrirSeletorFiltro<Setor>(
+      titulo: 'Selecionar setor',
+      itens: _setoresFiltro,
+      itemTitle: (item) => item.nome,
+      itemSubtitle: (item) => 'Codigo ${item.codigo}',
+      itemIcon: Icons.apartment_outlined,
+      filtro: (item, termo) {
+        return item.nome.toUpperCase().contains(termo) ||
+            item.codigo.toString().contains(termo);
+      },
+    );
+
+    if (!mounted || selecionado == null) return;
+    setState(() {
+      _setorSelecionadoCodigo = selecionado.codigo.toString();
+      _setorController.text = '${selecionado.codigo} - ${selecionado.nome}';
+    });
+  }
+
+  Future<T?> _abrirSeletorFiltro<T>({
+    required String titulo,
+    required List<T> itens,
+    required String Function(T item) itemTitle,
+    required String Function(T item) itemSubtitle,
+    required IconData itemIcon,
+    required bool Function(T item, String termo) filtro,
+  }) {
+    return showModalBottomSheet<T>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: _kSurface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        String termo = '';
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final termoUpper = termo.trim().toUpperCase();
+            final filtrados = termoUpper.isEmpty
+                ? itens
+                : itens.where((item) => filtro(item, termoUpper)).toList();
+
+            return SafeArea(
+              child: SizedBox(
+                height: MediaQuery.of(context).size.height * 0.72,
+                child: Column(
+                  children: [
+                    const SizedBox(height: 10),
+                    Container(
+                      width: 42,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.white24,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      titulo,
+                      style: const TextStyle(
+                        color: _kTextPrimary,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: TextField(
+                        onChanged: (value) =>
+                            setModalState(() => termo = value),
+                        style: const TextStyle(color: _kTextPrimary),
+                        decoration: InputDecoration(
+                          hintText: 'Buscar',
+                          hintStyle: const TextStyle(color: _kTextSecondary),
+                          prefixIcon: const Icon(
+                            Icons.search,
+                            color: _kTextSecondary,
+                          ),
+                          filled: true,
+                          fillColor: _kSurface2,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(color: _kBorderSoft),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Expanded(
+                      child: filtrados.isEmpty
+                          ? const Center(
+                              child: Text(
+                                'Nenhuma opcao encontrada',
+                                style: TextStyle(color: _kTextSecondary),
+                              ),
+                            )
+                          : ListView.separated(
+                              itemCount: filtrados.length,
+                              separatorBuilder: (_, __) =>
+                                  const Divider(height: 1, color: _kBorderSoft),
+                              itemBuilder: (_, index) {
+                                final item = filtrados[index];
+                                return ListTile(
+                                  leading: Icon(itemIcon, color: _kAccentColor),
+                                  title: Text(
+                                    itemTitle(item),
+                                    style: const TextStyle(
+                                      color: _kTextPrimary,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  subtitle: Text(
+                                    itemSubtitle(item),
+                                    style: const TextStyle(
+                                      color: _kTextSecondary,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                  onTap: () => Navigator.of(ctx).pop(item),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  double get _totalQuantidade =>
+      _resultados.fold(0.0, (total, item) => total + item.quantidade);
+
+  int get _totalArtigos => _resultados.map((item) => item.artigo).toSet().length;
+
+  int get _totalOperadores =>
+      _resultados.map((item) => item.operador).toSet().length;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [_kBgTop, _kSurface2, _kBgBottom],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+        ),
+      ),
+      child: SafeArea(
+        top: false,
+        child: CustomScrollView(
+          slivers: [
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
+              sliver: SliverList(
+                delegate: SliverChildListDelegate([
+                  _buildFiltros(),
+                  const SizedBox(height: 14),
+                  if (_loading) const _ConsultaLoadingCard(),
+                  if (!_loading && _resultados.isNotEmpty) _buildResumo(),
+                  if (!_loading && _erro != null) _buildErro(),
+                  if (!_loading &&
+                      _consultou &&
+                      _erro == null &&
+                      _resultados.isEmpty)
+                    const _ConsultaEmptyCard(),
+                ]),
+              ),
+            ),
+            if (!_loading && _resultados.isNotEmpty)
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 18),
+                sliver: SliverList.separated(
+                  itemCount: _resultados.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 10),
+                  itemBuilder: (context, index) =>
+                      _ConsultaApontamentoCard(item: _resultados[index]),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFiltros() {
+    final compact = MediaQuery.of(context).size.width < 720;
+    final fields = [
+      _ConsultaDateField(
+        label: 'Data inicial',
+        controller: _dataInicioController,
+        onTap: () => _selecionarData(_dataInicioController),
+      ),
+      _ConsultaDateField(
+        label: 'Data final',
+        controller: _dataFimController,
+        onTap: () => _selecionarData(_dataFimController),
+      ),
+      _ConsultaFilterField(
+        label: 'Artigo',
+        controller: _artigoController,
+        icon: Icons.inventory_2_outlined,
+        readOnly: true,
+        onTap: _abrirSeletorArtigo,
+      ),
+      _ConsultaFilterField(
+        label: 'Turno',
+        controller: _turnoController,
+        icon: Icons.schedule_outlined,
+        readOnly: true,
+        onTap: _abrirSeletorTurno,
+      ),
+      _ConsultaFilterField(
+        label: 'Usuario',
+        controller: _usuarioController,
+        icon: Icons.person_outline,
+        readOnly: true,
+        onTap: _loadingOpcoes ? null : _abrirSeletorUsuario,
+      ),
+      _ConsultaFilterField(
+        label: 'Setor',
+        controller: _setorController,
+        icon: Icons.apartment_outlined,
+        readOnly: true,
+        onTap: _loadingOpcoes ? null : _abrirSeletorSetor,
+      ),
+    ];
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: _kSurface.withValues(alpha: 0.92),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: _kBorderSoft),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.analytics_outlined, color: _kAccentColor),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Consultar apontamentos',
+                  style: TextStyle(
+                    color: _kTextPrimary,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final itemWidth = compact
+                  ? constraints.maxWidth
+                  : (constraints.maxWidth - 12) / 2;
+              return Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: fields
+                    .map((field) => SizedBox(width: itemWidth, child: field))
+                    .toList(),
+              );
+            },
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _loading ? null : _limparFiltros,
+                  icon: const Icon(Icons.cleaning_services_outlined),
+                  label: const Text('Limpar'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: _kTextPrimary,
+                    side: const BorderSide(color: _kBorderSoft),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                flex: 2,
+                child: ElevatedButton.icon(
+                  onPressed: _loading ? null : _consultar,
+                  icon: _loading
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.search_rounded),
+                  label: Text(_loading ? 'Consultando...' : 'Consultar'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _kPrimaryColor,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    textStyle: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildResumo() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: _kSurface2.withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _kBorderSoft),
+      ),
+      child: Wrap(
+        spacing: 10,
+        runSpacing: 10,
+        children: [
+          _ConsultaResumoChip(
+            icon: Icons.fact_check_outlined,
+            label: 'Registros',
+            value: _integerFormatter.format(_resultados.length),
+          ),
+          _ConsultaResumoChip(
+            icon: Icons.add_task_outlined,
+            label: 'Quantidade',
+            value: _quantidadeFormatter.format(_totalQuantidade),
+          ),
+          _ConsultaResumoChip(
+            icon: Icons.inventory_2_outlined,
+            label: 'Artigos',
+            value: _integerFormatter.format(_totalArtigos),
+          ),
+          _ConsultaResumoChip(
+            icon: Icons.groups_outlined,
+            label: 'Operadores',
+            value: _integerFormatter.format(_totalOperadores),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildErro() {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.red.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.red.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.error_outline, color: Colors.redAccent),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              _erro!,
+              style: const TextStyle(
+                color: _kTextPrimary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ConsultaApontamento {
+  const _ConsultaApontamento({
+    required this.artigo,
+    required this.defeito,
+    required this.operador,
+    required this.quantidade,
+    required this.setor,
+    required this.data,
+    required this.turno,
+    required this.funcionario,
+  });
+
+  final String artigo;
+  final String defeito;
+  final String operador;
+  final double quantidade;
+  final String setor;
+  final DateTime? data;
+  final String turno;
+  final String funcionario;
+
+  factory _ConsultaApontamento.fromJson(Map<dynamic, dynamic> json) {
+    return _ConsultaApontamento(
+      artigo: _asString(json['Artigo']),
+      defeito: _asString(json['Defeito']),
+      operador: _asString(json['Operador']),
+      quantidade: _asDouble(json['Qtd'] ?? json['Qtde'] ?? json['Quantidade']),
+      setor: _asString(json['Setor']),
+      data: _asDate(json['DtMapa']),
+      turno: _asString(json['Turno']),
+      funcionario: _asString(json['Funcionario']),
+    );
+  }
+
+  static String _asString(dynamic value) => value?.toString().trim() ?? '';
+
+  static double _asDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+
+    final textoOriginal = value?.toString().trim() ?? '';
+    if (textoOriginal.isEmpty) return 0;
+
+    var texto = textoOriginal.replaceAll(RegExp(r'\s+'), '');
+    final temVirgula = texto.contains(',');
+    final temPonto = texto.contains('.');
+
+    if (temVirgula && temPonto) {
+      texto = texto.replaceAll('.', '').replaceAll(',', '.');
+    } else if (temVirgula) {
+      texto = texto.replaceAll(',', '.');
+    }
+
+    return double.tryParse(texto) ?? 0;
+  }
+
+  static DateTime? _asDate(dynamic value) {
+    final texto = value?.toString().trim() ?? '';
+    if (texto.isEmpty) return null;
+    return DateTime.tryParse(texto);
+  }
+}
+
+class _ConsultaTurno {
+  final String codigo;
+  final String nome;
+
+  const _ConsultaTurno(this.codigo, this.nome);
+}
+
+class _ConsultaDateField extends StatelessWidget {
+  const _ConsultaDateField({
+    required this.label,
+    required this.controller,
+    required this.onTap,
+  });
+
+  final String label;
+  final TextEditingController controller;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      readOnly: true,
+      onTap: onTap,
+      style: const TextStyle(color: _kTextPrimary, fontWeight: FontWeight.w700),
+      decoration: _consultaInputDecoration(label, Icons.calendar_month_outlined),
+    );
+  }
+}
+
+class _ConsultaFilterField extends StatelessWidget {
+  const _ConsultaFilterField({
+    required this.label,
+    required this.controller,
+    required this.icon,
+    this.readOnly = false,
+    this.onTap,
+  });
+
+  final String label;
+  final TextEditingController controller;
+  final IconData icon;
+  final bool readOnly;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      readOnly: readOnly,
+      onTap: onTap,
+      style: const TextStyle(color: _kTextPrimary, fontWeight: FontWeight.w700),
+      decoration: _consultaInputDecoration(
+        label,
+        icon,
+        suffixIcon: readOnly
+            ? Icon(
+                onTap == null
+                    ? Icons.hourglass_empty_rounded
+                    : Icons.keyboard_arrow_down_rounded,
+                color: _kTextSecondary,
+              )
+            : null,
+      ),
+    );
+  }
+}
+
+InputDecoration _consultaInputDecoration(
+  String label,
+  IconData icon, {
+  Widget? suffixIcon,
+}) {
+  return InputDecoration(
+    labelText: label,
+    labelStyle: const TextStyle(
+      color: _kTextSecondary,
+      fontWeight: FontWeight.w700,
+    ),
+    prefixIcon: Icon(icon, color: _kAccentColor, size: 20),
+    suffixIcon: suffixIcon,
+    filled: true,
+    fillColor: _kSurface2.withValues(alpha: 0.9),
+    enabledBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(14),
+      borderSide: const BorderSide(color: _kBorderSoft),
+    ),
+    focusedBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(14),
+      borderSide: const BorderSide(color: _kAccentColor, width: 1.6),
+    ),
+    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 15),
+  );
+}
+
+class _ConsultaResumoChip extends StatelessWidget {
+  const _ConsultaResumoChip({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: _kSurface.withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _kBorderSoft),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: _kAccentColor, size: 18),
+          const SizedBox(width: 8),
+          Text(
+            '$label: ',
+            style: const TextStyle(
+              color: _kTextSecondary,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          Text(
+            value,
+            style: const TextStyle(
+              color: _kTextPrimary,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ConsultaApontamentoCard extends StatelessWidget {
+  const _ConsultaApontamentoCard({required this.item});
+
+  final _ConsultaApontamento item;
+
+  @override
+  Widget build(BuildContext context) {
+    final dateFormat = DateFormat('dd/MM/yyyy');
+    final quantidade = NumberFormat('#,##0.##', 'pt_BR').format(
+      item.quantidade,
+    );
+    final data = item.data == null ? '-' : dateFormat.format(item.data!);
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: _kSurface.withValues(alpha: 0.94),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _kBorderSoft),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.25),
+            blurRadius: 10,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: _kPrimaryColor.withValues(alpha: 0.16),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: _kBorderSoft),
+                ),
+                child: const Icon(
+                  Icons.analytics_outlined,
+                  color: _kAccentColor,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.artigo.isEmpty ? 'Artigo nao informado' : item.artigo,
+                      style: const TextStyle(
+                        color: _kTextPrimary,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children: [
+                        _ConsultaMiniTag(
+                          icon: Icons.calendar_today,
+                          label: data,
+                        ),
+                        _ConsultaMiniTag(
+                          icon: Icons.schedule,
+                          label: item.turno.isEmpty ? '-' : item.turno,
+                        ),
+                        _ConsultaMiniTag(
+                          icon: Icons.apartment,
+                          label: item.setor.isEmpty ? '-' : item.setor,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  const Text(
+                    'Qtd',
+                    style: TextStyle(
+                      color: _kTextSecondary,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 11,
+                    ),
+                  ),
+                  Text(
+                    quantidade,
+                    style: const TextStyle(
+                      color: _kAccentColor,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          const Divider(height: 1, color: _kBorderSoft),
+          const SizedBox(height: 12),
+          _ConsultaInfoLine(
+            icon: Icons.person_outline,
+            label: 'Operador',
+            value: item.operador.isEmpty ? '-' : item.operador,
+          ),
+          const SizedBox(height: 8),
+          _ConsultaInfoLine(
+            icon: Icons.badge_outlined,
+            label: 'Funcionario',
+            value: item.funcionario.isEmpty ? '-' : item.funcionario,
+          ),
+          const SizedBox(height: 8),
+          _ConsultaInfoLine(
+            icon: Icons.warning_amber_outlined,
+            label: 'Defeito',
+            value: item.defeito.isEmpty ? 'Sem defeito' : item.defeito,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ConsultaMiniTag extends StatelessWidget {
+  const _ConsultaMiniTag({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+      decoration: BoxDecoration(
+        color: _kSurface2.withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: _kBorderSoft),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: _kAccentColor, size: 13),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: const TextStyle(
+              color: _kTextPrimary,
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ConsultaInfoLine extends StatelessWidget {
+  const _ConsultaInfoLine({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, color: _kTextSecondary, size: 18),
+        const SizedBox(width: 8),
+        SizedBox(
+          width: 92,
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: _kTextSecondary,
+              fontWeight: FontWeight.w800,
+              fontSize: 12,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: const TextStyle(
+              color: _kTextPrimary,
+              fontWeight: FontWeight.w700,
+              fontSize: 13,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ConsultaLoadingCard extends StatelessWidget {
+  const _ConsultaLoadingCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: _kSurface.withValues(alpha: 0.92),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _kBorderSoft),
+      ),
+      child: const Row(
+        children: [
+          SizedBox(
+            width: 22,
+            height: 22,
+            child: CircularProgressIndicator(
+              strokeWidth: 2.4,
+              color: _kAccentColor,
+            ),
+          ),
+          SizedBox(width: 12),
+          Text(
+            'Consultando apontamentos...',
+            style: TextStyle(
+              color: _kTextPrimary,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ConsultaEmptyCard extends StatelessWidget {
+  const _ConsultaEmptyCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: _kSurface.withValues(alpha: 0.92),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _kBorderSoft),
+      ),
+      child: const Row(
+        children: [
+          Icon(Icons.search_off_outlined, color: _kTextSecondary),
+          SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Nenhum apontamento encontrado para os filtros informados.',
+              style: TextStyle(
+                color: _kTextPrimary,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

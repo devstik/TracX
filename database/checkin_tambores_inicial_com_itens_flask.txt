@@ -1,0 +1,256 @@
+SUBSTITUA A ROTA /consulta/wms/checkin-tambores/inicial POR ESTA VERSAO
+
+Antes, ajuste tambem o helper _checkin_tambores_json_value para aceitar UUID:
+
+def _checkin_tambores_json_value(value):
+    if isinstance(value, datetime.datetime):
+        return value.isoformat()
+    if isinstance(value, datetime.date):
+        return value.isoformat()
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, uuid.UUID):
+        return str(value)
+    return value
+
+
+ROTA COMPLETA:
+
+@movimentacao_bp.route('/consulta/wms/checkin-tambores/inicial', methods=['POST'])
+def criar_checkin_tambores_inicial():
+    connection = None
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Dados JSON nao fornecidos ou invalidos"}), 400
+
+        itens = data.get('itens') or []
+        if not isinstance(itens, list):
+            return jsonify({"error": "itens deve ser uma lista"}), 400
+        if len(itens) <= 0:
+            return jsonify({"error": "Bipe pelo menos um tambor antes do check-in"}), 400
+
+        try:
+            quantidade_tambores = int(data.get('quantidade_tambores', len(itens)))
+        except (ValueError, TypeError):
+            return jsonify({"error": "quantidade_tambores invalida"}), 400
+
+        if quantidade_tambores <= 0:
+            return jsonify({"error": "quantidade_tambores deve ser maior que zero"}), 400
+
+        itens_normalizados = []
+        codigos = set()
+        volume_total_itens = 0.0
+
+        for index, item in enumerate(itens, start=1):
+            if not isinstance(item, dict):
+                return jsonify({"error": f"Item {index} invalido"}), 400
+
+            codigo_tambor = str(item.get('codigo_tambor') or '').strip()
+            ordem_producao = str(item.get('ordem_producao') or item.get('Ordem') or '').strip()
+            artigo = str(item.get('artigo') or item.get('Artigo') or '').strip()
+
+            try:
+                volume = float(item.get('volume', item.get('VolumeProg', 0)) or 0)
+            except (ValueError, TypeError):
+                return jsonify({"error": f"volume invalido no item {index}"}), 400
+
+            if not codigo_tambor:
+                return jsonify({"error": f"codigo_tambor e obrigatorio no item {index}"}), 400
+            if codigo_tambor in codigos:
+                return jsonify({"error": f"Tambor duplicado na leitura: {codigo_tambor}"}), 400
+            if not ordem_producao:
+                return jsonify({"error": f"ordem_producao e obrigatoria no item {index}"}), 400
+            if not artigo:
+                return jsonify({"error": f"artigo e obrigatorio no item {index}"}), 400
+            if volume < 0:
+                return jsonify({"error": f"volume nao pode ser negativo no item {index}"}), 400
+
+            codigos.add(codigo_tambor)
+            volume_total_itens += volume
+            itens_normalizados.append({
+                "codigo_tambor": codigo_tambor,
+                "ordem_producao": ordem_producao,
+                "artigo": artigo,
+                "volume": volume,
+            })
+
+        if quantidade_tambores != len(itens_normalizados):
+            return jsonify({
+                "error": "quantidade_tambores deve ser igual a quantidade de itens bipados"
+            }), 400
+
+        try:
+            volume_total = float(data.get('volume_total', volume_total_itens))
+        except (ValueError, TypeError):
+            return jsonify({"error": "volume_total invalido"}), 400
+
+        if volume_total < 0:
+            return jsonify({"error": "volume_total nao pode ser negativo"}), 400
+
+        # Usa o total dos itens como fonte da verdade.
+        volume_total = volume_total_itens
+
+        idempotency_key = (
+            data.get('idempotency_key')
+            or request.headers.get('Idempotency-Key')
+            or str(uuid.uuid4())
+        )
+
+        try:
+            idempotency_key = str(uuid.UUID(str(idempotency_key).strip()))
+        except (ValueError, TypeError):
+            return jsonify({"error": "idempotency_key invalida"}), 400
+
+        connection = create_connection_tinturaria()
+        cursor = connection.cursor()
+
+        existente = _buscar_checkin_tambores_por_idempotency_key(
+            cursor,
+            idempotency_key,
+        )
+        if existente:
+            return jsonify(existente), 200
+
+        # A tabela tem um indice unico para permitir apenas um EM_ANDAMENTO.
+        cursor.execute(
+            """
+            SELECT TOP 1
+                id_checkin_tambores,
+                idempotency_key,
+                quantidade_tambores,
+                volume_total,
+                checkin_inicial_em,
+                checkin_final_em,
+                status,
+                criado_em,
+                atualizado_em
+            FROM dbo.checkin_tambores
+            WHERE status = 'EM_ANDAMENTO'
+            ORDER BY checkin_inicial_em DESC, id_checkin_tambores DESC
+            """
+        )
+        aberto = cursor.fetchone()
+        if aberto:
+            return jsonify({
+                "error": "Ja existe um check-in em andamento. Finalize antes de iniciar outro.",
+                "registro": _checkin_tambores_row_to_dict(cursor, aberto),
+            }), 409
+
+        cursor.execute(
+            """
+            INSERT INTO dbo.checkin_tambores (
+                idempotency_key,
+                quantidade_tambores,
+                volume_total,
+                checkin_inicial_em,
+                status,
+                criado_em
+            )
+            OUTPUT
+                INSERTED.id_checkin_tambores,
+                INSERTED.idempotency_key,
+                INSERTED.quantidade_tambores,
+                INSERTED.volume_total,
+                INSERTED.checkin_inicial_em,
+                INSERTED.checkin_final_em,
+                INSERTED.status,
+                INSERTED.criado_em,
+                INSERTED.atualizado_em
+            VALUES (
+                ?,
+                ?,
+                ?,
+                SYSDATETIME(),
+                'EM_ANDAMENTO',
+                SYSDATETIME()
+            )
+            """,
+            (idempotency_key, quantidade_tambores, volume_total)
+        )
+        row = cursor.fetchone()
+        registro = _checkin_tambores_row_to_dict(cursor, row)
+        id_checkin_tambores = registro["id_checkin_tambores"]
+
+        for item in itens_normalizados:
+            cursor.execute(
+                """
+                INSERT INTO dbo.checkin_tambores_itens (
+                    id_checkin_tambores,
+                    codigo_tambor,
+                    volume,
+                    ordem_producao,
+                    artigo
+                )
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    id_checkin_tambores,
+                    item["codigo_tambor"],
+                    item["volume"],
+                    item["ordem_producao"],
+                    item["artigo"],
+                )
+            )
+
+        registro_atualizado = _recalcular_totais_checkin_tambores(
+            cursor,
+            id_checkin_tambores,
+        )
+        connection.commit()
+
+        return jsonify(registro_atualizado), 201
+
+    except pyodbc.IntegrityError as ex:
+        if connection:
+            connection.rollback()
+        return jsonify({
+            "error": "Dados duplicados ou violacao de restricao no check-in.",
+            "details": str(ex)
+        }), 409
+    except pyodbc.Error as ex:
+        if connection:
+            connection.rollback()
+        return jsonify({
+            "error": f"Erro de Banco de Dados: {ex.args[0]}",
+            "details": str(ex)
+        }), 500
+    except Exception as e:
+        if connection:
+            connection.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if connection:
+            connection.close()
+
+
+OBSERVACOES:
+
+1. Esta rota exige itens no body. Exemplo:
+
+{
+  "idempotency_key": "3b1fcb85-3a4c-4c80-a4ab-3e770ec745d5",
+  "quantidade_tambores": 2,
+  "volume_total": 100,
+  "itens": [
+    {
+      "codigo_tambor": "TAMBOR:001",
+      "ordem_producao": "189813",
+      "artigo": "CLEIDE 4 30 MM RATS",
+      "volume": 50
+    },
+    {
+      "codigo_tambor": "TAMBOR:002",
+      "ordem_producao": "189813",
+      "artigo": "CLEIDE 4 30 MM RATS",
+      "volume": 50
+    }
+  ]
+}
+
+2. Se ainda retornar 500, olhe o campo "details" da resposta. Ele vai dizer o erro real.
+
+3. Se retornar 409 com "Ja existe um check-in em andamento", finalize o check-in aberto
+antes de iniciar outro. Isso acontece por causa do indice:
+
+UX_checkin_tambores_em_andamento

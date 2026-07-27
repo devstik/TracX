@@ -7,8 +7,6 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:flutter/services.dart';
 import 'package:tracx/services/datawedge_service.dart';
-import 'package:tracx/services/movimentacao_service.dart';
-import '../screens/login_screen.dart';
 
 // =========================================================================
 // 🎨 PALETA OFICIAL (PADRÃO HOME + SPLASH)
@@ -613,6 +611,37 @@ class _RegistroScreenState extends State<RegistroScreen> {
     );
   }
 
+  String _normalizarDataTingimentoApi(String? valor) {
+    final texto = (valor ?? '').trim();
+    if (texto.isEmpty) return '';
+
+    final match = RegExp(
+      r'^(\d{2})/(\d{2})/(\d{4})(?:\s*-\s*(\d{2}):(\d{2}))?$',
+    ).firstMatch(texto);
+    if (match == null) return texto;
+
+    final dia = match.group(1)!;
+    final mes = match.group(2)!;
+    final ano = match.group(3)!;
+    final hora = match.group(4) ?? '00';
+    final minuto = match.group(5) ?? '00';
+    return '$ano-$mes-$dia $hora:$minuto:00';
+  }
+
+  String _mensagemErroApi(http.Response response, String fallback) {
+    try {
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map<String, dynamic>) {
+        final detalhe =
+            decoded['error'] ?? decoded['message'] ?? decoded['details'];
+        if (detalhe != null && detalhe.toString().trim().isNotEmpty) {
+          return detalhe.toString();
+        }
+      }
+    } catch (_) {}
+    return fallback;
+  }
+
   void _salvarRegistro() async {
     final bool isFormReady = _ordemController.text.isNotEmpty;
     if (!isFormReady) return;
@@ -665,20 +694,26 @@ class _RegistroScreenState extends State<RegistroScreen> {
           caixa: caixaValue,
         );
 
+        await enviarRegistroParaAPI(registro, dataCadastro);
         await box.add(registro);
 
         _showSuccessFeedback();
-        enviarRegistroParaAPI(registro, dataCadastro);
         _limparFormulario();
       } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Erro ao salvar registro!'),
-            backgroundColor: _kPrimaryColor,
-          ),
-        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Erro ao salvar registro: ${e.toString().replaceFirst('Exception: ', '')}',
+              ),
+              backgroundColor: Colors.red.shade700,
+            ),
+          );
+        }
       } finally {
-        setState(() => _isSaving = false);
+        if (mounted) {
+          setState(() => _isSaving = false);
+        }
       }
     }
   }
@@ -700,7 +735,7 @@ class _RegistroScreenState extends State<RegistroScreen> {
       'Conferente': registro.conferente,
       'Turno': registro.turno,
       'Metros': registro.metros,
-      'DataTingimento': registro.dataTingimento,
+      'DataTingimento': _normalizarDataTingimentoApi(registro.dataTingimento),
       'NumCorte': registro.numCorte,
       'VolumeProg': registro.volumeProg,
       'DataCadastro': dataCadastro,
@@ -724,25 +759,42 @@ class _RegistroScreenState extends State<RegistroScreen> {
       'Caixa': registro.caixa,
     });
 
-    try {
-      await http
-          .post(
-            Uri.parse('http://168.190.90.2:5000/consulta/embalagem'),
-            headers: headers,
-            body: bodyEmbalagem,
-          )
-          .timeout(const Duration(seconds: 30));
-    } catch (_) {}
+    final embalagemResponse = await http
+        .post(
+          Uri.parse('http://168.190.90.2:5000/consulta/embalagem'),
+          headers: headers,
+          body: bodyEmbalagem,
+        )
+        .timeout(const Duration(seconds: 30));
+
+    if (embalagemResponse.statusCode != 200 &&
+        embalagemResponse.statusCode != 201) {
+      throw Exception(
+        _mensagemErroApi(
+          embalagemResponse,
+          'API embalagem retornou ${embalagemResponse.statusCode}',
+        ),
+      );
+    }
 
     try {
-      await http
+      final movimentacaoResponse = await http
           .post(
             Uri.parse('http://168.190.90.2:5000/consulta/movimentacao'),
             headers: headers,
             body: bodyMovimentacao,
           )
           .timeout(const Duration(seconds: 30));
-    } catch (_) {}
+      if (movimentacaoResponse.statusCode != 200 &&
+          movimentacaoResponse.statusCode != 201) {
+        debugPrint(
+          '[REGISTRO_EMBALAGEM] Falha ao salvar movimentacao: '
+          '${movimentacaoResponse.statusCode} ${movimentacaoResponse.body}',
+        );
+      }
+    } catch (e) {
+      debugPrint('[REGISTRO_EMBALAGEM] Falha ao salvar movimentacao: $e');
+    }
   }
 
   // =========================================================================

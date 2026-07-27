@@ -1,0 +1,346 @@
+COLE ESTE BLOCO LOGO APOS A ROTA:
+
+@movimentacao_bp.route('/consulta/wms/checkin-tambores/<int:id_checkin_tambores>/final', methods=['POST', 'PUT'])
+def finalizar_checkin_tambores(id_checkin_tambores):
+    ...
+
+
+# ----------------------------------------------------------------------
+# Check-in Tambores - Itens bipados
+# ----------------------------------------------------------------------
+
+def _checkin_tambores_item_row_to_dict(cursor, row):
+    if not row:
+        return None
+    columns = [col[0] for col in cursor.description]
+    return {
+        column: _checkin_tambores_json_value(value)
+        for column, value in zip(columns, row)
+    }
+
+
+def _buscar_checkin_tambores_por_id(cursor, id_checkin_tambores):
+    cursor.execute(
+        """
+        SELECT
+            id_checkin_tambores,
+            idempotency_key,
+            quantidade_tambores,
+            volume_total,
+            checkin_inicial_em,
+            checkin_final_em,
+            status,
+            criado_em,
+            atualizado_em
+        FROM dbo.checkin_tambores
+        WHERE id_checkin_tambores = ?
+        """,
+        (id_checkin_tambores,)
+    )
+    row = cursor.fetchone()
+    if not row:
+        return None
+    return _checkin_tambores_row_to_dict(cursor, row)
+
+
+def _recalcular_totais_checkin_tambores(cursor, id_checkin_tambores):
+    cursor.execute(
+        """
+        UPDATE c
+        SET
+            quantidade_tambores = x.quantidade_tambores,
+            volume_total = x.volume_total,
+            atualizado_em = SYSDATETIME()
+        OUTPUT
+            INSERTED.id_checkin_tambores,
+            INSERTED.idempotency_key,
+            INSERTED.quantidade_tambores,
+            INSERTED.volume_total,
+            INSERTED.checkin_inicial_em,
+            INSERTED.checkin_final_em,
+            INSERTED.status,
+            INSERTED.criado_em,
+            INSERTED.atualizado_em
+        FROM dbo.checkin_tambores c
+        CROSS APPLY (
+            SELECT
+                COUNT(*) AS quantidade_tambores,
+                ISNULL(SUM(i.volume), 0) AS volume_total
+            FROM dbo.checkin_tambores_itens i
+            WHERE i.id_checkin_tambores = c.id_checkin_tambores
+        ) x
+        WHERE c.id_checkin_tambores = ?
+        """,
+        (id_checkin_tambores,)
+    )
+    row = cursor.fetchone()
+    if not row:
+        return None
+    return _checkin_tambores_row_to_dict(cursor, row)
+
+
+@movimentacao_bp.route('/consulta/wms/checkin-tambores/<int:id_checkin_tambores>/itens', methods=['GET'])
+def listar_checkin_tambores_itens(id_checkin_tambores):
+    connection = None
+    try:
+        connection = create_connection_tinturaria()
+        cursor = connection.cursor()
+
+        checkin = _buscar_checkin_tambores_por_id(cursor, id_checkin_tambores)
+        if not checkin:
+            return jsonify({"error": "Check-in nao encontrado"}), 404
+
+        cursor.execute(
+            """
+            SELECT
+                id_checkin_tambores_item,
+                id_checkin_tambores,
+                codigo_tambor,
+                volume,
+                bipado_em,
+                ordem_producao,
+                artigo
+            FROM dbo.checkin_tambores_itens
+            WHERE id_checkin_tambores = ?
+            ORDER BY bipado_em ASC, id_checkin_tambores_item ASC
+            """,
+            (id_checkin_tambores,)
+        )
+
+        itens = [
+            _checkin_tambores_item_row_to_dict(cursor, row)
+            for row in cursor.fetchall()
+        ]
+        return jsonify({
+            "checkin": checkin,
+            "itens": itens,
+        }), 200
+
+    except pyodbc.Error as ex:
+        return jsonify({"error": f"Erro de Banco de Dados: {ex.args[0]}"}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if connection:
+            connection.close()
+
+
+@movimentacao_bp.route('/consulta/wms/checkin-tambores/<int:id_checkin_tambores>/itens', methods=['POST'])
+def adicionar_checkin_tambores_item(id_checkin_tambores):
+    connection = None
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Dados JSON nao fornecidos ou invalidos"}), 400
+
+        codigo_tambor = str(data.get('codigo_tambor') or '').strip()
+        ordem_producao = str(data.get('ordem_producao') or data.get('Ordem') or '').strip()
+        artigo = str(data.get('artigo') or data.get('Artigo') or '').strip()
+
+        try:
+            volume = float(data.get('volume', data.get('VolumeProg', 0)) or 0)
+        except (ValueError, TypeError):
+            return jsonify({"error": "volume invalido"}), 400
+
+        if not codigo_tambor:
+            return jsonify({"error": "codigo_tambor e obrigatorio"}), 400
+        if not ordem_producao:
+            return jsonify({"error": "ordem_producao e obrigatoria"}), 400
+        if not artigo:
+            return jsonify({"error": "artigo e obrigatorio"}), 400
+        if volume < 0:
+            return jsonify({"error": "volume nao pode ser negativo"}), 400
+
+        connection = create_connection_tinturaria()
+        cursor = connection.cursor()
+
+        checkin = _buscar_checkin_tambores_por_id(cursor, id_checkin_tambores)
+        if not checkin:
+            return jsonify({"error": "Check-in nao encontrado"}), 404
+        if checkin.get('status') != 'EM_ANDAMENTO':
+            return jsonify({"error": "Nao e possivel adicionar tambor em check-in finalizado"}), 409
+
+        cursor.execute(
+            """
+            INSERT INTO dbo.checkin_tambores_itens (
+                id_checkin_tambores,
+                codigo_tambor,
+                volume,
+                ordem_producao,
+                artigo
+            )
+            OUTPUT
+                INSERTED.id_checkin_tambores_item,
+                INSERTED.id_checkin_tambores,
+                INSERTED.codigo_tambor,
+                INSERTED.volume,
+                INSERTED.bipado_em,
+                INSERTED.ordem_producao,
+                INSERTED.artigo
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                id_checkin_tambores,
+                codigo_tambor,
+                volume,
+                ordem_producao,
+                artigo,
+            )
+        )
+        item_row = cursor.fetchone()
+        item = _checkin_tambores_item_row_to_dict(cursor, item_row)
+        checkin_atualizado = _recalcular_totais_checkin_tambores(
+            cursor,
+            id_checkin_tambores,
+        )
+
+        connection.commit()
+        return jsonify({
+            "item": item,
+            "checkin": checkin_atualizado,
+        }), 201
+
+    except pyodbc.IntegrityError as ex:
+        if connection:
+            connection.rollback()
+        return jsonify({
+            "error": "Tambor ja bipado neste check-in ou dados violam restricao.",
+            "details": str(ex),
+        }), 409
+    except pyodbc.Error as ex:
+        if connection:
+            connection.rollback()
+        return jsonify({"error": f"Erro de Banco de Dados: {ex.args[0]}"}), 500
+    except Exception as e:
+        if connection:
+            connection.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if connection:
+            connection.close()
+
+
+@movimentacao_bp.route('/consulta/wms/checkin-tambores/<int:id_checkin_tambores>/itens/resumo', methods=['GET'])
+def listar_checkin_tambores_itens_resumo(id_checkin_tambores):
+    connection = None
+    try:
+        connection = create_connection_tinturaria()
+        cursor = connection.cursor()
+
+        checkin = _buscar_checkin_tambores_por_id(cursor, id_checkin_tambores)
+        if not checkin:
+            return jsonify({"error": "Check-in nao encontrado"}), 404
+
+        cursor.execute(
+            """
+            SELECT
+                ordem_producao,
+                artigo,
+                quantidade_tambores = COUNT(*),
+                volume_total = ISNULL(SUM(volume), 0)
+            FROM dbo.checkin_tambores_itens
+            WHERE id_checkin_tambores = ?
+            GROUP BY
+                ordem_producao,
+                artigo
+            ORDER BY
+                ordem_producao,
+                artigo
+            """,
+            (id_checkin_tambores,)
+        )
+
+        resumo = [
+            _checkin_tambores_item_row_to_dict(cursor, row)
+            for row in cursor.fetchall()
+        ]
+        return jsonify({
+            "checkin": checkin,
+            "resumo": resumo,
+        }), 200
+
+    except pyodbc.Error as ex:
+        return jsonify({"error": f"Erro de Banco de Dados: {ex.args[0]}"}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if connection:
+            connection.close()
+
+
+@movimentacao_bp.route('/consulta/wms/checkin-tambores/<int:id_checkin_tambores>/itens/<int:id_checkin_tambores_item>', methods=['DELETE'])
+def remover_checkin_tambores_item(id_checkin_tambores, id_checkin_tambores_item):
+    connection = None
+    try:
+        connection = create_connection_tinturaria()
+        cursor = connection.cursor()
+
+        checkin = _buscar_checkin_tambores_por_id(cursor, id_checkin_tambores)
+        if not checkin:
+            return jsonify({"error": "Check-in nao encontrado"}), 404
+        if checkin.get('status') != 'EM_ANDAMENTO':
+            return jsonify({"error": "Nao e possivel remover tambor de check-in finalizado"}), 409
+
+        cursor.execute(
+            """
+            DELETE FROM dbo.checkin_tambores_itens
+            WHERE
+                id_checkin_tambores = ?
+                AND id_checkin_tambores_item = ?
+            """,
+            (id_checkin_tambores, id_checkin_tambores_item)
+        )
+
+        if cursor.rowcount <= 0:
+            connection.rollback()
+            return jsonify({"error": "Item nao encontrado"}), 404
+
+        checkin_atualizado = _recalcular_totais_checkin_tambores(
+            cursor,
+            id_checkin_tambores,
+        )
+        connection.commit()
+        return jsonify({
+            "success": True,
+            "checkin": checkin_atualizado,
+        }), 200
+
+    except pyodbc.Error as ex:
+        if connection:
+            connection.rollback()
+        return jsonify({"error": f"Erro de Banco de Dados: {ex.args[0]}"}), 500
+    except Exception as e:
+        if connection:
+            connection.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if connection:
+            connection.close()
+
+
+OBSERVACAO IMPORTANTE:
+
+Como agora o check-in pode iniciar antes de qualquer bipagem, ajuste a tabela principal
+para aceitar quantidade_tambores = 0, se ainda nao tiver feito:
+
+ALTER TABLE dbo.checkin_tambores
+DROP CONSTRAINT CK_checkin_tambores_quantidade;
+GO
+
+ALTER TABLE dbo.checkin_tambores
+ADD CONSTRAINT CK_checkin_tambores_quantidade
+CHECK (quantidade_tambores >= 0);
+GO
+
+
+Tambem ajuste a rota /consulta/wms/checkin-tambores/inicial:
+
+Troque:
+
+if quantidade_tambores <= 0:
+    return jsonify({"error": "quantidade_tambores deve ser maior que zero"}), 400
+
+Por:
+
+if quantidade_tambores < 0:
+    return jsonify({"error": "quantidade_tambores nao pode ser negativa"}), 400

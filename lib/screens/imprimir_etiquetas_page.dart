@@ -14,7 +14,7 @@ import '../services/etiquetas_service.dart';
 import '../services/padrao_caixa_service.dart';
 import '../services/zebra_printer_service.dart';
 
-enum _EtiquetaModelo { palete, caixa, operador, carretel, livre }
+enum _EtiquetaModelo { palete, caixa, ordens, operador, carretel, livre }
 
 class _OperadorEtiqueta {
   final String codigo;
@@ -52,14 +52,115 @@ class _OperadorEtiqueta {
   String get label => nome.isEmpty ? codigo : '$codigo - $nome';
 }
 
+class _OrdemExpedicao {
+  const _OrdemExpedicao({
+    required this.woid,
+    required this.salesOrderId,
+    required this.skuCode,
+    required this.skuName,
+    required this.plant,
+    required this.quantity,
+    required this.orderType,
+    required this.productionFamily,
+    required this.skuDescription,
+    required this.uom,
+    required this.stockLocationName,
+    required this.dueDate,
+    required this.releaseDate,
+    required this.alvo,
+    required this.localStock,
+  });
+
+  final String woid;
+  final String salesOrderId;
+  final String skuCode;
+  final String skuName;
+  final String plant;
+  final double quantity;
+  final String orderType;
+  final String productionFamily;
+  final String skuDescription;
+  final String uom;
+  final String stockLocationName;
+  final DateTime? dueDate;
+  final DateTime? releaseDate;
+  final double alvo;
+  final double localStock;
+
+  factory _OrdemExpedicao.fromJson(Map<String, dynamic> json) {
+    return _OrdemExpedicao(
+      woid: _asText(json['WOID']),
+      salesOrderId: _asText(json['SalesOrderID']),
+      skuCode: _asText(json['SKUCode']),
+      skuName: _asText(json['SKUName']),
+      plant: _asText(json['Plant']),
+      quantity: _asDouble(json['Quantity']),
+      orderType: _asText(json['OrderType']),
+      productionFamily: _asText(json['ProductionFamily']),
+      skuDescription: _asText(json['SKUDescription']),
+      uom: _asText(json['UOM']),
+      stockLocationName: _asText(json['StockLocationName']),
+      dueDate: _asDate(json['DueDate']),
+      releaseDate: _asDate(json['ReleaseDate']),
+      alvo: _asDouble(json['Alvo']),
+      localStock: _asDouble(json['LocalStock']),
+    );
+  }
+
+  String get titulo => skuDescription.isEmpty ? skuName : skuDescription;
+
+  static String _asText(dynamic value) => value?.toString().trim() ?? '';
+
+  static double _asDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    final raw = value?.toString().trim() ?? '';
+    if (raw.isEmpty) return 0;
+    var normalized = raw.replaceAll(RegExp(r'\s+'), '');
+    if (normalized.contains(',') && normalized.contains('.')) {
+      normalized = normalized.replaceAll('.', '').replaceAll(',', '.');
+    } else if (normalized.contains(',')) {
+      normalized = normalized.replaceAll(',', '.');
+    }
+    return double.tryParse(normalized) ?? 0;
+  }
+
+  static DateTime? _asDate(dynamic value) {
+    final raw = value?.toString().trim() ?? '';
+    if (raw.isEmpty) return null;
+    return DateTime.tryParse(raw);
+  }
+}
+
 class _LinhaLivreEditor {
   final TextEditingController controller = TextEditingController();
+  final TextEditingController fonteController = TextEditingController(
+    text: '36',
+  );
   TamanhoLinhaLivre tamanho = TamanhoLinhaLivre.medio;
   AlinhamentoLinhaLivre alinhamento = AlinhamentoLinhaLivre.centro;
   bool negrito = false;
 
-  void dispose() => controller.dispose();
+  void dispose() {
+    controller.dispose();
+    fonteController.dispose();
+  }
 }
+
+class _FioLivreEtiqueta {
+  const _FioLivreEtiqueta({
+    required this.cor,
+    required this.titulo,
+    required this.lote,
+    required this.codigoBarras,
+  });
+
+  final String cor;
+  final String titulo;
+  final String lote;
+  final String codigoBarras;
+}
+
+enum _LivreTipoModelo { livre, tipoB, fios }
 
 class EtiquetasPage extends StatefulWidget {
   final int grupoId;
@@ -72,8 +173,9 @@ class EtiquetasPage extends StatefulWidget {
 
 class _EtiquetasPageState extends State<EtiquetasPage> {
   static const List<Map<String, dynamic>> _fallbackPrinters = [
-    {'nome': 'Zebra 1', 'ip': '168.190.30.74', 'porta': 9100},
-    {'nome': 'Zebra 2', 'ip': '168.190.30.172', 'porta': 9100},
+    {'nome': 'EtqCaixa/Carretel 2', 'ip': '168.190.30.206', 'porta': 9100},
+    {'nome': 'EtqCaixa/Carretel', 'ip': '168.190.30.181', 'porta': 9100},
+    {'nome': 'EtqManual', 'ip': '168.190.30.172', 'porta': 9100},
   ];
   // ── Palete ───────────────────────────────────────────────────
   final TextEditingController _paleteController = TextEditingController();
@@ -125,6 +227,9 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
   final TextEditingController _opQtdeController = TextEditingController(
     text: '1',
   );
+  final TextEditingController _opFonteController = TextEditingController(
+    text: '72',
+  );
   bool _imprimindoOp = false;
   int _opPreview = 0;
   List<_OperadorEtiqueta> _operadores = [];
@@ -160,6 +265,108 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
   final TextEditingController _qtdeLivreController = TextEditingController(
     text: '1',
   );
+  final TextEditingController _tipoBLinha1Controller = TextEditingController();
+  final TextEditingController _tipoBLinha2Controller = TextEditingController();
+  final TextEditingController _tipoBCodigoController = TextEditingController();
+  final TextEditingController _tipoBNumeroController = TextEditingController();
+  final TextEditingController _tipoBFonteLinha1Controller =
+      TextEditingController(text: '36');
+  final TextEditingController _tipoBFonteLinha2Controller =
+      TextEditingController(text: '36');
+  final TextEditingController _tipoBFonteCodigoController =
+      TextEditingController(text: '32');
+  final TextEditingController _tipoBFonteNumeroController =
+      TextEditingController(text: '72');
+  final TextEditingController _tipoBFonteController = TextEditingController(
+    text: '36',
+  );
+  final TextEditingController _fioTituloController = TextEditingController();
+  final TextEditingController _fioCorController = TextEditingController();
+  final TextEditingController _fioPesoController = TextEditingController();
+  final TextEditingController _fioLoteController = TextEditingController();
+  final TextEditingController _fioCodigoController = TextEditingController();
+  static const List<_FioLivreEtiqueta> _fiosLivre = [
+    _FioLivreEtiqueta(
+      cor: 'CORÇA',
+      titulo: 'Fio Poliester 167/48',
+      lote: 'E6',
+      codigoBarras: '7896714231136',
+    ),
+    _FioLivreEtiqueta(
+      cor: 'PRETO',
+      titulo: 'Fio Poliester 167/48',
+      lote: 'E6',
+      codigoBarras: '7896714231143',
+    ),
+    _FioLivreEtiqueta(
+      cor: 'ESTANHO',
+      titulo: 'Fio Poliester 167/48',
+      lote: 'F4',
+      codigoBarras: '7896714231150',
+    ),
+    _FioLivreEtiqueta(
+      cor: 'ROYAL',
+      titulo: 'Fio Poliester 167/48',
+      lote: 'K4',
+      codigoBarras: '7896714231167',
+    ),
+    _FioLivreEtiqueta(
+      cor: 'BRANCO',
+      titulo: 'Fio Poliester 167/48',
+      lote: 'E6',
+      codigoBarras: '7896714231174',
+    ),
+    _FioLivreEtiqueta(
+      cor: 'PALHA ITALIANA',
+      titulo: 'Fio Poliester 167/48',
+      lote: 'F4',
+      codigoBarras: '7896714231181',
+    ),
+    _FioLivreEtiqueta(
+      cor: 'REVOLUÇÃO',
+      titulo: 'Fio Poliester 167/48',
+      lote: 'F4',
+      codigoBarras: '7896714231198',
+    ),
+    _FioLivreEtiqueta(
+      cor: 'MANJERICÃO',
+      titulo: 'Fio Poliester 167/48',
+      lote: 'F4',
+      codigoBarras: '7896714231204',
+    ),
+    _FioLivreEtiqueta(
+      cor: 'LARANJA',
+      titulo: 'Fio Poliester 150/48',
+      lote: 'F4',
+      codigoBarras: '7896714231211',
+    ),
+    _FioLivreEtiqueta(
+      cor: 'ROSA SERENO',
+      titulo: 'Fio Poliester 167/48',
+      lote: 'F4',
+      codigoBarras: '7896714231228',
+    ),
+    _FioLivreEtiqueta(
+      cor: 'GEMA',
+      titulo: 'Fio Poliester 167/48',
+      lote: 'F5',
+      codigoBarras: '7896714231235',
+    ),
+    _FioLivreEtiqueta(
+      cor: 'VIOLETA PERFUMADA',
+      titulo: 'Fio Poliester 167/48',
+      lote: 'F4',
+      codigoBarras: '7896714231259',
+    ),
+    _FioLivreEtiqueta(
+      cor: 'VERDE GRAMA',
+      titulo: 'Fio Poliester 167/48',
+      lote: 'F4',
+      codigoBarras: '7896714231266',
+    ),
+  ];
+  _FioLivreEtiqueta _fioLivreSelecionado = _fiosLivre.first;
+  _LivreTipoModelo _livreTipoModelo = _LivreTipoModelo.livre;
   final List<_LinhaLivreEditor> _linhasLivre = [
     _LinhaLivreEditor(),
     _LinhaLivreEditor(),
@@ -187,6 +394,23 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
   // Resultado do buscarEtiquetaCaixaV2 (preenchido ao imprimir)
   Map<String, dynamic>? _etiquetaCaixa;
 
+  // Lote de impressao (LI): quando ativo, as proximas caixas impressas
+  // compartilham o mesmo LI retornado pela API.
+  bool _manterLoteCaixa = false;
+  String? _loteImpressaoCaixa;
+
+  // Ordens
+  final TextEditingController _ordemSkuNameController =
+      TextEditingController();
+  List<Map<String, dynamic>> _ordemArtigoOpcoes = [];
+  List<_OrdemExpedicao> _ordensExpedicao = [];
+  final Set<String> _ordensExpandidas = {};
+  Timer? _ordemBuscaDebounce;
+  bool _buscandoOrdemArtigos = false;
+  bool _consultandoOrdens = false;
+  bool _settingOrdemBuscaText = false;
+  int _ordemSkuSelecionado = 0;
+
   // Flags do artigo
   bool _naoImprimeLoteLinha = false;
   bool _detalheObrigatorio = false;
@@ -208,8 +432,26 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
   @override
   void initState() {
     super.initState();
+    _aplicarFioLivre(_fioLivreSelecionado, notify: false);
     _carregarImpressora();
     _carregarOperadores();
+  }
+
+  void _aplicarFioLivre(_FioLivreEtiqueta fio, {bool notify = true}) {
+    void apply() {
+      _fioLivreSelecionado = fio;
+      _fioTituloController.text = fio.titulo;
+      _fioCorController.text = fio.cor;
+      _fioPesoController.text = '300g';
+      _fioLoteController.text = fio.lote;
+      _fioCodigoController.text = fio.codigoBarras;
+    }
+
+    if (notify) {
+      setState(apply);
+    } else {
+      apply();
+    }
   }
 
   Future<void> _carregarImpressora() async {
@@ -220,8 +462,8 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     );
     setState(() {
       _printers = printers;
-      if (printers.length == 1) {
-        _aplicarImpressora(printers.first);
+      if (_selectedPrinterKey == null && printers.isNotEmpty) {
+        _aplicarImpressora(_impressoraPadraoParaModelo(_modelo, printers));
       }
     });
   }
@@ -251,16 +493,28 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
   ) {
     var nextZebraNumber = 3;
     return lista.map((printer) {
-      final ip = (printer['ip'] ?? '').toString().trim();
+      final ipOriginal = (printer['ip'] ?? '').toString().trim();
+      final ip = ipOriginal.split(':').first.trim();
+      final portaOriginal = printer['porta'];
       final porta =
-          (printer['porta'] as int?) ?? ZebraPrinterService.defaultPort;
+          portaOriginal is int
+              ? portaOriginal
+              : int.tryParse(portaOriginal?.toString() ?? '') ??
+                    int.tryParse(ipOriginal.split(':').skip(1).firstOrNull ?? '') ??
+                    ZebraPrinterService.defaultPort;
       String nome;
       switch (ip) {
+        case '168.190.30.206':
+          nome = 'EtqCaixa/Carretel 2';
+          break;
+        case '168.190.30.181':
+          nome = 'EtqCaixa/Carretel';
+          break;
         case '168.190.30.74':
           nome = 'Zebra 1';
           break;
         case '168.190.30.172':
-          nome = 'Zebra 2';
+          nome = 'EtqManual';
           break;
         default:
           nome = 'Zebra $nextZebraNumber';
@@ -273,6 +527,46 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
         'porta': porta,
       };
     }).toList();
+  }
+
+  Map<String, dynamic> _impressoraPadraoParaModelo(
+    _EtiquetaModelo modelo,
+    List<Map<String, dynamic>> printers,
+  ) {
+    final ipsPreferenciais = switch (modelo) {
+      _EtiquetaModelo.caixa || _EtiquetaModelo.carretel => const [
+        '168.190.30.206',
+        '168.190.30.181',
+      ],
+      _EtiquetaModelo.ordens => const [
+        '168.190.30.206',
+        '168.190.30.181',
+      ],
+      _EtiquetaModelo.operador || _EtiquetaModelo.livre => const [
+        '168.190.30.172',
+      ],
+      _EtiquetaModelo.palete => const [
+        '168.190.30.181',
+        '168.190.30.206',
+        '168.190.30.172',
+      ],
+    };
+
+    for (final ipPreferencial in ipsPreferenciais) {
+      for (final printer in printers) {
+        if ((printer['ip'] ?? '').toString().trim() == ipPreferencial) {
+          return printer;
+        }
+      }
+    }
+    return printers.first;
+  }
+
+  String _printerLabel(Map<String, dynamic> printer) {
+    final nome = (printer['nome'] ?? '').toString().trim();
+    final ip = (printer['ip'] ?? '').toString().trim();
+    final porta = printer['porta'];
+    return '$nome ($ip:$porta)';
   }
 
   void _aplicarImpressora(Map<String, dynamic> printer) {
@@ -301,7 +595,10 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     _loteController.dispose();
     _qtdeController.dispose();
     _tipoCaixaController.dispose();
+    _ordemBuscaDebounce?.cancel();
+    _ordemSkuNameController.dispose();
     _opQtdeController.dispose();
+    _opFonteController.dispose();
     _buscaCarretelDebounce?.cancel();
     _buscaCarretelController.dispose();
     _loteCarretelController.dispose();
@@ -310,6 +607,20 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     _larguraLivreController.dispose();
     _alturaLivreController.dispose();
     _qtdeLivreController.dispose();
+    _tipoBLinha1Controller.dispose();
+    _tipoBLinha2Controller.dispose();
+    _tipoBCodigoController.dispose();
+    _tipoBNumeroController.dispose();
+    _tipoBFonteLinha1Controller.dispose();
+    _tipoBFonteLinha2Controller.dispose();
+    _tipoBFonteCodigoController.dispose();
+    _tipoBFonteNumeroController.dispose();
+    _tipoBFonteController.dispose();
+    _fioTituloController.dispose();
+    _fioCorController.dispose();
+    _fioPesoController.dispose();
+    _fioLoteController.dispose();
+    _fioCodigoController.dispose();
     for (final linha in _linhasLivre) {
       linha.dispose();
     }
@@ -618,8 +929,8 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     setState(() {
       _caixaPMetros = _toIntPadrao(padraoAtual['caixa_p']);
       _caixaGMetros = _toIntPadrao(padraoAtual['caixa_g']);
+      _atualizarTipoCaixa();
     });
-    _atualizarTipoCaixa();
   }
 
   int _toIntPadrao(dynamic value) {
@@ -686,6 +997,131 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
   // Caixa — Etapa 2: Imprimir (valida + v2 + imprime)
   // ────────────────────────────────────────────────────────────
 
+  Future<void> _abrirSeletorDetalhe() async {
+    if (_lotesList.isEmpty) return;
+    final selecionado = await showModalBottomSheet<int>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF101B34),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (ctx) {
+        String filtro = '';
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final termo = filtro.trim().toUpperCase();
+            final filtrados = termo.isEmpty
+                ? _lotesList
+                : _lotesList.where((lot) {
+                    final cdLot = _toIntPadrao(lot['CdLot']).toString();
+                    final nmLot = (lot['NmLot'] ?? '').toString().toUpperCase();
+                    return cdLot.contains(termo) || nmLot.contains(termo);
+                  }).toList();
+
+            return SafeArea(
+              child: SizedBox(
+                height: MediaQuery.of(context).size.height * 0.78,
+                child: Column(
+                  children: [
+                    const SizedBox(height: 10),
+                    Container(
+                      width: 42,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.white24,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      _temPreto ? 'Selecionar Cor / Lote' : 'Selecionar detalhe',
+                      style: const TextStyle(
+                        color: Color(0xFFF8FAFC),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: TextField(
+                        autofocus: true,
+                        onChanged: (value) =>
+                            setModalState(() => filtro = value),
+                        style: const TextStyle(
+                          color: Color(0xFFF8FAFC),
+                          fontWeight: FontWeight.w600,
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: 'Filtrar por codigo, cor ou lote',
+                          prefixIcon: Icon(Icons.search_rounded),
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Expanded(
+                      child: filtrados.isEmpty
+                          ? const Center(
+                              child: Text(
+                                'Nenhum lote encontrado',
+                                style: TextStyle(color: Color(0xFF94A3B8)),
+                              ),
+                            )
+                          : ListView.separated(
+                              itemCount: filtrados.length,
+                              separatorBuilder: (_, __) => const Divider(
+                                height: 1,
+                                color: Color(0xFF1E293B),
+                              ),
+                              itemBuilder: (context, index) {
+                                final lot = filtrados[index];
+                                final cdLot = _toIntPadrao(lot['CdLot']);
+                                final nmLot =
+                                    (lot['NmLot'] ?? '').toString().trim();
+                                final selected = cdLot == _detalheSelecionado;
+                                return ListTile(
+                                  leading: Icon(
+                                    selected
+                                        ? Icons.check_circle_rounded
+                                        : Icons.palette_rounded,
+                                    color: selected
+                                        ? const Color(0xFF22C55E)
+                                        : const Color(0xFF60A5FA),
+                                  ),
+                                  title: Text(
+                                    nmLot.isEmpty ? cdLot.toString() : nmLot,
+                                    style: const TextStyle(
+                                      color: Color(0xFFF8FAFC),
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  subtitle: Text(
+                                    'Codigo $cdLot',
+                                    style: const TextStyle(
+                                      color: Color(0xFF94A3B8),
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                  onTap: () => Navigator.of(ctx).pop(cdLot),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    if (!mounted || selecionado == null) return;
+    _selecionarDetalhe(selecionado);
+  }
+
   Future<void> _imprimirCaixa() async {
     if (!_garantirImpressoraSelecionada()) return;
     final cdObj = _cdObjSelecionado;
@@ -706,11 +1142,8 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       return;
     }
     if (nrOrdem.isEmpty) {
-      _showSnackBar(
-        'Nº da ordem não informado — será registrado como 0.',
-        isError: true,
-      );
-      // Não bloqueia — imprime com ordem = 0 no JSON
+      _showSnackBar('Informe o numero da ordem.', isError: true);
+      return;
     }
     if (_detalheObrigatorio && detalhe <= 0) {
       _showSnackBar(
@@ -731,11 +1164,27 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       return;
     }
 
+    await _consultarPadraoCaixaArtigo();
+    _atualizarTipoCaixa();
+
     final metrosInt = int.tryParse(metros) ?? 0;
     final bloqueio = _bloqueioDivisaoCaixa(metrosInt);
     if (bloqueio != null) {
+      setState(() => _tipoCaixaController.text = 'Feche a caixa primeiro');
       _showSnackBar(bloqueio, isError: true);
       return;
+    }
+    final qtde = _qtdeInformada(_qtdeController);
+    final confirmouQuantidade = await _confirmarQuantidadeAlta(
+      aba: 'Caixa',
+      qtde: qtde,
+      limite: 100,
+    );
+    if (!confirmouQuantidade) return;
+
+    final ativouManterLoteAutomaticamente = qtde >= 2 && !_manterLoteCaixa;
+    if (ativouManterLoteAutomaticamente) {
+      setState(() => _manterLoteCaixa = true);
     }
 
     setState(() {
@@ -743,17 +1192,21 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       _erro = null;
     });
     try {
-      await _imprimirCaixaSegmento(
-        cdObj: cdObj,
-        metrosSegmento: metros,
-        nrOrdem: nrOrdem,
-        detalhe: detalhe,
-        lote: lote,
-      );
+      for (var i = 0; i < qtde; i++) {
+        await _imprimirCaixaSegmento(
+          cdObj: cdObj,
+          metrosSegmento: metros,
+          nrOrdem: nrOrdem,
+          detalhe: detalhe,
+          lote: lote,
+          qtde: 1,
+        );
+        if (!mounted) return;
+      }
       if (!mounted) return;
       setState(() => _imprimindo = false);
       _showSnackBar('Comando de impressão enviado.', isError: false);
-      final manterDados = await _perguntarManterDadosCaixa();
+      final manterDados = await _perguntarManterDadosEtiqueta();
       if (!mounted) return;
       if (!manterDados) {
         _resetarCaixa();
@@ -764,7 +1217,29 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
         _erro = e.toString().replaceFirst('Exception: ', '');
         _imprimindo = false;
       });
+    } finally {
+      if (ativouManterLoteAutomaticamente && mounted) {
+        setState(() {
+          _manterLoteCaixa = false;
+          _loteImpressaoCaixa = null;
+        });
+      }
     }
+  }
+
+  void _aplicarMetrosPorTipoCaixa(String tipo) {
+    final metros = tipo == 'P' ? _caixaPMetros : _caixaGMetros;
+    if (metros <= 0) {
+      _showSnackBar(
+        'Nao ha metragem cadastrada para caixa $tipo deste artigo.',
+        isError: true,
+      );
+      return;
+    }
+    setState(() {
+      _metrosController.text = metros.toString();
+      _atualizarTipoCaixa();
+    });
   }
 
   // Busca e imprime a etiqueta caixa com os metros informados.
@@ -774,6 +1249,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     required String nrOrdem,
     required int detalhe,
     required String lote,
+    required int qtde,
   }) async {
     final data = await EtiquetasService.buscarEtiquetaCaixaV2(
       cdObj: cdObj,
@@ -783,8 +1259,9 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       lote: lote,
       operador: int.tryParse((_operadorCaixaSelecionadoCodigo ?? '').trim()) ?? 0,
       pedidoEspecial: _pedidoEspecial,
-      qtdeImp: int.tryParse(_qtdeController.text.trim()) ?? 1,
+      qtdeImp: qtde,
       loteInline: _loteInline,
+      li: _manterLoteCaixa ? _loteImpressaoCaixa : null,
     );
 
     if (!mounted) return;
@@ -803,6 +1280,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
           nrOrdem: nrOrdem,
           detalhe: detalhe,
           lote: lote,
+          qtde: qtde,
         );
         return;
       }
@@ -811,6 +1289,10 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     setState(() {
       _etiquetaCaixa = data;
       _naoImprimeLoteLinha = naoImprime;
+      final li = data['LI']?.toString();
+      if (li != null && li.isNotEmpty) {
+        _loteImpressaoCaixa = li;
+      }
     });
 
     await _zebraPrinterService.imprimirEtiquetaCaixa(
@@ -820,7 +1302,268 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     );
   }
 
-  Future<bool> _perguntarManterDadosCaixa() async {
+  Future<void> _consultarOrdensExpedicao() async {
+    FocusScope.of(context).unfocus();
+    final skuName = await _resolverSkuNameParaConsultaOrdens();
+    if (!mounted) return;
+    if (skuName.isEmpty) {
+      _showSnackBar(
+        'Selecione um artigo da lista ou informe o codigo do SKU.',
+        isError: true,
+      );
+      return;
+    }
+
+    setState(() {
+      _consultandoOrdens = true;
+      _erro = null;
+      _ordensExpedicao = [];
+      _ordemArtigoOpcoes = [];
+    });
+    try {
+      final data = await EtiquetasService.buscarOrdensExpedicao(
+        skuName: skuName,
+      );
+      if (!mounted) return;
+      setState(() {
+        _ordensExpedicao = data.map(_OrdemExpedicao.fromJson).toList();
+        _ordensExpandidas
+          ..clear()
+          ..addAll(_ordensExpedicao.map(_ordemKey));
+        _consultandoOrdens = false;
+      });
+      if (_ordensExpedicao.isEmpty) {
+        _showSnackBar('Nenhuma ordem encontrada.', isError: true);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _erro = e.toString().replaceFirst('Exception: ', '');
+        _consultandoOrdens = false;
+      });
+    }
+  }
+
+  Future<String> _resolverSkuNameParaConsultaOrdens() async {
+    if (_ordemSkuSelecionado > 0) return _ordemSkuSelecionado.toString();
+
+    final texto = _ordemSkuNameController.text.trim();
+    if (texto.isEmpty) return '';
+
+    final codigoDireto = int.tryParse(texto);
+    if (codigoDireto != null && codigoDireto > 0) {
+      return codigoDireto.toString();
+    }
+
+    final encontrados = await EtiquetasService.buscarArtigosPorNome(texto);
+    if (!mounted) return '';
+    if (encontrados.length == 1) {
+      _selecionarArtigoOrdem(encontrados.first, consultar: false);
+      return _ordemSkuSelecionado > 0 ? _ordemSkuSelecionado.toString() : '';
+    }
+
+    setState(() => _ordemArtigoOpcoes = encontrados);
+    return '';
+  }
+
+  void _onOrdemBuscaChanged(String value) {
+    if (_settingOrdemBuscaText) return;
+    _ordemBuscaDebounce?.cancel();
+
+    if (_ordemSkuSelecionado > 0) {
+      setState(() {
+        _ordemSkuSelecionado = 0;
+        _ordensExpedicao = [];
+        _ordensExpandidas.clear();
+        _ordemArtigoOpcoes = [];
+      });
+    }
+
+    final q = value.trim();
+    if (q.length < 2) {
+      setState(() => _ordemArtigoOpcoes = []);
+      return;
+    }
+
+    _ordemBuscaDebounce = Timer(const Duration(milliseconds: 350), () {
+      if (mounted) _pesquisarArtigosOrdens(q);
+    });
+  }
+
+  Future<void> _pesquisarArtigosOrdens(String q) async {
+    setState(() => _buscandoOrdemArtigos = true);
+    try {
+      final opcoes = await EtiquetasService.buscarArtigosPorNome(q);
+      if (!mounted) return;
+      setState(() {
+        _ordemArtigoOpcoes = opcoes;
+        _buscandoOrdemArtigos = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _ordemArtigoOpcoes = [];
+        _buscandoOrdemArtigos = false;
+      });
+    }
+  }
+
+  void _selecionarArtigoOrdem(
+    Map<String, dynamic> artigo, {
+    bool consultar = true,
+  }) {
+    final cdObj = _toIntPadrao(artigo['CdObj']);
+    final nmObj = (artigo['NmObj'] ?? '').toString().trim();
+    _settingOrdemBuscaText = true;
+    _ordemSkuNameController.text = nmObj.isEmpty ? cdObj.toString() : nmObj;
+    _settingOrdemBuscaText = false;
+    setState(() {
+      _ordemSkuSelecionado = cdObj;
+      _ordemArtigoOpcoes = [];
+    });
+    if (consultar) _consultarOrdensExpedicao();
+  }
+
+  String _ordemKey(_OrdemExpedicao ordem) {
+    final base = ordem.woid.isNotEmpty
+        ? ordem.woid
+        : '${ordem.skuName}-${ordem.releaseDate}-${ordem.dueDate}';
+    return base;
+  }
+
+  void _toggleOrdemCard(_OrdemExpedicao ordem) {
+    final key = _ordemKey(ordem);
+    setState(() {
+      if (_ordensExpandidas.contains(key)) {
+        _ordensExpandidas.remove(key);
+      } else {
+        _ordensExpandidas.add(key);
+      }
+    });
+  }
+
+  Future<void> _selecionarOrdemParaCaixa(_OrdemExpedicao ordem) async {
+    final deseja = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF101B34),
+        title: const Text(
+          'Imprimir artigo?',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
+        ),
+        content: Text(
+          'Deseja preencher a tela de Caixa com o artigo ${ordem.titulo}?',
+          style: const TextStyle(color: Color(0xFFCBD5E1)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            icon: const Icon(Icons.qr_code_2_rounded),
+            label: const Text('Ir para Caixa'),
+          ),
+        ],
+      ),
+    );
+
+    if (deseja != true || !mounted) return;
+    await _preencherCaixaComOrdem(ordem);
+  }
+
+  Future<void> _preencherCaixaComOrdem(_OrdemExpedicao ordem) async {
+    setState(() {
+      _erro = null;
+      _modelo = _EtiquetaModelo.caixa;
+      if (_printers.isNotEmpty) {
+        _aplicarImpressora(
+          _impressoraPadraoParaModelo(_EtiquetaModelo.caixa, _printers),
+        );
+      }
+    });
+
+    final artigo = await _resolverArtigoDaOrdem(ordem);
+    if (!mounted) return;
+
+    if (artigo == null) {
+      _showSnackBar(
+        'Nao foi possivel localizar o artigo da ordem para preencher a Caixa.',
+        isError: true,
+      );
+      return;
+    }
+
+    final cdObj = _toIntPadrao(artigo['CdObj']);
+    final nmObj = (artigo['NmObj'] ?? ordem.titulo).toString().trim();
+    _settingBuscaText = true;
+    _buscaController.text = '$cdObj - $nmObj';
+    _settingBuscaText = false;
+    _ordemController.text = ordem.woid;
+    _metrosController.clear();
+    _qtdeController.text = '1';
+    setState(() {
+      _cdObjSelecionado = cdObj;
+      _artigoSelecionadoBusca = artigo;
+      _buscaOpcoes = [];
+    });
+    await _buscarArtigo();
+    if (!mounted) return;
+    _showSnackBar('Ordem preenchida na aba Caixa.', isError: false);
+  }
+
+  Future<Map<String, dynamic>?> _resolverArtigoDaOrdem(
+    _OrdemExpedicao ordem,
+  ) async {
+    final skuCode = ordem.skuCode.isNotEmpty ? ordem.skuCode : ordem.skuName;
+    final codigo = int.tryParse(skuCode.trim());
+    if (codigo != null && codigo > 0) {
+      return {
+        'CdObj': codigo,
+        'NmObj': ordem.titulo,
+      };
+    }
+
+    final termos = <String>[
+      ordem.skuName,
+      ordem.skuDescription,
+      ordem.skuCode,
+    ].where((item) => item.trim().length >= 2).toList();
+
+    for (final termo in termos) {
+      final encontrados = await EtiquetasService.buscarArtigosPorNome(termo);
+      if (encontrados.isNotEmpty) return encontrados.first;
+    }
+    return null;
+  }
+
+  String _formatarQuantidadeParaCampo(double value) {
+    if (value <= 0) return '';
+    if (value == value.roundToDouble()) return value.toStringAsFixed(0);
+    return value.toStringAsFixed(2).replaceAll(RegExp(r'0+$'), '').replaceAll(
+      RegExp(r'\.$'),
+      '',
+    );
+  }
+
+  String _formatarNumeroOrdens(double value) {
+    if (value == value.roundToDouble()) return value.toStringAsFixed(0);
+    return value
+        .toStringAsFixed(2)
+        .replaceAll(RegExp(r'0+$'), '')
+        .replaceAll(RegExp(r'\.$'), '')
+        .replaceAll('.', ',');
+  }
+
+  String _formatarDataOrdem(DateTime? date) {
+    if (date == null) return '-';
+    final dia = date.day.toString().padLeft(2, '0');
+    final mes = date.month.toString().padLeft(2, '0');
+    return '$dia/$mes/${date.year}';
+  }
+
+  Future<bool> _perguntarManterDadosEtiqueta() async {
     return await showDialog<bool>(
           context: context,
           barrierDismissible: false,
@@ -842,6 +1585,41 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
           ),
         ) ??
         true;
+  }
+
+  int _qtdeInformada(TextEditingController controller) {
+    final qtde = int.tryParse(controller.text.trim()) ?? 1;
+    return math.max(1, qtde);
+  }
+
+  Future<bool> _confirmarQuantidadeAlta({
+    required String aba,
+    required int qtde,
+    required int limite,
+  }) async {
+    if (qtde <= limite) return true;
+    return await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Quantidade alta'),
+            content: Text(
+              'Voce informou $qtde impressoes na aba $aba.\n\n'
+              'Deseja imprimir mesmo essa quantidade?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Voltar'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Imprimir mesmo assim'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
   }
 
   void _resetarCaixa() {
@@ -869,6 +1647,9 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       _lotesList = [];
       _detalheSelecionado = 0;
       _erro = null;
+      if (!_manterLoteCaixa) {
+        _loteImpressaoCaixa = null;
+      }
     });
   }
 
@@ -953,7 +1734,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
         cdObj: cdObj,
         lote: _loteCarretelController.text,
         operador: _operadorCarretelController.text,
-        qtdeImp: int.tryParse(_qtdeCarretelController.text.trim()) ?? 1,
+        qtdeImp: _qtdeInformada(_qtdeCarretelController),
       );
       if (!mounted) return;
       setState(() {
@@ -982,6 +1763,13 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       _showSnackBar('Artigo PRETO: preencha o campo Lote.', isError: true);
       return;
     }
+    final qtde = _qtdeInformada(_qtdeCarretelController);
+    final confirmouQuantidade = await _confirmarQuantidadeAlta(
+      aba: 'Carretel',
+      qtde: qtde,
+      limite: 400,
+    );
+    if (!confirmouQuantidade) return;
 
     setState(() {
       _imprimindoCarretel = true;
@@ -997,7 +1785,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       final data = Map<String, dynamic>.from(infoAtual)
         ..['Lote'] = _loteCarretelController.text.trim()
         ..['Operador'] = _operadorCarretelController.text.trim()
-        ..['QtdeImp'] = int.tryParse(_qtdeCarretelController.text.trim()) ?? 1;
+        ..['QtdeImp'] = qtde;
       setState(() => _carretelInfo = data);
 
       await _zebraPrinterService.imprimirEtiquetaCarretel(
@@ -1008,7 +1796,11 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       if (!mounted) return;
       setState(() => _imprimindoCarretel = false);
       _showSnackBar('Comando de impressão enviado.', isError: false);
-      _resetarCarretel();
+      final manterDados = await _perguntarManterDadosEtiqueta();
+      if (!mounted) return;
+      if (!manterDados) {
+        _resetarCarretel();
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -1066,10 +1858,14 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       _showSnackBar('Selecione um operador.', isError: true);
       return;
     }
-    final qtde = (int.tryParse(_opQtdeController.text.trim()) ?? 1).clamp(
-      1,
-      99,
+    final qtde = _qtdeInformada(_opQtdeController);
+    final confirmouQuantidade = await _confirmarQuantidadeAlta(
+      aba: 'Operador',
+      qtde: qtde,
+      limite: 500,
     );
+    if (!confirmouQuantidade) return;
+
     setState(() {
       _imprimindoOp = true;
       _opPreview = op;
@@ -1079,6 +1875,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       await _zebraPrinterService.imprimirEtiquetaOperador(
         operador: op,
         quantidade: qtde,
+        fonte: _fonteOperador(),
         ip: _printerIp,
         port: _printerPort,
       );
@@ -1116,6 +1913,15 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
 
   Future<void> _imprimirLivre() async {
     if (!_garantirImpressoraSelecionada()) return;
+    if (_livreTipoModelo == _LivreTipoModelo.tipoB) {
+      await _imprimirLivreTipoB();
+      return;
+    }
+    if (_livreTipoModelo == _LivreTipoModelo.fios) {
+      await _imprimirLivreFio();
+      return;
+    }
+
     final larguraMm = double.tryParse(
       _larguraLivreController.text.trim().replaceAll(',', '.'),
     );
@@ -1135,6 +1941,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
         .map(
           (linha) => LinhaEtiquetaLivre(
             texto: linha.controller.text.trim(),
+            fonte: _fonteLivre(linha),
             tamanho: linha.tamanho,
             alinhamento: linha.alinhamento,
             negrito: linha.negrito,
@@ -1145,10 +1952,13 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       _showSnackBar('Adicione pelo menos uma linha com texto.', isError: true);
       return;
     }
-    final qtde = (int.tryParse(_qtdeLivreController.text.trim()) ?? 1).clamp(
-      1,
-      999,
+    final qtde = _qtdeInformada(_qtdeLivreController);
+    final confirmouQuantidade = await _confirmarQuantidadeAlta(
+      aba: 'Manual',
+      qtde: qtde,
+      limite: 50,
     );
+    if (!confirmouQuantidade) return;
 
     setState(() {
       _imprimindoLivre = true;
@@ -1175,11 +1985,150 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     }
   }
 
+  Future<void> _imprimirLivreTipoB() async {
+    final linha1 = _tipoBLinha1Controller.text.trim().toUpperCase();
+    final linha2 = _tipoBLinha2Controller.text.trim().toUpperCase();
+    final codigo = _tipoBCodigoController.text.trim();
+    final numero = _tipoBNumeroController.text.trim();
+
+    if (linha1.isEmpty) {
+      _showSnackBar('Informe a primeira linha do Tipo B.', isError: true);
+      return;
+    }
+    if (linha2.isEmpty) {
+      _showSnackBar('Informe a segunda linha do Tipo B.', isError: true);
+      return;
+    }
+    if (codigo.isEmpty) {
+      _showSnackBar('Informe o COD do Tipo B.', isError: true);
+      return;
+    }
+    if (numero.isEmpty) {
+      _showSnackBar('Informe o nÃºmero de destaque do Tipo B.', isError: true);
+      return;
+    }
+
+    final qtde = _qtdeInformada(_qtdeLivreController);
+    final confirmouQuantidade = await _confirmarQuantidadeAlta(
+      aba: 'Livre',
+      qtde: qtde,
+      limite: 50,
+    );
+    if (!confirmouQuantidade) return;
+
+    setState(() {
+      _imprimindoLivre = true;
+      _erro = null;
+    });
+    try {
+      await _zebraPrinterService.imprimirEtiquetaLivreTipoB(
+        linha1: linha1,
+        linha2: linha2,
+        codigo: codigo,
+        numero: numero,
+        fonteLinha1: _fonteTipoB(_tipoBFonteLinha1Controller, fallback: 36),
+        fonteLinha2: _fonteTipoB(_tipoBFonteLinha2Controller, fallback: 36),
+        fonteCodigo: _fonteTipoB(_tipoBFonteCodigoController, fallback: 32),
+        fonteNumero: _fonteTipoB(
+          _tipoBFonteNumeroController,
+          fallback: 72,
+          min: 32,
+          max: 112,
+        ),
+        qtde: qtde,
+        ip: _printerIp,
+        port: _printerPort,
+      );
+      if (!mounted) return;
+      setState(() => _imprimindoLivre = false);
+      _showSnackBar('Comando de impressao enviado.', isError: false);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _erro = e.toString().replaceFirst('Exception: ', '');
+        _imprimindoLivre = false;
+      });
+    }
+  }
+
+  Future<void> _imprimirLivreFio() async {
+    final titulo = _fioTituloController.text.trim();
+    final cor = _fioCorController.text.trim().toUpperCase();
+    final peso = _fioPesoController.text.trim();
+    final lote = _fioLoteController.text.trim().toUpperCase();
+    final codigo = _fioCodigoController.text.trim();
+    if (titulo.isEmpty || cor.isEmpty || peso.isEmpty || lote.isEmpty) {
+      _showSnackBar('Preencha os dados da etiqueta de fio.', isError: true);
+      return;
+    }
+    if (codigo.replaceAll(RegExp(r'\D'), '').length != 13) {
+      _showSnackBar('Informe um cÃƒÂ³digo de barras EAN-13 vÃƒÂ¡lido.', isError: true);
+      return;
+    }
+
+    final qtde = _qtdeInformada(_qtdeLivreController);
+    final confirmouQuantidade = await _confirmarQuantidadeAlta(
+      aba: 'Livre',
+      qtde: qtde,
+      limite: 50,
+    );
+    if (!confirmouQuantidade) return;
+
+    setState(() {
+      _imprimindoLivre = true;
+      _erro = null;
+    });
+    try {
+      await _zebraPrinterService.imprimirEtiquetaLivreFio(
+        titulo: titulo,
+        cor: cor,
+        pesoLiquido: peso,
+        lote: lote,
+        codigoBarras: codigo,
+        qtde: qtde,
+        ip: _printerIp,
+        port: _printerPort,
+      );
+      if (!mounted) return;
+      setState(() => _imprimindoLivre = false);
+      _showSnackBar('Comando de impressÃƒÂ£o enviado.', isError: false);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _erro = e.toString().replaceFirst('Exception: ', '');
+        _imprimindoLivre = false;
+      });
+    }
+  }
+
+  int _fonteLivre(_LinhaLivreEditor linha) {
+    final fonte = int.tryParse(linha.fonteController.text.trim()) ?? 36;
+    return fonte.clamp(10, 120);
+  }
+
+  int _fonteOperador() {
+    final fonte = int.tryParse(_opFonteController.text.trim()) ?? 72;
+    return fonte.clamp(24, 100);
+  }
+
+  int _fonteTipoB(
+    TextEditingController controller, {
+    required int fallback,
+    int min = 18,
+    int max = 72,
+  }) {
+    final fonte = int.tryParse(controller.text.trim()) ?? fallback;
+    return fonte.clamp(min, max);
+  }
+
   void _selecionarModelo(_EtiquetaModelo modelo) {
     if (_modelo == modelo) return;
     setState(() {
       _modelo = modelo;
       _erro = null;
+      if (_printers.isNotEmpty) {
+        _aplicarImpressora(_impressoraPadraoParaModelo(modelo, _printers));
+      }
     });
   }
 
@@ -1264,6 +2213,8 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                     const SizedBox(height: 18),
                     if (_modelo == _EtiquetaModelo.caixa)
                       _buildCaixaPanel()
+                    else if (_modelo == _EtiquetaModelo.ordens)
+                      _buildOrdensPanel()
                     else if (_modelo == _EtiquetaModelo.carretel)
                       _buildCarretelPanel()
                     else if (_modelo == _EtiquetaModelo.operador)
@@ -1373,6 +2324,12 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
             subtitle: '',
           ),
           _modelOption(
+            modelo: _EtiquetaModelo.ordens,
+            icon: Icons.assignment_rounded,
+            label: 'Ordens',
+            subtitle: '',
+          ),
+          _modelOption(
             modelo: _EtiquetaModelo.operador,
             icon: Icons.badge_rounded,
             label: 'Operador',
@@ -1456,6 +2413,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
 
   Widget _buildPrinterSelector({required bool enabled}) {
     return DropdownButtonFormField<String>(
+      key: ValueKey(_selectedPrinterKey),
       initialValue: _selectedPrinterKey,
       isExpanded: true,
       dropdownColor: const Color(0xFF0F172A),
@@ -1469,18 +2427,27 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
         border: OutlineInputBorder(),
       ),
       items: _printers.map((printer) {
-        final nome = (printer['nome'] ?? '').toString().trim();
-        final ip = (printer['ip'] ?? '').toString().trim();
-        final porta = printer['porta'];
         return DropdownMenuItem<String>(
           value: printer['key'] as String,
           child: Text(
-            '$nome ($ip:$porta)',
+            _printerLabel(printer),
             overflow: TextOverflow.ellipsis,
             style: _dropdownTextStyle,
           ),
         );
       }).toList(),
+      selectedItemBuilder: (context) => _printers
+          .map(
+            (printer) => Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                _printerLabel(printer),
+                overflow: TextOverflow.ellipsis,
+                style: _dropdownTextStyle,
+              ),
+            ),
+          )
+          .toList(),
       onChanged: !enabled || _printers.isEmpty
           ? null
           : (value) {
@@ -1583,6 +2550,444 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
             ],
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildOrdensPanel() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: _panelDecoration(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _sectionLabel('Consultar ordens'),
+          const SizedBox(height: 10),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final narrow = _isNarrow(constraints);
+              final skuField = _campo(
+                controller: _ordemSkuNameController,
+                label: 'Material',
+                hint: 'Digite o nome ou codigo do artigo',
+                icon: Icons.inventory_2_rounded,
+                enabled: !_consultandoOrdens,
+                onChanged: _onOrdemBuscaChanged,
+                onSubmit: _consultarOrdensExpedicao,
+                suffix: _buscandoOrdemArtigos
+                    ? const Padding(
+                        padding: EdgeInsets.all(14),
+                        child: SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      )
+                    : _ordemSkuSelecionado > 0
+                    ? const Icon(
+                        Icons.check_circle_rounded,
+                        color: Color(0xFF047857),
+                      )
+                    : null,
+              );
+              final consultarButton = SizedBox(
+                height: 56,
+                width: narrow ? double.infinity : 150,
+                child: FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                  ),
+                  onPressed:
+                      _consultandoOrdens ? null : _consultarOrdensExpedicao,
+                  icon: _consultandoOrdens
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.search_rounded),
+                  label: Text(
+                    _consultandoOrdens ? 'Consultando' : 'Consultar',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+              );
+
+              if (narrow) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    skuField,
+                    const SizedBox(height: 12),
+                    consultarButton,
+                  ],
+                );
+              }
+
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: skuField),
+                  const SizedBox(width: 12),
+                  consultarButton,
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: 16),
+          if (_ordemArtigoOpcoes.isNotEmpty) ...[
+            _buildOrdensAutocomplete(),
+            const SizedBox(height: 16),
+          ],
+          if (_ordensExpedicao.isNotEmpty) ...[
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _DarkMetricPill(
+                  label: 'Ordens',
+                  value: _ordensExpedicao.length.toString(),
+                  icon: Icons.assignment_turned_in_rounded,
+                ),
+                _DarkMetricPill(
+                  label: 'Quantidade',
+                  value: _formatarNumeroOrdens(
+                    _ordensExpedicao.fold<double>(
+                      0,
+                      (total, item) => total + item.quantity,
+                    ),
+                  ),
+                  icon: Icons.straighten_rounded,
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+          ],
+          if (_consultandoOrdens)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 30),
+              child: Center(
+                child: CircularProgressIndicator(color: Color(0xFF60A5FA)),
+              ),
+            )
+          else if (_ordensExpedicao.isEmpty)
+            Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0F172A),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFF334155)),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.search_rounded, color: Color(0xFF94A3B8)),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Digite o nome do material, selecione um artigo e consulte as ordens.',
+                      style: TextStyle(
+                        color: Color(0xFFCBD5E1),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _ordensExpedicao.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 10),
+              itemBuilder: (context, index) =>
+                  _buildOrdemCard(_ordensExpedicao[index]),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOrdensAutocomplete() {
+    return Container(
+      constraints: const BoxConstraints(maxHeight: 260),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0F172A),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFF334155)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: ListView.separated(
+        shrinkWrap: true,
+        padding: EdgeInsets.zero,
+        itemCount: _ordemArtigoOpcoes.length,
+        separatorBuilder: (_, __) =>
+            const Divider(height: 1, indent: 16, color: Color(0xFF1E293B)),
+        itemBuilder: (context, index) {
+          final artigo = _ordemArtigoOpcoes[index];
+          final cdObj = _toIntPadrao(artigo['CdObj']);
+          final nmObj = (artigo['NmObj'] ?? '').toString().trim();
+          return InkWell(
+            onTap: () => _selecionarArtigoOrdem(artigo),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1E40AF),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      cdObj.toString(),
+                      style: const TextStyle(
+                        color: Color(0xFFE0F2FE),
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      nmObj.isEmpty ? 'Artigo sem descricao' : nmObj,
+                      style: const TextStyle(
+                        color: Color(0xFFF8FAFC),
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  const Icon(
+                    Icons.keyboard_arrow_right_rounded,
+                    color: Color(0xFF94A3B8),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildOrdemCard(_OrdemExpedicao ordem) {
+    final expanded = _ordensExpandidas.contains(_ordemKey(ordem));
+    final unidadeLocal = [
+      if (ordem.uom.isNotEmpty) 'Unidade: ${ordem.uom}',
+      if (ordem.stockLocationName.isNotEmpty)
+        'Local: ${ordem.stockLocationName}',
+    ].join('  |  ');
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: () => _toggleOrdemCard(ordem),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: EdgeInsets.all(expanded ? 16 : 12),
+        decoration: BoxDecoration(
+          color: expanded ? const Color(0xFF0F172A) : const Color(0xFF0B1220),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: expanded ? const Color(0xFF3B82F6) : const Color(0xFF334155),
+          ),
+          boxShadow: expanded
+              ? [
+                  BoxShadow(
+                    color: const Color(0xFF2563EB).withValues(alpha: 0.10),
+                    blurRadius: 18,
+                    offset: const Offset(0, 8),
+                  ),
+                ]
+              : null,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Container(
+                  width: expanded ? 44 : 36,
+                  height: expanded ? 44 : 36,
+                  decoration: BoxDecoration(
+                    color: expanded
+                        ? const Color(0xFF1D4ED8)
+                        : const Color(0xFF1E293B),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.assignment_rounded,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        ordem.titulo.isEmpty
+                            ? 'Artigo sem descricao'
+                            : ordem.titulo,
+                        maxLines: expanded ? 2 : 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xFFF8FAFC),
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _DarkTag(
+                            label: ordem.skuName.isEmpty
+                                ? 'SKU -'
+                                : 'SKU ${ordem.skuName}',
+                            icon: Icons.qr_code_2_rounded,
+                          ),
+                          if (ordem.plant.isNotEmpty)
+                            _DarkTag(
+                              label: ordem.plant,
+                              icon: Icons.apartment_rounded,
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    const Text(
+                      'Ordem',
+                      style: TextStyle(
+                        color: Color(0xFF94A3B8),
+                        fontWeight: FontWeight.w700,
+                        fontSize: 11,
+                      ),
+                    ),
+                    Text(
+                      ordem.woid.isEmpty ? '-' : ordem.woid,
+                      style: const TextStyle(
+                        color: Color(0xFF93C5FD),
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    Icon(
+                      expanded
+                          ? Icons.keyboard_arrow_up_rounded
+                          : Icons.keyboard_arrow_down_rounded,
+                      color: const Color(0xFF94A3B8),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            AnimatedCrossFade(
+              firstChild: const SizedBox.shrink(),
+              secondChild: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SizedBox(height: 14),
+                  const Divider(height: 1, color: Color(0xFF1E293B)),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _DarkMetricPill(
+                        label: 'Quantidade',
+                        value: _formatarNumeroOrdens(ordem.quantity),
+                        icon: Icons.straighten_rounded,
+                      ),
+                      _DarkMetricPill(
+                        label: 'Pedido',
+                        value: ordem.salesOrderId.isEmpty
+                            ? '-'
+                            : ordem.salesOrderId,
+                        icon: Icons.receipt_long_rounded,
+                      ),
+                      _DarkMetricPill(
+                        label: 'Familia',
+                        value: ordem.productionFamily.isEmpty
+                            ? '-'
+                            : ordem.productionFamily,
+                        icon: Icons.category_rounded,
+                      ),
+                      _DarkMetricPill(
+                        label: 'Entrega',
+                        value: _formatarDataOrdem(ordem.dueDate),
+                        icon: Icons.event_rounded,
+                      ),
+                      _DarkMetricPill(
+                        label: 'Liberacao',
+                        value: _formatarDataOrdem(ordem.releaseDate),
+                        icon: Icons.event_available_rounded,
+                      ),
+                      _DarkMetricPill(
+                        label: 'Estoque',
+                        value: _formatarNumeroOrdens(ordem.localStock),
+                        icon: Icons.warehouse_rounded,
+                      ),
+                      _DarkMetricPill(
+                        label: 'Alvo',
+                        value: _formatarNumeroOrdens(ordem.alvo),
+                        icon: Icons.flag_rounded,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          unidadeLocal.isEmpty
+                              ? 'Unidade/local nao informados'
+                              : unidadeLocal,
+                          style: const TextStyle(
+                            color: Color(0xFF94A3B8),
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                      FilledButton.icon(
+                        onPressed: () => _selecionarOrdemParaCaixa(ordem),
+                        icon: const Icon(Icons.qr_code_2_rounded),
+                        label: const Text('Usar na Caixa'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              crossFadeState: expanded
+                  ? CrossFadeState.showSecond
+                  : CrossFadeState.showFirst,
+              duration: const Duration(milliseconds: 160),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1812,20 +3217,10 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                 icon: Icons.straighten_rounded,
                 numeric: true,
                 enabled: !busy,
-                onChanged: (_) => _atualizarTipoCaixa(),
+                onChanged: (_) => setState(_atualizarTipoCaixa),
                 onSubmit: _consultarPadraoCaixaArtigo,
               );
-              final tipoField = TextField(
-                controller: _tipoCaixaController,
-                readOnly: true,
-                enabled: false,
-                style: _dropdownTextStyle,
-                decoration: const InputDecoration(
-                  labelText: 'Tipo de caixa',
-                  prefixIcon: Icon(Icons.inventory_2_rounded),
-                  border: OutlineInputBorder(),
-                ),
-              );
+              final tipoField = _buildTipoCaixaAssistidoField(busy);
               final ordemField = _campo(
                 controller: _ordemController,
                 label: 'N\u00ba da Ordem',
@@ -1943,6 +3338,23 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                   onChanged: (v) => setState(() => _pedidoEspecial = v),
                 ),
               );
+              final loteChip = SizedBox(
+                height: 56,
+                width: narrow ? double.infinity : null,
+                child: Tooltip(
+                  message:
+                      'Mantem as proximas caixas impressas no mesmo lote (LI).',
+                  child: _ToggleChip(
+                    label: 'Manter lote',
+                    value: _manterLoteCaixa,
+                    enabled: !busy,
+                    onChanged: (v) => setState(() {
+                      _manterLoteCaixa = v;
+                      if (!v) _loteImpressaoCaixa = null;
+                    }),
+                  ),
+                ),
+              );
 
               if (narrow) {
                 return Column(
@@ -1955,6 +3367,8 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                     qtdeField,
                     const SizedBox(height: 12),
                     toggleField,
+                    const SizedBox(height: 12),
+                    loteChip,
                   ],
                 );
               }
@@ -1969,10 +3383,25 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                   SizedBox(width: 100, child: qtdeField),
                   const SizedBox(width: 12),
                   Align(alignment: Alignment.topCenter, child: toggleField),
+                  const SizedBox(width: 12),
+                  Align(alignment: Alignment.topCenter, child: loteChip),
                 ],
               );
             },
           ),
+          if (_manterLoteCaixa) ...[
+            const SizedBox(height: 8),
+            Text(
+              _loteImpressaoCaixa == null
+                  ? 'Lote: sera gerado na proxima impressao'
+                  : 'Lote (LI): $_loteImpressaoCaixa - proximas caixas entram no mesmo lote',
+              style: const TextStyle(
+                fontSize: 12,
+                color: Color(0xFF64748B),
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ],
           const SizedBox(height: 14),
           SizedBox(
             height: 52,
@@ -2385,6 +3814,14 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                 numeric: true,
                 enabled: !busy,
               );
+              final fonteField = _campo(
+                controller: _opFonteController,
+                label: 'Fonte',
+                hint: '72',
+                icon: Icons.format_size_rounded,
+                numeric: true,
+                enabled: !busy,
+              );
 
               if (narrow) {
                 return Column(
@@ -2392,7 +3829,13 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                   children: [
                     operadorField,
                     const SizedBox(height: 12),
-                    qtdeField,
+                    Row(
+                      children: [
+                        Expanded(child: qtdeField),
+                        const SizedBox(width: 12),
+                        Expanded(child: fonteField),
+                      ],
+                    ),
                   ],
                 );
               }
@@ -2403,6 +3846,8 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                   Expanded(flex: 3, child: operadorField),
                   const SizedBox(width: 12),
                   SizedBox(width: 110, child: qtdeField),
+                  const SizedBox(width: 12),
+                  SizedBox(width: 120, child: fonteField),
                 ],
               );
             },
@@ -2454,7 +3899,10 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
               width: width,
               height: width * (143 / 520),
               child: CustomPaint(
-                painter: _EtiquetaOperadorPainter(operador: _opPreview),
+                painter: _EtiquetaOperadorPainter(
+                  operador: _opPreview,
+                  fonte: _fonteOperador().toDouble(),
+                ),
               ),
             ),
           );
@@ -2467,6 +3915,8 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
 
   Widget _buildLivrePanel() {
     final busy = _imprimindoLivre;
+    final tipoB = _livreTipoModelo == _LivreTipoModelo.tipoB;
+    final fios = _livreTipoModelo == _LivreTipoModelo.fios;
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: _panelDecoration(),
@@ -2475,78 +3925,60 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
         children: [
           _buildPrinterSelector(enabled: !busy),
           const SizedBox(height: 16),
+          _sectionLabel('Tipo de impressao'),
+          const SizedBox(height: 10),
+          SegmentedButton<_LivreTipoModelo>(
+            segments: const [
+              ButtonSegment(
+                value: _LivreTipoModelo.livre,
+                icon: Icon(Icons.edit_note_rounded),
+                label: Text('Livre'),
+              ),
+              ButtonSegment(
+                value: _LivreTipoModelo.tipoB,
+                icon: Icon(Icons.sell_outlined),
+                label: Text('Tipo B'),
+              ),
+              ButtonSegment(
+                value: _LivreTipoModelo.fios,
+                icon: Icon(Icons.palette_outlined),
+                label: Text('Fios'),
+              ),
+            ],
+            selected: {_livreTipoModelo},
+            onSelectionChanged: busy
+                ? null
+                : (value) => setState(() => _livreTipoModelo = value.first),
+          ),
+          const SizedBox(height: 20),
           _sectionLabel('Tamanho da etiqueta'),
           const SizedBox(height: 10),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final narrow = _isNarrow(constraints);
-              final larguraField = _campo(
-                controller: _larguraLivreController,
-                label: 'Largura (mm) *',
-                hint: '80',
-                icon: Icons.straighten_rounded,
-                numeric: true,
-                enabled: !busy,
-              );
-              final alturaField = _campo(
-                controller: _alturaLivreController,
-                label: 'Altura (mm) *',
-                hint: '50',
-                icon: Icons.height_rounded,
-                numeric: true,
-                enabled: !busy,
-              );
-              final qtdeField = _campo(
-                controller: _qtdeLivreController,
-                label: 'Qtde',
-                hint: '1',
-                icon: Icons.numbers_rounded,
-                numeric: true,
-                enabled: !busy,
-              );
-
-              if (narrow) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    larguraField,
-                    const SizedBox(height: 12),
-                    alturaField,
-                    const SizedBox(height: 12),
-                    qtdeField,
-                  ],
-                );
-              }
-
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(child: larguraField),
-                  const SizedBox(width: 12),
-                  Expanded(child: alturaField),
-                  const SizedBox(width: 12),
-                  SizedBox(width: 110, child: qtdeField),
-                ],
-              );
-            },
-          ),
+          tipoB || fios
+              ? _buildLivreTipoBTamanho(busy)
+              : _buildLivreTamanhoLivre(busy),
           const SizedBox(height: 20),
           const Divider(height: 1),
           const SizedBox(height: 20),
-          Row(
-            children: [
-              Expanded(child: _sectionLabel('Linhas da etiqueta')),
-              TextButton.icon(
-                onPressed: busy ? null : _adicionarLinhaLivre,
-                icon: const Icon(Icons.add_rounded, size: 18),
-                label: const Text('Adicionar linha'),
-              ),
+          if (tipoB)
+            _buildLivreTipoBFields(busy)
+          else if (fios)
+            _buildLivreFiosFields(busy)
+          else ...[
+            Row(
+              children: [
+                Expanded(child: _sectionLabel('Linhas da etiqueta')),
+                TextButton.icon(
+                  onPressed: busy ? null : _adicionarLinhaLivre,
+                  icon: const Icon(Icons.add_rounded, size: 18),
+                  label: const Text('Adicionar linha'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            for (var i = 0; i < _linhasLivre.length; i++) ...[
+              _buildLinhaLivreRow(i, busy),
+              const SizedBox(height: 10),
             ],
-          ),
-          const SizedBox(height: 6),
-          for (var i = 0; i < _linhasLivre.length; i++) ...[
-            _buildLinhaLivreRow(i, busy),
-            const SizedBox(height: 10),
           ],
           const SizedBox(height: 10),
           Align(
@@ -2579,6 +4011,394 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     );
   }
 
+  Widget _buildLivreTamanhoLivre(bool busy) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final narrow = _isNarrow(constraints);
+        final larguraField = _campo(
+          controller: _larguraLivreController,
+          label: 'Largura (mm) *',
+          hint: '80',
+          icon: Icons.straighten_rounded,
+          numeric: true,
+          enabled: !busy,
+        );
+        final alturaField = _campo(
+          controller: _alturaLivreController,
+          label: 'Altura (mm) *',
+          hint: '50',
+          icon: Icons.height_rounded,
+          numeric: true,
+          enabled: !busy,
+        );
+        final qtdeField = _campo(
+          controller: _qtdeLivreController,
+          label: 'Qtde',
+          hint: '1',
+          icon: Icons.numbers_rounded,
+          numeric: true,
+          enabled: !busy,
+        );
+
+        if (narrow) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              larguraField,
+              const SizedBox(height: 12),
+              alturaField,
+              const SizedBox(height: 12),
+              qtdeField,
+            ],
+          );
+        }
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: larguraField),
+            const SizedBox(width: 12),
+            Expanded(child: alturaField),
+            const SizedBox(width: 12),
+            SizedBox(width: 110, child: qtdeField),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildLivreTipoBTamanho(bool busy) {
+    final papelField = TextFormField(
+      initialValue: '50 x 50',
+      enabled: false,
+      style: const TextStyle(
+        color: Color(0xFFF8FAFC),
+        fontWeight: FontWeight.w700,
+      ),
+      decoration: const InputDecoration(
+        labelText: 'Papel (mm)',
+        border: OutlineInputBorder(),
+        prefixIcon: Icon(Icons.crop_square_rounded),
+      ),
+    );
+    final qtdeField = _campo(
+      controller: _qtdeLivreController,
+      label: 'Qtde',
+      hint: '1',
+      icon: Icons.numbers_rounded,
+      numeric: true,
+      enabled: !busy,
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (_isNarrow(constraints)) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              papelField,
+              const SizedBox(height: 12),
+              qtdeField,
+            ],
+          );
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: papelField),
+            const SizedBox(width: 12),
+            SizedBox(width: 130, child: qtdeField),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildLivreTipoBFields(bool busy) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final narrow = _isNarrow(constraints);
+        final linha1Field = _campo(
+          controller: _tipoBLinha1Controller,
+          label: 'Linha 1 *',
+          hint: 'X NILO 16',
+          icon: Icons.short_text_rounded,
+          enabled: !busy,
+        );
+        final linha2Field = _campo(
+          controller: _tipoBLinha2Controller,
+          label: 'Linha 2 *',
+          hint: 'PRETO 2',
+          icon: Icons.short_text_rounded,
+          enabled: !busy,
+        );
+        final codigoField = _campo(
+          controller: _tipoBCodigoController,
+          label: 'COD *',
+          hint: '25',
+          icon: Icons.tag_rounded,
+          enabled: !busy,
+        );
+        final numeroField = _campo(
+          controller: _tipoBNumeroController,
+          label: 'Numero *',
+          hint: '116',
+          icon: Icons.pin_rounded,
+          numeric: true,
+          enabled: !busy,
+        );
+        final fonteLinha1Field = _campo(
+          controller: _tipoBFonteLinha1Controller,
+          label: 'Fonte linha 1',
+          hint: '36',
+          icon: Icons.format_size_rounded,
+          numeric: true,
+          enabled: !busy,
+        );
+        final fonteLinha2Field = _campo(
+          controller: _tipoBFonteLinha2Controller,
+          label: 'Fonte linha 2',
+          hint: '36',
+          icon: Icons.format_size_rounded,
+          numeric: true,
+          enabled: !busy,
+        );
+        final fonteCodigoField = _campo(
+          controller: _tipoBFonteCodigoController,
+          label: 'Fonte COD',
+          hint: '32',
+          icon: Icons.format_size_rounded,
+          numeric: true,
+          enabled: !busy,
+        );
+        final fonteNumeroField = _campo(
+          controller: _tipoBFonteNumeroController,
+          label: 'Fonte numero',
+          hint: '72',
+          icon: Icons.format_size_rounded,
+          numeric: true,
+          enabled: !busy,
+        );
+
+        if (narrow) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              linha1Field,
+              const SizedBox(height: 12),
+              fonteLinha1Field,
+              const SizedBox(height: 12),
+              linha2Field,
+              const SizedBox(height: 12),
+              fonteLinha2Field,
+              const SizedBox(height: 12),
+              codigoField,
+              const SizedBox(height: 12),
+              fonteCodigoField,
+              const SizedBox(height: 12),
+              numeroField,
+              const SizedBox(height: 12),
+              fonteNumeroField,
+            ],
+          );
+        }
+
+        return Column(
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: linha1Field),
+                const SizedBox(width: 12),
+                SizedBox(width: 150, child: fonteLinha1Field),
+                const SizedBox(width: 12),
+                Expanded(child: linha2Field),
+                const SizedBox(width: 12),
+                SizedBox(width: 150, child: fonteLinha2Field),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: codigoField),
+                const SizedBox(width: 12),
+                SizedBox(width: 150, child: fonteCodigoField),
+                const SizedBox(width: 12),
+                SizedBox(width: 170, child: numeroField),
+                const SizedBox(width: 12),
+                SizedBox(width: 150, child: fonteNumeroField),
+              ],
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildLivreFiosFields(bool busy) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _sectionLabel('Fio'),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final fio in _fiosLivre)
+              ChoiceChip(
+                label: Text(fio.cor),
+                selected: _fioLivreSelecionado.cor == fio.cor,
+                showCheckmark: true,
+                selectedColor: const Color(0xFF2563EB),
+                backgroundColor: const Color(0xFF111827),
+                disabledColor: const Color(0xFF111827),
+                side: BorderSide(
+                  color: _fioLivreSelecionado.cor == fio.cor
+                      ? const Color(0xFF93C5FD)
+                      : const Color(0xFF334155),
+                ),
+                labelStyle: TextStyle(
+                  color: busy
+                      ? const Color(0xFF64748B)
+                      : _fioLivreSelecionado.cor == fio.cor
+                      ? Colors.white
+                      : const Color(0xFFCBD5E1),
+                  fontWeight: FontWeight.w800,
+                ),
+                onSelected: busy ? null : (_) => _aplicarFioLivre(fio),
+              ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final narrow = _isNarrow(constraints);
+            final tituloField = _campo(
+              controller: _fioTituloController,
+              label: 'Titulo *',
+              hint: 'Fio Poliester 167/48',
+              icon: Icons.short_text_rounded,
+              enabled: !busy,
+              onChanged: (_) => setState(() {}),
+            );
+            final corField = _campo(
+              controller: _fioCorController,
+              label: 'Cor *',
+              hint: 'VERDE GRAMA',
+              icon: Icons.palette_outlined,
+              caps: true,
+              enabled: !busy,
+              onChanged: (_) => setState(() {}),
+            );
+            final pesoField = _campo(
+              controller: _fioPesoController,
+              label: 'Peso liquido *',
+              hint: '300g',
+              icon: Icons.scale_rounded,
+              enabled: !busy,
+              onChanged: (_) => setState(() {}),
+            );
+            final loteField = _campo(
+              controller: _fioLoteController,
+              label: 'Lote *',
+              hint: 'F4',
+              icon: Icons.inventory_2_outlined,
+              caps: true,
+              enabled: !busy,
+              onChanged: (_) => setState(() {}),
+            );
+            final codigoField = _campo(
+              controller: _fioCodigoController,
+              label: 'Codigo de barras *',
+              hint: '7896714231266',
+              icon: Icons.barcode_reader,
+              numeric: true,
+              enabled: !busy,
+              onChanged: (_) => setState(() {}),
+            );
+
+            final fields = narrow
+                ? Column(
+                    children: [
+                      tituloField,
+                      const SizedBox(height: 12),
+                      corField,
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(child: pesoField),
+                          const SizedBox(width: 12),
+                          Expanded(child: loteField),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      codigoField,
+                    ],
+                  )
+                : Column(
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(child: tituloField),
+                          const SizedBox(width: 12),
+                          Expanded(child: corField),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(child: pesoField),
+                          const SizedBox(width: 12),
+                          Expanded(child: loteField),
+                          const SizedBox(width: 12),
+                          Expanded(child: codigoField),
+                        ],
+                      ),
+                    ],
+                  );
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                fields,
+                const SizedBox(height: 16),
+                _buildFioLivrePreview(),
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFioLivrePreview() {
+    final codigo = _fioCodigoController.text.trim();
+    return Center(
+      child: Container(
+        width: 520,
+        constraints: const BoxConstraints(maxWidth: double.infinity),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border.all(color: const Color(0xFFD1D5DB)),
+        ),
+        child: AspectRatio(
+          aspectRatio: 1.6,
+          child: CustomPaint(
+            painter: _FioLivrePreviewPainter(
+              titulo: _fioTituloController.text,
+              cor: _fioCorController.text,
+              peso: _fioPesoController.text,
+              lote: _fioLoteController.text,
+              codigo: codigo,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildLinhaLivreRow(int index, bool busy) {
     final linha = _linhasLivre[index];
     return Container(
@@ -2605,36 +4425,21 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
               isDense: true,
             ),
           );
-          final tamanhoField = DropdownButtonFormField<TamanhoLinhaLivre>(
-            initialValue: linha.tamanho,
-            dropdownColor: const Color(0xFF0F172A),
-            style: _dropdownTextStyle,
-            iconEnabledColor: const Color(0xFFCBD5E1),
-            iconDisabledColor: const Color(0xFF64748B),
+          final fonteField = TextField(
+            controller: linha.fonteController,
+            enabled: !busy,
+            keyboardType: TextInputType.number,
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            style: const TextStyle(
+              color: Color(0xFFF8FAFC),
+              fontWeight: FontWeight.w600,
+            ),
+            cursorColor: const Color(0xFF60A5FA),
             decoration: const InputDecoration(
-              labelText: 'Tamanho',
+              labelText: 'Fonte',
               border: OutlineInputBorder(),
               isDense: true,
             ),
-            items: const [
-              DropdownMenuItem(
-                value: TamanhoLinhaLivre.pequeno,
-                child: Text('Pequeno', style: _dropdownTextStyle),
-              ),
-              DropdownMenuItem(
-                value: TamanhoLinhaLivre.medio,
-                child: Text('Médio', style: _dropdownTextStyle),
-              ),
-              DropdownMenuItem(
-                value: TamanhoLinhaLivre.grande,
-                child: Text('Grande', style: _dropdownTextStyle),
-              ),
-            ],
-            onChanged: busy
-                ? null
-                : (value) {
-                    if (value != null) setState(() => linha.tamanho = value);
-                  },
           );
           final alinhamentoField =
               DropdownButtonFormField<AlinhamentoLinhaLivre>(
@@ -2673,6 +4478,27 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
           final negritoToggle = FilterChip(
             label: const Text('Negrito'),
             selected: linha.negrito,
+            showCheckmark: true,
+            checkmarkColor: Colors.white,
+            backgroundColor: const Color(0xFF111827),
+            selectedColor: const Color(0xFF2563EB),
+            disabledColor: const Color(0xFF111827),
+            side: BorderSide(
+              color: linha.negrito
+                  ? const Color(0xFF60A5FA)
+                  : const Color(0xFF334155),
+            ),
+            labelStyle: TextStyle(
+              color: busy
+                  ? const Color(0xFF64748B)
+                  : linha.negrito
+                  ? Colors.white
+                  : const Color(0xFFCBD5E1),
+              fontWeight: FontWeight.w700,
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(6),
+            ),
             onSelected: busy
                 ? null
                 : (value) => setState(() => linha.negrito = value),
@@ -2694,7 +4520,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    Expanded(child: tamanhoField),
+                    SizedBox(width: 96, child: fonteField),
                     const SizedBox(width: 8),
                     Expanded(child: alinhamentoField),
                   ],
@@ -2716,7 +4542,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
             children: [
               Expanded(flex: 3, child: textoField),
               const SizedBox(width: 8),
-              Expanded(flex: 2, child: tamanhoField),
+              SizedBox(width: 92, child: fonteField),
               const SizedBox(width: 8),
               Expanded(flex: 2, child: alinhamentoField),
               const SizedBox(width: 8),
@@ -2728,9 +4554,10 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       ),
     );
   }
-
   /// Detalhe: dropdown para PRETO/personalizados, campo de texto nos demais.
   Widget _buildDetalheField(bool busy) {
+    if (_usaDropdownDetalhe) return _buildDetalheSearchField(busy);
+
     if (_usaDropdownDetalhe) {
       if (_carregandoLotes) {
         return const SizedBox(
@@ -2785,6 +4612,113 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       icon: Icons.palette_rounded,
       numeric: false,
       enabled: !busy,
+    );
+  }
+
+  Widget _buildDetalheSearchField(bool busy) {
+    if (_carregandoLotes) {
+      return const SizedBox(
+        height: 56,
+        child: Center(
+          child: SizedBox(
+            width: 22,
+            height: 22,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+      );
+    }
+
+    final selecionado = _lotesList.firstWhere(
+      (lot) => _toIntPadrao(lot['CdLot']) == _detalheSelecionado,
+      orElse: () => {},
+    );
+    final nmSelecionado = (selecionado['NmLot'] ?? '').toString().trim();
+    final cdSelecionado = _toIntPadrao(selecionado['CdLot']);
+    final textoSelecionado = selecionado.isEmpty
+        ? ''
+        : nmSelecionado.isEmpty
+        ? cdSelecionado.toString()
+        : '$cdSelecionado - $nmSelecionado';
+
+    return TextField(
+      controller: TextEditingController(text: textoSelecionado),
+      readOnly: true,
+      enabled: !busy && _lotesList.isNotEmpty,
+      onTap: busy || _lotesList.isEmpty ? null : _abrirSeletorDetalhe,
+      style: _dropdownTextStyle,
+      decoration: InputDecoration(
+        labelText: _temPreto ? 'Cor / Lote *' : 'Detalhe *',
+        prefixIcon: const Icon(Icons.palette_rounded),
+        suffixIcon: const Icon(Icons.search_rounded),
+        hintText: _lotesList.isEmpty
+            ? 'Nenhum lote encontrado'
+            : 'Clique para filtrar e selecionar',
+        border: const OutlineInputBorder(),
+        labelStyle: const TextStyle(color: Color(0xFFB45309)),
+      ),
+    );
+  }
+
+  Widget _buildTipoCaixaAssistidoField(bool busy) {
+    final podeUsarPadrao =
+        !_tiposCaixaFixos.contains(_tipoBaseArticle) &&
+        (_caixaPMetros > 0 || _caixaGMetros > 0);
+    return Container(
+      height: 56,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0F172A),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFF334155)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.inventory_2_rounded, color: Color(0xFFCBD5E1)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Tipo de caixa',
+                  style: TextStyle(
+                    color: Color(0xFF94A3B8),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                Text(
+                  _tipoCaixaController.text.isEmpty
+                      ? 'Selecione P/G ou informe metros'
+                      : _tipoCaixaController.text,
+                  overflow: TextOverflow.ellipsis,
+                  style: _dropdownTextStyle,
+                ),
+              ],
+            ),
+          ),
+          if (podeUsarPadrao) ...[
+            const SizedBox(width: 8),
+            _TipoCaixaQuickButton(
+              label: 'P',
+              value: _caixaPMetros,
+              selected: _tipoCaixaController.text == 'P',
+              enabled: !busy && _caixaPMetros > 0,
+              onTap: () => _aplicarMetrosPorTipoCaixa('P'),
+            ),
+            const SizedBox(width: 6),
+            _TipoCaixaQuickButton(
+              label: 'G',
+              value: _caixaGMetros,
+              selected: _tipoCaixaController.text == 'G',
+              enabled: !busy && _caixaGMetros > 0,
+              onTap: () => _aplicarMetrosPorTipoCaixa('G'),
+            ),
+          ],
+        ],
+      ),
     );
   }
 
@@ -3063,6 +4997,55 @@ class _ToggleChip extends StatelessWidget {
 // Pill
 // ──────────────────────────────────────────────────────────────
 
+class _TipoCaixaQuickButton extends StatelessWidget {
+  const _TipoCaixaQuickButton({
+    required this.label,
+    required this.value,
+    required this.selected,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  final String label;
+  final int value;
+  final bool selected;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: value > 0 ? 'Preencher $value metros' : 'Sem padrao cadastrado',
+      child: InkWell(
+        borderRadius: BorderRadius.circular(6),
+        onTap: enabled ? onTap : null,
+        child: Container(
+          width: 42,
+          height: 36,
+          decoration: BoxDecoration(
+            color: selected ? const Color(0xFF2563EB) : const Color(0xFF111C33),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(
+              color: selected
+                  ? const Color(0xFF60A5FA)
+                  : const Color(0xFF334155),
+            ),
+          ),
+          child: Center(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: enabled ? Colors.white : const Color(0xFF64748B),
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _Pill extends StatelessWidget {
   const _Pill({required this.label, required this.value});
 
@@ -3107,6 +5090,100 @@ class _Pill extends StatelessWidget {
 // ──────────────────────────────────────────────────────────────
 // Etiqueta Palete painter
 // ──────────────────────────────────────────────────────────────
+
+class _DarkTag extends StatelessWidget {
+  const _DarkTag({required this.label, required this.icon});
+
+  final String label;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFF111C33),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0xFF334155)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: const Color(0xFF60A5FA), size: 14),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Color(0xFFE2E8F0),
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+}
+
+class _DarkMetricPill extends StatelessWidget {
+  const _DarkMetricPill({
+    required this.label,
+    required this.value,
+    required this.icon,
+  });
+
+  final String label;
+  final String value;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(minWidth: 118),
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0B1220),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFF334155)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: const Color(0xFF60A5FA), size: 16),
+          const SizedBox(width: 7),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 170),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF94A3B8),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 1),
+                Text(
+                  value,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFFF8FAFC),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _EtiquetaPaletePainter extends CustomPainter {
   _EtiquetaPaletePainter({required this.data});
@@ -3298,9 +5375,10 @@ class _EtiquetaCaixaPainter extends CustomPainter {
 // ──────────────────────────────────────────────────────────────
 
 class _EtiquetaOperadorPainter extends CustomPainter {
-  _EtiquetaOperadorPainter({required this.operador});
+  _EtiquetaOperadorPainter({required this.operador, required this.fonte});
 
   final int operador;
+  final double fonte;
 
   static const double _w = 422;
   static const double _h = 116;
@@ -3320,8 +5398,8 @@ class _EtiquetaOperadorPainter extends CustomPainter {
     final text = operador.toString();
 
     for (final centerX in centersX) {
-      var fontSize = 34.0;
-      while (fontSize >= 18) {
+      var fontSize = (fonte * 0.48).clamp(18.0, 48.0);
+      while (fontSize >= 14) {
         textPainter.text = TextSpan(
           text: text,
           style: TextStyle(
@@ -3345,5 +5423,107 @@ class _EtiquetaOperadorPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _EtiquetaOperadorPainter old) =>
-      old.operador != operador;
+      old.operador != operador || old.fonte != fonte;
+}
+
+class _FioLivrePreviewPainter extends CustomPainter {
+  const _FioLivrePreviewPainter({
+    required this.titulo,
+    required this.cor,
+    required this.peso,
+    required this.lote,
+    required this.codigo,
+  });
+
+  final String titulo;
+  final String cor;
+  final String peso;
+  final String lote;
+  final String codigo;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final digits = codigo.replaceAll(RegExp(r'\D'), '');
+    final black = Paint()..color = Colors.black;
+    final textPainter = TextPainter(
+      textDirection: TextDirection.ltr,
+      textAlign: TextAlign.center,
+      maxLines: 1,
+    );
+
+    void drawText(String value, double y) {
+      textPainter.text = TextSpan(
+        text: value,
+        style: const TextStyle(
+          color: Colors.black,
+          fontSize: 16,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0,
+        ),
+      );
+      textPainter.textAlign = TextAlign.left;
+      textPainter.layout(maxWidth: size.width * 0.52);
+      textPainter.paint(canvas, Offset(size.width * 0.09, y));
+    }
+
+    drawText(titulo, size.height * 0.36);
+    drawText('Cor: $cor', size.height * 0.47);
+    drawText('Peso Liquido: $peso', size.height * 0.58);
+    drawText('Lote: $lote', size.height * 0.69);
+
+    final barcodeWidth = size.width * 0.34;
+    final left = size.width * 0.55;
+    final top = size.height * 0.73;
+    final height = size.height * 0.2;
+    final source = digits.isEmpty ? '7896714231266' : digits.padRight(13, '0');
+    final unit = barcodeWidth / 95;
+    var x = left;
+
+    for (var i = 0; i < 95; i++) {
+      final digit = int.parse(source[i % source.length]);
+      final draw = i < 3 ||
+          (i >= 45 && i < 50) ||
+          i >= 92 ||
+          ((digit + i) % 3 != 0);
+      if (draw) {
+        final barHeight = (i < 3 || (i >= 45 && i < 50) || i >= 92)
+            ? height + 10
+            : height;
+        canvas.drawRect(
+          Rect.fromLTWH(x, top, math.max(1.4, unit * 0.9), barHeight),
+          black,
+        );
+      }
+      x += unit;
+    }
+
+    textPainter.text = TextSpan(
+      text: _formatarPreviewEan13(digits),
+      style: const TextStyle(
+        color: Colors.black,
+        fontSize: 12,
+        fontWeight: FontWeight.w500,
+        letterSpacing: 0.8,
+      ),
+    );
+    textPainter.textAlign = TextAlign.center;
+    textPainter.layout(maxWidth: size.width);
+    textPainter.paint(
+      canvas,
+      Offset(left + ((barcodeWidth - textPainter.width) / 2), top + height + 2),
+    );
+  }
+
+  static String _formatarPreviewEan13(String value) {
+    if (value.length != 13) return value;
+    return '${value.substring(0, 1)} ${value.substring(1, 7)} ${value.substring(7)}';
+  }
+
+  @override
+  bool shouldRepaint(covariant _FioLivrePreviewPainter old) =>
+      old.titulo != titulo ||
+      old.cor != cor ||
+      old.peso != peso ||
+      old.lote != lote ||
+      old.codigo != codigo;
 }

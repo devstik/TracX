@@ -87,6 +87,7 @@ class _RegistroScreenTinturariaState extends State<RegistroScreenTinturaria> {
 
   bool _camposPreenchidos = false;
   bool _coletorQrAtivo = false;
+  bool _salvandoRegistro = false;
   DateTime? _data;
 
   @override
@@ -474,7 +475,9 @@ class _RegistroScreenTinturariaState extends State<RegistroScreenTinturaria> {
     });
   }
 
-  void _salvarRegistro() async {
+  Future<void> _salvarRegistro() async {
+    if (_salvandoRegistro) return;
+
     if (_formKey.currentState!.validate() &&
         _data != null &&
         _camposPreenchidos) {
@@ -489,13 +492,20 @@ class _RegistroScreenTinturariaState extends State<RegistroScreenTinturaria> {
         turno: _turnoController.text,
       );
 
-      await enviarRegistroParaAPI(registro);
+      setState(() => _salvandoRegistro = true);
 
-      _limparFormulario();
+      final salvou = await enviarRegistroParaAPI(registro);
+
+      if (!mounted) return;
+      setState(() => _salvandoRegistro = false);
+
+      if (salvou) {
+        _limparFormulario();
+      }
     }
   }
 
-  Future<void> enviarRegistroParaAPI(RegistroTinturaria registro) async {
+  Future<bool> enviarRegistroParaAPI(RegistroTinturaria registro) async {
     final url = Uri.parse('http://168.190.90.2:5000/consulta/tinturaria');
     final headers = {'Content-Type': 'application/json'};
     final body = jsonEncode(registro.toJson());
@@ -519,11 +529,21 @@ class _RegistroScreenTinturariaState extends State<RegistroScreenTinturaria> {
             ),
           );
         }
+        return true;
       } else {
+        String mensagem = 'Erro ao salvar registro: ${response.statusCode}';
+        try {
+          final responseBody = jsonDecode(response.body);
+          final detalhe = responseBody['error'] ?? responseBody['message'];
+          if (detalhe != null && detalhe.toString().trim().isNotEmpty) {
+            mensagem = '$mensagem - $detalhe';
+          }
+        } catch (_) {}
+
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Erro ao salvar registro: ${response.statusCode}'),
+              content: Text(mensagem),
               backgroundColor: Colors.red.shade700,
               behavior: SnackBarBehavior.floating,
               shape: RoundedRectangleBorder(
@@ -533,6 +553,7 @@ class _RegistroScreenTinturariaState extends State<RegistroScreenTinturaria> {
             ),
           );
         }
+        return false;
       }
     } catch (_) {
       if (mounted) {
@@ -548,6 +569,7 @@ class _RegistroScreenTinturariaState extends State<RegistroScreenTinturaria> {
           ),
         );
       }
+      return false;
     }
   }
 
@@ -714,10 +736,18 @@ class _RegistroScreenTinturariaState extends State<RegistroScreenTinturaria> {
                   SizedBox(
                     height: 56,
                     child: ElevatedButton.icon(
-                      onPressed: _camposPreenchidos ? _salvarRegistro : null,
-                      icon: const Icon(Icons.save_rounded),
-                      label: const Text(
-                        "SALVAR REGISTRO",
+                      onPressed: _camposPreenchidos && !_salvandoRegistro
+                          ? _salvarRegistro
+                          : null,
+                      icon: Icon(
+                        _salvandoRegistro
+                            ? Icons.hourglass_top_rounded
+                            : Icons.save_rounded,
+                      ),
+                      label: Text(
+                        _salvandoRegistro
+                            ? "SALVANDO..."
+                            : "SALVAR REGISTRO",
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w800,

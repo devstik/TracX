@@ -6,8 +6,10 @@ import 'package:share_plus/share_plus.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import '../models/checkin_tambores.dart';
 import '../models/registro.dart';
 import '../models/registro_tinturaria.dart';
+import '../services/checkin_tambores_service.dart';
 import 'package:excel/excel.dart' hide Border;
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
@@ -61,6 +63,16 @@ class _ResumoRelatorioValor {
   _ResumoRelatorioValor({this.kg = 0, this.metros = 0});
 }
 
+class _RelatorioCheckinTurno {
+  final String turno;
+  final List<CheckinTambores> registros;
+
+  const _RelatorioCheckinTurno({
+    required this.turno,
+    required this.registros,
+  });
+}
+
 class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
     with SingleTickerProviderStateMixin {
   // ATUALIZADO: Formatadores globais com separador de milhar (ponto)
@@ -90,6 +102,9 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
   // Future para evitar refazer a requisição a cada setState (melhora performance percebida)
   late Future<Map<String, List<Registro>>> _embalagemFuture;
   late Future<List<RegistroTinturaria>> _tinturariaFuture;
+  late Future<List<CheckinTambores>> _checkinTamboresFuture;
+  final CheckinTamboresService _checkinTamboresService =
+      CheckinTamboresService();
   final Map<String, double> _mapaGramaturas = {};
 
   @override
@@ -99,6 +114,7 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
     // Inicializa os Futures para que a busca comece imediatamente
     _embalagemFuture = _buscarTodos();
     _tinturariaFuture = _buscarRegistrosTinturaria();
+    _checkinTamboresFuture = _buscarCheckinsTamboresRelatorio();
   }
 
   @override
@@ -1319,11 +1335,8 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
         nMaquina: item['nMaquina'] ?? '',
         dataCorte: item['dataCorte'] ?? '',
         loteElastico: item['loteElastico'] ?? '',
-        conferente:
-            item['Conferente'] ??
-            '', // CORRIGIDO: Assumindo que a chave era "Conferente"
-        turno:
-            item['Turno'] ?? '', // CORRIGIDO: Assumindo que a chave era "Turno"
+        conferente: item['conferente'] ?? item['Conferente'] ?? '',
+        turno: item['turno'] ?? item['Turno'] ?? '',
       );
     }).toList();
   }
@@ -1332,6 +1345,89 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
   Future<Map<String, List<Registro>>> _buscarTodos() async {
     final embalagem = await _buscarRegistros('embalagem');
     return {'Embalagem': embalagem};
+  }
+
+  Future<List<CheckinTambores>> _buscarCheckinsTamboresRelatorio() {
+    return _checkinTamboresService.listarHistorico(limite: 500);
+  }
+
+  List<CheckinTambores> _filtrarCheckinsTambores(
+    List<CheckinTambores> registros,
+  ) {
+    final filtrados = registros.where((registro) {
+      if (_selectedDate == null) return true;
+      final data = registro.checkinInicialEm.toLocal();
+      return data.year == _selectedDate!.year &&
+          data.month == _selectedDate!.month &&
+          data.day == _selectedDate!.day;
+    }).toList();
+
+    filtrados.sort(
+      (a, b) => b.checkinInicialEm.compareTo(a.checkinInicialEm),
+    );
+    return filtrados;
+  }
+
+  String _dateKeyRelatorio(DateTime data) {
+    final local = data.toLocal();
+    return DateTime(local.year, local.month, local.day).toIso8601String();
+  }
+
+  Map<String, List<CheckinTambores>> _agruparCheckinsPorData(
+    List<CheckinTambores> registros,
+  ) {
+    final agrupados = <String, List<CheckinTambores>>{};
+    for (final registro in registros) {
+      final chave = _dateKeyRelatorio(registro.checkinInicialEm);
+      agrupados.putIfAbsent(chave, () => []).add(registro);
+    }
+    return agrupados;
+  }
+
+  String _turnoCheckinTambores(DateTime data) {
+    final hora = data.toLocal().hour;
+    if (hora >= 6 && hora < 14) return 'Manhã';
+    if (hora >= 14 && hora < 22) return 'Tarde';
+    return 'Noite';
+  }
+
+  int _ordemTurnoCheckin(String turno) {
+    if (turno == 'Manhã') return 0;
+    if (turno == 'Tarde') return 1;
+    return 2;
+  }
+
+  List<_RelatorioCheckinTurno> _agruparCheckinsPorTurno(
+    List<CheckinTambores> registros,
+  ) {
+    final agrupados = <String, List<CheckinTambores>>{};
+    for (final registro in registros) {
+      final turno = _turnoCheckinTambores(registro.checkinInicialEm);
+      agrupados.putIfAbsent(turno, () => []).add(registro);
+    }
+
+    final grupos = agrupados.entries
+        .map(
+          (entry) => _RelatorioCheckinTurno(
+            turno: entry.key,
+            registros: entry.value
+              ..sort(
+                (a, b) => a.checkinInicialEm.compareTo(b.checkinInicialEm),
+              ),
+          ),
+        )
+        .toList()
+      ..sort(
+        (a, b) =>
+            _ordemTurnoCheckin(a.turno).compareTo(_ordemTurnoCheckin(b.turno)),
+      );
+
+    return grupos;
+  }
+
+  String _formatarHoraCheckin(DateTime? data) {
+    if (data == null) return 'Em andamento';
+    return DateFormat('HH:mm').format(data.toLocal());
   }
 
   Future<void> _garantirMapaGramaturas() async {
@@ -1373,6 +1469,64 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
         .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
+  }
+
+  String _normalizarTextoFiltro(dynamic valor) {
+    final texto = (valor ?? '').toString().trim().toLowerCase();
+    if (texto.isEmpty) return '';
+
+    return texto
+        .replaceAll(RegExp(r'[áàãâä]'), 'a')
+        .replaceAll(RegExp(r'[éèêë]'), 'e')
+        .replaceAll(RegExp(r'[íìîï]'), 'i')
+        .replaceAll(RegExp(r'[óòõôö]'), 'o')
+        .replaceAll(RegExp(r'[úùûü]'), 'u')
+        .replaceAll('ç', 'c')
+        .replaceAll(RegExp(r'[Ã¡Ã Ã£Ã¢Ã¤]'), 'a')
+        .replaceAll(RegExp(r'[Ã©Ã¨ÃªÃ«]'), 'e')
+        .replaceAll(RegExp(r'[Ã­Ã¬Ã®Ã¯]'), 'i')
+        .replaceAll(RegExp(r'[Ã³Ã²ÃµÃ´Ã¶]'), 'o')
+        .replaceAll(RegExp(r'[ÃºÃ¹Ã»Ã¼]'), 'u')
+        .replaceAll('Ã§', 'c')
+        .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
+  List<String> _tokenizarFiltro(String termo) {
+    return _normalizarTextoFiltro(termo)
+        .split(' ')
+        .where((parte) => parte.trim().isNotEmpty)
+        .toList();
+  }
+
+  String _textoBuscaRegistro(Registro registro) {
+    return _normalizarTextoFiltro([
+      registro.artigo,
+      registro.cor,
+      _descricaoProduto(registro.artigo, registro.cor),
+      registro.ordemProducao,
+      registro.conferente,
+    ].join(' '));
+  }
+
+  bool _textoContemTodosTokens(String texto, String termo) {
+    final normalizado = _normalizarTextoFiltro(texto);
+    final tokens = _tokenizarFiltro(termo);
+    if (tokens.isEmpty) return true;
+    return tokens.every(normalizado.contains);
+  }
+
+  List<String> _sugestoesArtigosRegistrados(List<Registro> registros) {
+    final mapa = <String, String>{};
+    for (final registro in registros) {
+      final descricao = _descricaoProduto(registro.artigo, registro.cor).trim();
+      if (descricao.isEmpty) continue;
+      mapa.putIfAbsent(_normalizarTextoFiltro(descricao), () => descricao);
+    }
+    final sugestoes = mapa.values.toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return sugestoes;
   }
 
   String _descricaoProduto(String artigo, String cor) {
@@ -1460,15 +1614,15 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
 
       final matchesArtigo =
           _searchArtigo.isEmpty ||
-          r.artigo.toLowerCase().contains(_searchArtigo.toLowerCase());
+          _textoContemTodosTokens(_textoBuscaRegistro(r), _searchArtigo);
 
       final matchesCor =
           _searchCor.isEmpty ||
-          r.cor.toLowerCase().contains(_searchCor.toLowerCase());
+          _textoContemTodosTokens(r.cor, _searchCor);
 
       final matchesConferente =
           _searchConferente.isEmpty ||
-          r.conferente.toLowerCase().contains(_searchConferente.toLowerCase());
+          _textoContemTodosTokens(r.conferente, _searchConferente);
 
       final matchesData =
           _selectedDate == null ||
@@ -1485,7 +1639,17 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
   }
 
   // Refatorado para Widget de Diálogo de Busca Mais Elegante
-  Future<void> _showSearchDialog() {
+  Future<void> _showSearchDialog() async {
+    List<Registro> registrosAutocomplete = const [];
+    try {
+      final dados = await _embalagemFuture;
+      registrosAutocomplete = dados['Embalagem'] ?? const [];
+    } catch (_) {}
+    final sugestoesArtigos = _sugestoesArtigosRegistrados(
+      registrosAutocomplete,
+    );
+
+    if (!mounted) return;
     return showDialog<void>(
       context: context,
       builder: (BuildContext dialogContext) {
@@ -1511,14 +1675,85 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
                       keyboardType: TextInputType.number,
                     ),
                     const SizedBox(height: 12),
-                    // Campo Artigo
-                    TextField(
-                      controller: _searchArtigoController,
-                      decoration: const InputDecoration(
-                        labelText: 'Artigo',
-                        prefixIcon: Icon(Icons.category_outlined),
-                        border: OutlineInputBorder(),
+                    // Campo Artigo com autocomplete dos registros carregados
+                    Autocomplete<String>(
+                      initialValue: TextEditingValue(
+                        text: _searchArtigoController.text,
                       ),
+                      optionsBuilder: (textEditingValue) {
+                        final tokens = _tokenizarFiltro(
+                          textEditingValue.text,
+                        );
+                        if (tokens.isEmpty) {
+                          return const Iterable<String>.empty();
+                        }
+
+                        return sugestoesArtigos.where((artigo) {
+                          final normalizado = _normalizarTextoFiltro(artigo);
+                          return tokens.every(normalizado.contains);
+                        }).take(12);
+                      },
+                      onSelected: (value) {
+                        _searchArtigoController.text = value;
+                      },
+                      fieldViewBuilder:
+                          (
+                            context,
+                            textEditingController,
+                            focusNode,
+                            onFieldSubmitted,
+                          ) {
+                            return TextField(
+                              controller: textEditingController,
+                              focusNode: focusNode,
+                              decoration: const InputDecoration(
+                                labelText: 'Artigo / nome do objeto',
+                                hintText: 'Digite parte do nome do artigo',
+                                prefixIcon: Icon(Icons.category_outlined),
+                                border: OutlineInputBorder(),
+                              ),
+                              onChanged: (value) {
+                                _searchArtigoController.text = value;
+                              },
+                              onSubmitted: (_) => onFieldSubmitted(),
+                            );
+                          },
+                      optionsViewBuilder: (context, onSelected, options) {
+                        return Align(
+                          alignment: Alignment.topLeft,
+                          child: Material(
+                            elevation: 8,
+                            borderRadius: BorderRadius.circular(8),
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(
+                                maxHeight: 240,
+                                maxWidth: 420,
+                              ),
+                              child: ListView.separated(
+                                padding: EdgeInsets.zero,
+                                shrinkWrap: true,
+                                itemCount: options.length,
+                                separatorBuilder: (_, __) =>
+                                    const Divider(height: 1),
+                                itemBuilder: (context, index) {
+                                  final option = options.elementAt(index);
+                                  return ListTile(
+                                    dense: true,
+                                    leading: const Icon(
+                                      Icons.inventory_2_outlined,
+                                    ),
+                                    title: Text(
+                                      option,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    onTap: () => onSelected(option),
+                                  );
+                                },
+                              ),
+                            ),
+                          ),
+                        );
+                      },
                     ),
                     const SizedBox(height: 12),
                     // Campo Cor
@@ -1625,6 +1860,8 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
                       _selectedEmbalagemKeys.clear();
                       // Recarrega os dados (opcional, mas bom para garantir)
                       _embalagemFuture = _buscarTodos();
+                      _checkinTamboresFuture =
+                          _buscarCheckinsTamboresRelatorio();
                     });
                     Navigator.pop(dialogContext);
                   },
@@ -1649,6 +1886,8 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
                           .trim();
                       // Recarrega os dados (opcional, mas bom para garantir)
                       _embalagemFuture = _buscarTodos();
+                      _checkinTamboresFuture =
+                          _buscarCheckinsTamboresRelatorio();
                     });
                     Navigator.pop(dialogContext);
                   },
@@ -1918,6 +2157,287 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
   }
 
   Widget _buildRelatorioTab() {
+    return Column(
+      children: [
+        _buildCheckinsTamboresResumo(),
+        Expanded(child: _buildRelatorioProducaoTab()),
+      ],
+    );
+  }
+
+  Widget _buildCheckinsTamboresResumo() {
+    return FutureBuilder<List<CheckinTambores>>(
+      future: _checkinTamboresFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const LinearProgressIndicator(minHeight: 3);
+        }
+
+        if (snapshot.hasError) {
+          return Container(
+            width: double.infinity,
+            margin: const EdgeInsets.fromLTRB(18, 14, 18, 0),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.red.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.red.withOpacity(0.25)),
+            ),
+            child: Text(
+              'Erro ao carregar check-ins de tambores: ${snapshot.error}',
+              style: const TextStyle(
+                color: Color(0xFFB91C1C),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          );
+        }
+
+        final registros = _filtrarCheckinsTambores(snapshot.data ?? const []);
+        if (registros.isEmpty) return const SizedBox.shrink();
+
+        final porData = _agruparCheckinsPorData(registros);
+        final datas = porData.keys.toList()
+          ..sort((a, b) => DateTime.parse(b).compareTo(DateTime.parse(a)));
+
+        return Container(
+          width: double.infinity,
+          margin: const EdgeInsets.fromLTRB(18, 14, 18, 0),
+          constraints: const BoxConstraints(maxHeight: 360),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFE5E7EB)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: const [
+                    Icon(
+                      Icons.local_shipping_outlined,
+                      color: _kPrimaryColorEmbalagem,
+                      size: 20,
+                    ),
+                    SizedBox(width: 8),
+                    Text(
+                      'CHECK-INS DE TAMBORES',
+                      style: TextStyle(
+                        color: Color(0xFF111827),
+                        fontWeight: FontWeight.w900,
+                        fontSize: 14,
+                        letterSpacing: 0.4,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                for (final dataKey in datas) ...[
+                  _buildCheckinsTamboresData(
+                    DateTime.parse(dataKey),
+                    porData[dataKey]!,
+                  ),
+                  if (dataKey != datas.last) const SizedBox(height: 14),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildCheckinsTamboresData(
+    DateTime data,
+    List<CheckinTambores> registros,
+  ) {
+    final gruposTurno = _agruparCheckinsPorTurno(registros);
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            DateFormat('dd/MM/yyyy').format(data),
+            style: const TextStyle(
+              color: Color(0xFF111827),
+              fontWeight: FontWeight.w900,
+              fontSize: 13,
+            ),
+          ),
+          const SizedBox(height: 10),
+          for (final grupo in gruposTurno) ...[
+            _buildCheckinsTamboresTurno(grupo),
+            if (grupo != gruposTurno.last) const SizedBox(height: 12),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCheckinsTamboresTurno(_RelatorioCheckinTurno grupo) {
+    final totalTambores = grupo.registros.fold<int>(
+      0,
+      (total, registro) => total + registro.quantidadeTambores,
+    );
+    final totalVolume = grupo.registros.fold<double>(
+      0,
+      (total, registro) => total + registro.volumeTotal,
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: _kPrimaryColorEmbalagem.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                'Turno ${grupo.turno}',
+                style: const TextStyle(
+                  color: _kPrimaryColorEmbalagem,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+            const Spacer(),
+            Text(
+              'Total do turno: ${_kBrIntegerFormatter.format(totalTambores)} tambores',
+              style: const TextStyle(
+                color: Color(0xFF111827),
+                fontWeight: FontWeight.w900,
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        for (final registro in grupo.registros)
+          _buildCheckinTamboresLinha(registro),
+        const SizedBox(height: 4),
+        Align(
+          alignment: Alignment.centerRight,
+          child: Text(
+            'Volume total: ${_kBrThreeDecimalFormatter.format(totalVolume)}',
+            style: TextStyle(
+              color: Colors.black.withOpacity(0.55),
+              fontWeight: FontWeight.w700,
+              fontSize: 11,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCheckinTamboresLinha(CheckinTambores registro) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.black.withOpacity(0.08)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            flex: 2,
+            child: _buildCheckinLinhaValor(
+              'Inicial',
+              _formatarHoraCheckin(registro.checkinInicialEm),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: _buildCheckinLinhaValor(
+              'Final',
+              _formatarHoraCheckin(registro.checkinFinalEm),
+            ),
+          ),
+          Expanded(
+            child: _buildCheckinLinhaValor(
+              'Tambores',
+              _kBrIntegerFormatter.format(registro.quantidadeTambores),
+            ),
+          ),
+          Expanded(
+            child: _buildCheckinLinhaValor(
+              'Volume',
+              _kBrThreeDecimalFormatter.format(registro.volumeTotal),
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+            decoration: BoxDecoration(
+              color: registro.finalizado
+                  ? const Color(0xFFDCFCE7)
+                  : const Color(0xFFFEF3C7),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              registro.finalizado ? 'Finalizado' : 'Em andamento',
+              style: TextStyle(
+                color: registro.finalizado
+                    ? const Color(0xFF166534)
+                    : const Color(0xFF92400E),
+                fontWeight: FontWeight.w900,
+                fontSize: 11,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCheckinLinhaValor(String label, String valor) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label.toUpperCase(),
+          style: TextStyle(
+            color: Colors.black.withOpacity(0.42),
+            fontSize: 9,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 0.5,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          valor,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: Color(0xFF111827),
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRelatorioProducaoTab() {
     return FutureBuilder<Map<String, List<Registro>>>(
       future: _embalagemFuture,
       builder: (context, snapshot) {

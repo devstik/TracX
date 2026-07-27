@@ -14,6 +14,7 @@ import 'package:tracx/screens/ConsultaMapaProducaoScreen.dart';
 import 'package:tracx/screens/ApontamentoProdutividadeScreen.dart';
 import 'package:tracx/screens/RegistrosApontamento.dart';
 import 'package:tracx/screens/imprimir_etiquetas_page.dart';
+import 'package:tracx/screens/checkin_tambores_screen.dart';
 import 'package:tracx/services/estoque_db_helper.dart';
 //import 'package:tracx/widgets/widgets_dados_integrados.dart';
 import 'package:tracx/services/update_service.dart';
@@ -791,6 +792,14 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
         icon: Icons.stacked_line_chart_outlined,
         onTap: () {
           _navigateWithTransition(context, const EtiquetasPage(grupoId: 0));
+        },
+      ),
+      _ActionItem(
+        title: "Check-in Tambores",
+        subtitle: "Retirada e entrega",
+        icon: Icons.inventory_2_outlined,
+        onTap: () {
+          _navigateWithTransition(context, const CheckinTamboresScreen());
         },
       ),
 
