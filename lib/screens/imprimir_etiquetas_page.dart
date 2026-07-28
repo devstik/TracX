@@ -16,6 +16,8 @@ import '../services/zebra_printer_service.dart';
 
 enum _EtiquetaModelo { palete, caixa, ordens, operador, carretel, livre }
 
+enum _OrdemSortMode { tocColor, percentDesc, percentAsc, releaseDate, quantity }
+
 class _OperadorEtiqueta {
   final String codigo;
   final String nome;
@@ -129,6 +131,86 @@ class _OrdemExpedicao {
     if (raw.isEmpty) return null;
     return DateTime.tryParse(raw);
   }
+}
+
+class _TocStatus {
+  const _TocStatus({
+    required this.label,
+    required this.name,
+    required this.background,
+    required this.foreground,
+    required this.border,
+    required this.numeric,
+    required this.priority,
+  });
+
+  final String label;
+  final String name;
+  final Color background;
+  final Color foreground;
+  final Color border;
+  final double numeric;
+  final int priority;
+
+  factory _TocStatus.blue(String label, double numeric) => _TocStatus(
+        label: label,
+        name: 'Azul',
+        background: const Color(0xFF38BDF8),
+        foreground: const Color(0xFF082F49),
+        border: const Color(0xFF7DD3FC),
+        numeric: numeric,
+        priority: 10000,
+      );
+
+  factory _TocStatus.green(String label, double numeric) => _TocStatus(
+        label: label,
+        name: 'Verde',
+        background: const Color(0xFF16A34A),
+        foreground: Colors.white,
+        border: const Color(0xFF4ADE80),
+        numeric: numeric,
+        priority: 20000,
+      );
+
+  factory _TocStatus.yellow(String label, double numeric) => _TocStatus(
+        label: label,
+        name: 'Amarelo',
+        background: const Color(0xFFFACC15),
+        foreground: const Color(0xFF422006),
+        border: const Color(0xFFFDE047),
+        numeric: numeric,
+        priority: 30000,
+      );
+
+  factory _TocStatus.red(String label, double numeric) => _TocStatus(
+        label: label,
+        name: 'Vermelho',
+        background: const Color(0xFFDC2626),
+        foreground: Colors.white,
+        border: const Color(0xFFF87171),
+        numeric: numeric,
+        priority: 40000,
+      );
+
+  factory _TocStatus.black(String label, double numeric) => _TocStatus(
+        label: label,
+        name: 'Preto',
+        background: const Color(0xFF020617),
+        foreground: Colors.white,
+        border: const Color(0xFF64748B),
+        numeric: numeric,
+        priority: 50000,
+      );
+
+  factory _TocStatus.gray(String label, double numeric) => _TocStatus(
+        label: label,
+        name: 'Sem alvo',
+        background: const Color(0xFFE5E7EB),
+        foreground: const Color(0xFF111827),
+        border: const Color(0xFFCBD5E1),
+        numeric: numeric,
+        priority: 60000,
+      );
 }
 
 class _LinhaLivreEditor {
@@ -405,6 +487,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
   List<Map<String, dynamic>> _ordemArtigoOpcoes = [];
   List<_OrdemExpedicao> _ordensExpedicao = [];
   final Set<String> _ordensExpandidas = {};
+  _OrdemSortMode _ordemSortMode = _OrdemSortMode.tocColor;
   Timer? _ordemBuscaDebounce;
   bool _buscandoOrdemArtigos = false;
   bool _consultandoOrdens = false;
@@ -1327,6 +1410,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       if (!mounted) return;
       setState(() {
         _ordensExpedicao = data.map(_OrdemExpedicao.fromJson).toList();
+        _ordenarOrdensExpedicao();
         _ordensExpandidas
           ..clear()
           ..addAll(_ordensExpedicao.map(_ordemKey));
@@ -1561,6 +1645,149 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     final dia = date.day.toString().padLeft(2, '0');
     final mes = date.month.toString().padLeft(2, '0');
     return '$dia/$mes/${date.year}';
+  }
+
+  int _compararOrdensToc(_OrdemExpedicao a, _OrdemExpedicao b) {
+    final releaseCompare = _dataLiberacaoParaToc(
+      a,
+    ).compareTo(_dataLiberacaoParaToc(b));
+    if (releaseCompare != 0) return releaseCompare;
+    final skuCompare = a.skuName.compareTo(b.skuName);
+    if (skuCompare != 0) return skuCompare;
+    return a.woid.compareTo(b.woid);
+  }
+
+  void _ordenarOrdensExpedicao() {
+    switch (_ordemSortMode) {
+      case _OrdemSortMode.tocColor:
+        _ordensExpedicao.sort(_compararOrdensPorCorToc);
+        break;
+      case _OrdemSortMode.percentDesc:
+        _ordensExpedicao.sort((a, b) {
+          final compare = _tocStatusOrdem(b).numeric.compareTo(
+            _tocStatusOrdem(a).numeric,
+          );
+          return compare != 0 ? compare : _compararOrdensToc(a, b);
+        });
+        break;
+      case _OrdemSortMode.percentAsc:
+        _ordensExpedicao.sort((a, b) {
+          final compare = _tocStatusOrdem(a).numeric.compareTo(
+            _tocStatusOrdem(b).numeric,
+          );
+          return compare != 0 ? compare : _compararOrdensToc(a, b);
+        });
+        break;
+      case _OrdemSortMode.releaseDate:
+        _ordensExpedicao.sort(_compararOrdensToc);
+        break;
+      case _OrdemSortMode.quantity:
+        _ordensExpedicao.sort((a, b) {
+          final compare = b.quantity.compareTo(a.quantity);
+          return compare != 0 ? compare : _compararOrdensToc(a, b);
+        });
+        break;
+    }
+  }
+
+  int _compararOrdensPorCorToc(_OrdemExpedicao a, _OrdemExpedicao b) {
+    final statusA = _tocStatusOrdem(a);
+    final statusB = _tocStatusOrdem(b);
+    final colorCompare = statusA.priority.compareTo(statusB.priority);
+    if (colorCompare != 0) return colorCompare;
+    final percentCompare = statusA.numeric.compareTo(statusB.numeric);
+    if (percentCompare != 0) return percentCompare;
+    return _compararOrdensToc(a, b);
+  }
+
+  DateTime _dataLiberacaoParaToc(_OrdemExpedicao ordem) {
+    return ordem.releaseDate ?? DateTime(9999, 12, 31);
+  }
+
+  _TocStatus _tocStatusOrdem(_OrdemExpedicao ordem) {
+    final orderType = ordem.orderType.trim().toLowerCase();
+    if (orderType == 'stock') {
+      if (ordem.alvo <= 0) {
+        return _TocStatus.gray('N/A', -1);
+      }
+      final sku = ordem.skuName.isNotEmpty ? ordem.skuName : ordem.skuCode;
+      var consumidoAntes = 0.0;
+      final ordensCalculo = List<_OrdemExpedicao>.of(_ordensExpedicao)
+        ..sort(_compararOrdensToc);
+      for (final item in ordensCalculo) {
+        if (identical(item, ordem)) break;
+        final itemType = item.orderType.trim().toLowerCase();
+        final itemSku = item.skuName.isNotEmpty ? item.skuName : item.skuCode;
+        if (itemType == 'stock' && itemSku == sku) {
+          consumidoAntes += item.quantity;
+        }
+      }
+      final consumidoReal = ordem.alvo - (ordem.localStock + consumidoAntes);
+      final cpPercent = (consumidoReal / ordem.alvo) * 100;
+      return _tocStatusPorPercentual(cpPercent, arredondar: true);
+    }
+
+    final leadtime = _parseLeadtimeToc(ordem.productionFamily);
+    if (ordem.dueDate == null || leadtime == null || leadtime <= 0) {
+      return _TocStatus.green('0%', 0);
+    }
+
+    final cpPercent = _calcularCpToc(ordem.dueDate!, DateTime.now(), leadtime);
+    return _tocStatusPorPercentual(cpPercent);
+  }
+
+  double? _parseLeadtimeToc(String value) {
+    final normalized = value.trim().replaceAll(',', '.');
+    if (normalized.isEmpty) return null;
+    return double.tryParse(normalized);
+  }
+
+  double _calcularCpToc(DateTime dataEntrega, DateTime agora, double leadtime) {
+    final pulmaoHorasTotal = leadtime * 24;
+    final hoje = DateTime(agora.year, agora.month, agora.day);
+    final dataAtualContagem = DateTime(hoje.year, hoje.month, hoje.day, 8);
+    final entrega = DateTime(
+      dataEntrega.year,
+      dataEntrega.month,
+      dataEntrega.day,
+    );
+
+    if (pulmaoHorasTotal <= 0) {
+      return entrega.isBefore(dataAtualContagem) ? 1000 : 0;
+    }
+
+    if (entrega.isBefore(dataAtualContagem)) {
+      var diasAtrasoUteis = 0;
+      var temp = entrega;
+      while (temp.isBefore(hoje)) {
+        if (temp.weekday != DateTime.sunday) diasAtrasoUteis++;
+        temp = temp.add(const Duration(days: 1));
+      }
+      final tempoEntregaHorasAtraso = diasAtrasoUteis * 24;
+      return (tempoEntregaHorasAtraso / pulmaoHorasTotal) * 100 + 100;
+    }
+
+    var horasUteisAPartirDeHoje = 0;
+    var temp = dataAtualContagem;
+    while (!DateTime(temp.year, temp.month, temp.day).isAfter(entrega)) {
+      if (temp.weekday != DateTime.sunday) horasUteisAPartirDeHoje += 24;
+      temp = temp.add(const Duration(days: 1));
+    }
+    final baseCalculoCp = math.max(0, horasUteisAPartirDeHoje - 24);
+    final horasConsumidas = pulmaoHorasTotal - baseCalculoCp;
+    return (horasConsumidas / pulmaoHorasTotal) * 100;
+  }
+
+  _TocStatus _tocStatusPorPercentual(
+    double cpPercent, {
+    bool arredondar = false,
+  }) {
+    final labelValue = arredondar ? cpPercent.round() : cpPercent.floor();
+    if (cpPercent < 0) return _TocStatus.blue('$labelValue%', cpPercent);
+    if (cpPercent <= 33.33) return _TocStatus.green('$labelValue%', cpPercent);
+    if (cpPercent <= 66.66) return _TocStatus.yellow('$labelValue%', cpPercent);
+    if (cpPercent < 100) return _TocStatus.red('$labelValue%', cpPercent);
+    return _TocStatus.black('$labelValue%', cpPercent);
   }
 
   Future<bool> _perguntarManterDadosEtiqueta() async {
@@ -2667,6 +2894,8 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
               ],
             ),
             const SizedBox(height: 16),
+            _buildOrdensSortBar(),
+            const SizedBox(height: 16),
           ],
           if (_consultandoOrdens)
             const Padding(
@@ -2711,6 +2940,75 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
         ],
       ),
     );
+  }
+
+  Widget _buildOrdensSortBar() {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0B1220),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFF334155)),
+      ),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+            child: Text(
+              'Ordenar:',
+              style: TextStyle(
+                color: Color(0xFFCBD5E1),
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          _OrdemSortChip(
+            label: 'Cor',
+            icon: Icons.palette_rounded,
+            selected: _ordemSortMode == _OrdemSortMode.tocColor,
+            onTap: () => _selecionarOrdenacaoOrdens(_OrdemSortMode.tocColor),
+          ),
+          _OrdemSortChip(
+            label: '% maior',
+            icon: Icons.trending_up_rounded,
+            selected: _ordemSortMode == _OrdemSortMode.percentDesc,
+            onTap: () => _selecionarOrdenacaoOrdens(
+              _OrdemSortMode.percentDesc,
+            ),
+          ),
+          _OrdemSortChip(
+            label: '% menor',
+            icon: Icons.trending_down_rounded,
+            selected: _ordemSortMode == _OrdemSortMode.percentAsc,
+            onTap: () => _selecionarOrdenacaoOrdens(_OrdemSortMode.percentAsc),
+          ),
+          _OrdemSortChip(
+            label: 'Liberação',
+            icon: Icons.event_available_rounded,
+            selected: _ordemSortMode == _OrdemSortMode.releaseDate,
+            onTap: () => _selecionarOrdenacaoOrdens(_OrdemSortMode.releaseDate),
+          ),
+          _OrdemSortChip(
+            label: 'Quantidade',
+            icon: Icons.straighten_rounded,
+            selected: _ordemSortMode == _OrdemSortMode.quantity,
+            onTap: () => _selecionarOrdenacaoOrdens(_OrdemSortMode.quantity),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _selecionarOrdenacaoOrdens(_OrdemSortMode mode) {
+    if (_ordemSortMode == mode) return;
+    setState(() {
+      _ordemSortMode = mode;
+      _ordenarOrdensExpedicao();
+    });
   }
 
   Widget _buildOrdensAutocomplete() {
@@ -2789,6 +3087,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
 
   Widget _buildOrdemCard(_OrdemExpedicao ordem) {
     final expanded = _ordensExpandidas.contains(_ordemKey(ordem));
+    final tocStatus = _tocStatusOrdem(ordem);
     final unidadeLocal = [
       if (ordem.uom.isNotEmpty) 'Unidade: ${ordem.uom}',
       if (ordem.stockLocationName.isNotEmpty)
@@ -2804,12 +3103,12 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
           color: expanded ? const Color(0xFF0F172A) : const Color(0xFF0B1220),
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
-            color: expanded ? const Color(0xFF3B82F6) : const Color(0xFF334155),
+            color: expanded ? tocStatus.border : tocStatus.background,
           ),
           boxShadow: expanded
               ? [
                   BoxShadow(
-                    color: const Color(0xFF2563EB).withValues(alpha: 0.10),
+                    color: tocStatus.background.withValues(alpha: 0.16),
                     blurRadius: 18,
                     offset: const Offset(0, 8),
                   ),
@@ -2826,14 +3125,12 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                   width: expanded ? 44 : 36,
                   height: expanded ? 44 : 36,
                   decoration: BoxDecoration(
-                    color: expanded
-                        ? const Color(0xFF1D4ED8)
-                        : const Color(0xFF1E293B),
+                    color: tocStatus.background,
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.assignment_rounded,
-                    color: Colors.white,
+                    color: tocStatus.foreground,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -2858,6 +3155,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                         spacing: 8,
                         runSpacing: 8,
                         children: [
+                          _TocBadge(status: tocStatus),
                           _DarkTag(
                             label: ordem.skuName.isEmpty
                                 ? 'SKU -'
@@ -2920,6 +3218,12 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                         label: 'Quantidade',
                         value: _formatarNumeroOrdens(ordem.quantity),
                         icon: Icons.straighten_rounded,
+                      ),
+                      _DarkMetricPill(
+                        label: 'Prioridade',
+                        value: '${tocStatus.name} ${tocStatus.label}',
+                        icon: Icons.speed_rounded,
+                        accent: tocStatus.background,
                       ),
                       _DarkMetricPill(
                         label: 'Pedido',
@@ -5131,11 +5435,13 @@ class _DarkMetricPill extends StatelessWidget {
     required this.label,
     required this.value,
     required this.icon,
+    this.accent = const Color(0xFF60A5FA),
   });
 
   final String label;
   final String value;
   final IconData icon;
+  final Color accent;
 
   @override
   Widget build(BuildContext context) {
@@ -5150,7 +5456,7 @@ class _DarkMetricPill extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: const Color(0xFF60A5FA), size: 16),
+          Icon(icon, color: accent, size: 16),
           const SizedBox(width: 7),
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 170),
@@ -5180,6 +5486,91 @@ class _DarkMetricPill extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _TocBadge extends StatelessWidget {
+  const _TocBadge({required this.status});
+
+  final _TocStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+      decoration: BoxDecoration(
+        color: status.background,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: status.border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.speed_rounded, color: status.foreground, size: 14),
+          const SizedBox(width: 5),
+          Text(
+            status.label,
+            style: TextStyle(
+              color: status.foreground,
+              fontSize: 12,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _OrdemSortChip extends StatelessWidget {
+  const _OrdemSortChip({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(999),
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFF2563EB) : const Color(0xFF111C33),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: selected ? const Color(0xFF60A5FA) : const Color(0xFF334155),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              color: selected ? Colors.white : const Color(0xFF60A5FA),
+              size: 15,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                color: selected ? Colors.white : const Color(0xFFE2E8F0),
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
