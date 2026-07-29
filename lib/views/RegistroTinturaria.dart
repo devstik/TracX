@@ -10,20 +10,20 @@ import 'package:tracx/services/datawedge_service.dart';
 // =========================================================================
 // 🎨 PALETA OFICIAL (PADRÃO HOME + SPLASH)
 // =========================================================================
-const Color _kPrimaryColor = Color(0xFF2563EB); // Azul principal (moderno)
-const Color _kAccentColor = Color(0xFF60A5FA); // Azul claro premium
+const Color _kPrimaryColor = Color(0xFFD8B840);
+const Color _kAccentColor = Color(0xFFE8CE7A);
 
-const Color _kBgTop = Color(0xFF050A14);
-const Color _kBgBottom = Color(0xFF0B1220);
+const Color _kBgTop = Color(0xFF020617);
+const Color _kBgBottom = Color(0xFF0F172A);
 
-const Color _kSurface = Color(0xFF101B34);
-const Color _kSurface2 = Color(0xFF0F172A);
+const Color _kSurface = Color(0xFF111827);
+const Color _kSurface2 = Color(0xFF172033);
 
-const Color _kTextPrimary = Color(0xFFF9FAFB);
-const Color _kTextSecondary = Color(0xFF9CA3AF);
+const Color _kTextPrimary = Color(0xFFF8FAFC);
+const Color _kTextSecondary = Color(0xFFCBD5E1);
 
 // borda mais visível
-const Color _kBorderSoft = Color(0x33FFFFFF);
+const Color _kBorderSoft = Color(0xFF334155);
 
 // =========================================================================
 // CLASSES AUXILIARES ORIGINAIS
@@ -644,7 +644,7 @@ class _RegistroScreenTinturariaState extends State<RegistroScreenTinturaria> {
                         style: TextStyle(fontWeight: FontWeight.w700),
                       ),
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.white,
+                        foregroundColor: const Color(0xFF020617),
                         side: BorderSide(color: Colors.white.withOpacity(0.22)),
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
@@ -757,7 +757,7 @@ class _RegistroScreenTinturariaState extends State<RegistroScreenTinturaria> {
                       style: ElevatedButton.styleFrom(
                         elevation: 0,
                         backgroundColor: _kPrimaryColor,
-                        foregroundColor: Colors.white,
+                        foregroundColor: const Color(0xFF020617),
                         disabledBackgroundColor: _kPrimaryColor.withOpacity(
                           0.35,
                         ),
@@ -892,7 +892,7 @@ class _QrScannerPageState extends State<QrScannerPage> {
           style: TextStyle(fontWeight: FontWeight.w700),
         ),
         backgroundColor: _kPrimaryColor,
-        foregroundColor: Colors.white,
+        foregroundColor: const Color(0xFF020617),
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_rounded),

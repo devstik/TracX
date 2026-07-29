@@ -20,8 +20,8 @@ import 'package:hive/hive.dart';
 // =========================================================================
 // 🎨 PALETA OFICIAL (PADRÃO HOME + SPLASH)
 // =========================================================================
-const Color _kPrimaryColor = Color(0xFF2563EB); // Azul principal (moderno)
-const Color _kAccentColor = Color(0xFF60A5FA); // Azul claro premium
+const Color _kPrimaryColor = Color(0xFFD8B840);
+const Color _kAccentColor = Color(0xFFE8CE7A);
 
 const Color _kBgTop = Color(0xFF050A14);
 const Color _kBgBottom = Color(0xFF0B1220);
@@ -38,8 +38,8 @@ const Color _kBorderSoft = Color(0x33FFFFFF);
 // =========================================================================
 // 🔵 CORES ESPECÍFICAS POR ABA (SEM QUEBRAR O PADRÃO)
 // =========================================================================
-const Color _kPrimaryColorEmbalagem = _kPrimaryColor; // Azul principal
-const Color _kPrimaryColorTinturaria = _kAccentColor; // Azul premium
+const Color _kPrimaryColorEmbalagem = _kPrimaryColor;
+const Color _kPrimaryColorTinturaria = _kAccentColor;
 
 // Estilo constante para o cabeçalho das tabelas
 const TextStyle _kHeaderStyle = TextStyle(
@@ -1873,7 +1873,7 @@ class _ListaRegistrosScreenState extends State<ListaRegistrosScreen>
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: _kPrimaryColorEmbalagem,
-                    foregroundColor: Colors.white,
+                    foregroundColor: const Color(0xFF020617),
                   ),
                   onPressed: () {
                     // Atualiza o estado principal com os valores dos controladores

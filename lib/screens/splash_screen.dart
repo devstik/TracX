@@ -1,19 +1,11 @@
-import 'dart:async';
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tracx/screens/login_screen.dart';
 import 'package:intl/intl.dart';
-import 'package:tracx/services/SyncService.dart';
 import 'ConsultaMapaProducaoScreen.dart';
 import 'package:tracx/services/estoque_db_helper.dart';
-import 'dart:convert';
-import 'dart:io';
-
-import 'package:http/http.dart' as http;
-import 'package:package_info_plus/package_info_plus.dart';
+import 'package:tracx/design_system.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:tracx/services/update_service.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -26,6 +18,7 @@ class _SplashScreenState extends State<SplashScreen>
     with TickerProviderStateMixin {
   bool _animationFinished = false;
   bool _updateOk = true;
+  String _versionText = '';
 
   late final AnimationController _mainController;
   late final AnimationController _shimmerController;
@@ -41,14 +34,14 @@ class _SplashScreenState extends State<SplashScreen>
   late final Animation<double> _textFade;
   late final Animation<double> _contentFade;
 
-  // CORES CORPORATIVAS
-  static const Color bg = Color(0xFF050A14);
-  static const Color surface = Color(0xFF0B1220);
-  static const Color surface2 = Color(0xFF101B34);
-  static const Color primary = Color(0xFF4DA3FF);
-  static const Color accent = Color(0xFF5EF7C5);
-  static const Color danger = Color(0xFFFF5C8A);
-  static const Color borderSoft = Color(0x18FFFFFF);
+  // Cores do design system atual
+  static const Color bg = AppDesignSystem.industrialBg;
+  static const Color surface = AppDesignSystem.industrialHeader;
+  static const Color surface2 = AppDesignSystem.industrialSurfaceElevated;
+  static const Color primary = AppDesignSystem.brandGold;
+  static const Color accent = AppDesignSystem.brandGoldLight;
+  static const Color danger = AppDesignSystem.industrialError;
+  static const Color borderSoft = AppDesignSystem.industrialBorder;
 
   void _showUpdateDialog({required bool force, required String apkUrl}) {
     showDialog(
@@ -91,7 +84,7 @@ class _SplashScreenState extends State<SplashScreen>
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: primary,
-                  foregroundColor: Colors.white,
+                  foregroundColor: bg,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16),
                   ),
@@ -119,6 +112,7 @@ class _SplashScreenState extends State<SplashScreen>
     super.initState();
 
     _sincronizarHistoricoCompleto();
+    _carregarVersao();
 
     _mainController = AnimationController(
       vsync: this,
@@ -220,6 +214,17 @@ class _SplashScreenState extends State<SplashScreen>
     );
   }
 
+  Future<void> _carregarVersao() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (!mounted) return;
+      setState(() => _versionText = 'v${info.version}');
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _versionText = 'TracX');
+    }
+  }
+
   @override
   void dispose() {
     _mainController.dispose();
@@ -241,7 +246,7 @@ class _SplashScreenState extends State<SplashScreen>
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [const Color(0xFF0B1220), bg, const Color(0xFF050A14)],
+            colors: [surface, bg, bg],
             stops: const [0.0, 0.5, 1.0],
           ),
         ),
@@ -601,12 +606,12 @@ class _SplashScreenState extends State<SplashScreen>
 
                         // Versão
                         Text(
-                          'v1.0.7 • 2025',
+                          _versionText.isEmpty ? 'TracX' : _versionText,
                           style: TextStyle(
-                            fontSize: 9,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 2,
-                            color: Colors.white.withOpacity(0.35),
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.8,
+                            color: Colors.white.withOpacity(0.5),
                           ),
                         ),
                       ],
@@ -634,7 +639,7 @@ class _SplashScreenState extends State<SplashScreen>
             return const LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
-              colors: [Color(0xFF4DA3FF), Color(0xFF5EF7C5)],
+              colors: [primary, accent],
             ).createShader(bounds);
           },
           child: Text(

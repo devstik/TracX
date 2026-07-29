@@ -3,8 +3,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 // Note: Certifique-se de que os imports abaixo estão corretos no seu projeto
+import '../design_system.dart';
 import '../models/estoque_item.dart';
 import '../services/estoque_db_helper.dart';
 import '../services/auth_service.dart';
@@ -1072,12 +1072,12 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey.shade100,
+      backgroundColor: AppDesignSystem.industrialBg,
       appBar: AppBar(
         title: const Text('Mapa de Produção'),
         centerTitle: true,
-        backgroundColor: Colors.red.shade700,
-        foregroundColor: Colors.white,
+        backgroundColor: AppDesignSystem.industrialHeader,
+        foregroundColor: AppDesignSystem.industrialTextPrimary,
       ),
       body: Stack(
         children: [
@@ -1177,8 +1177,12 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
                       ),
                       style: ElevatedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 14),
-                        backgroundColor: Colors.red.shade700,
+                        backgroundColor: AppDesignSystem.industrialPrimary,
                         foregroundColor: Colors.white,
+                        minimumSize: const Size(double.infinity, 52),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
                       ),
                     ),
                     ),
@@ -1194,10 +1198,12 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
     required List<Widget> children,
   }) {
     return Card(
-      elevation: 2,
+      color: AppDesignSystem.industrialSurfaceElevated,
+      elevation: 0,
       margin: const EdgeInsets.only(bottom: 24),
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(8),
+        side: const BorderSide(color: AppDesignSystem.industrialBorder),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
@@ -1207,8 +1213,9 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
             Text(
               title,
               style: const TextStyle(
+                color: AppDesignSystem.industrialTextPrimary,
                 fontSize: 18,
-                fontWeight: FontWeight.bold,
+                fontWeight: FontWeight.w900,
               ),
             ),
             const SizedBox(height: 20),
@@ -1310,14 +1317,28 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
         return TextFormField(
           controller: controller,
           focusNode: focusNode,
+          style: const TextStyle(
+            color: AppDesignSystem.industrialTextPrimary,
+            fontWeight: FontWeight.w700,
+          ),
           decoration: InputDecoration(
             labelText: 'Objeto',
             hintText: 'Digite código ou nome',
             filled: true,
-            fillColor: Colors.white,
+            fillColor: AppDesignSystem.industrialHeader,
+            labelStyle: const TextStyle(
+              color: AppDesignSystem.industrialTextSecondary,
+              fontWeight: FontWeight.w700,
+            ),
+            hintStyle: const TextStyle(
+              color: AppDesignSystem.industrialTextMuted,
+            ),
+            suffixIconColor: AppDesignSystem.industrialTextSecondary,
             border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide.none,
+              borderRadius: BorderRadius.circular(8),
+              borderSide: const BorderSide(
+                color: AppDesignSystem.industrialBorder,
+              ),
             ),
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 16,
@@ -1342,8 +1363,9 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
         return Align(
           alignment: Alignment.topLeft,
           child: Material(
+            color: AppDesignSystem.industrialSurface,
             elevation: 4.0,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(8),
             child: SizedBox(
               width: 380,
               height: 250,
@@ -1355,11 +1377,16 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
                   return ListTile(
                     title: Text(
                       option.objeto,
-                      style: const TextStyle(fontWeight: FontWeight.bold),
+                      style: const TextStyle(
+                        color: AppDesignSystem.industrialTextPrimary,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                     subtitle: Text(
                       'Detalhe/Lote: ${option.detalhe}',
-                      style: TextStyle(color: Colors.grey.shade600),
+                      style: const TextStyle(
+                        color: AppDesignSystem.industrialTextSecondary,
+                      ),
                     ),
                     onTap: () => onSelected(option),
                   );
@@ -1394,10 +1421,16 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
           decoration: InputDecoration(
             labelText: 'Detalhe',
             filled: true,
-            fillColor: Colors.white,
+            fillColor: AppDesignSystem.industrialHeader,
+            labelStyle: const TextStyle(
+              color: AppDesignSystem.industrialTextSecondary,
+              fontWeight: FontWeight.w700,
+            ),
             border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide.none,
+              borderRadius: BorderRadius.circular(8),
+              borderSide: const BorderSide(
+                color: AppDesignSystem.industrialBorder,
+              ),
             ),
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 16,
@@ -1408,6 +1441,11 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
           child: DropdownButtonHideUnderline(
             child: DropdownButton<int>(
               isExpanded: true,
+              dropdownColor: AppDesignSystem.industrialSurface,
+              style: const TextStyle(
+                color: AppDesignSystem.industrialTextPrimary,
+                fontWeight: FontWeight.w700,
+              ),
               hint: const Text('Selecione o detalhe'),
               value: valorAtual,
               items: _detalhesDisponiveis
@@ -1457,16 +1495,26 @@ class _MapaProducaoScreenState extends State<MapaProducaoScreen> {
       controller: controller,
       keyboardType: keyboardType,
       readOnly: readOnly,
+      style: const TextStyle(
+        color: AppDesignSystem.industrialTextPrimary,
+        fontWeight: FontWeight.w700,
+      ),
       textInputAction: textInputAction,
       onFieldSubmitted: onFieldSubmitted,
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,
         filled: true,
-        fillColor: Colors.white,
+        fillColor: AppDesignSystem.industrialHeader,
+        labelStyle: const TextStyle(
+          color: AppDesignSystem.industrialTextSecondary,
+          fontWeight: FontWeight.w700,
+        ),
+        hintStyle: const TextStyle(color: AppDesignSystem.industrialTextMuted),
+        suffixIconColor: AppDesignSystem.industrialTextSecondary,
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide.none,
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(color: AppDesignSystem.industrialBorder),
         ),
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 16,

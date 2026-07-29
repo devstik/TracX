@@ -14,7 +14,15 @@ import '../services/etiquetas_service.dart';
 import '../services/padrao_caixa_service.dart';
 import '../services/zebra_printer_service.dart';
 
-enum _EtiquetaModelo { palete, caixa, ordens, operador, carretel, livre }
+enum _EtiquetaModelo {
+  palete,
+  caixa,
+  ordens,
+  pedidoEspecial,
+  operador,
+  carretel,
+  livre,
+}
 
 enum _OrdemSortMode { tocColor, percentDesc, percentAsc, releaseDate, quantity }
 
@@ -128,6 +136,159 @@ class _OrdemExpedicao {
 
   static DateTime? _asDate(dynamic value) {
     final raw = value?.toString().trim() ?? '';
+    if (raw.isEmpty) return null;
+    return DateTime.tryParse(raw);
+  }
+}
+
+class _PedidoEspecialPlanejamento {
+  const _PedidoEspecialPlanejamento({
+    required this.codigo,
+    required this.descricao,
+    required this.nomeArtigo,
+    required this.detalhe,
+    required this.ocDoCliente,
+    required this.cliente,
+    required this.vendedor,
+    required this.dtPedido,
+    required this.dtEntrega,
+    required this.dtLeadTime,
+    required this.diaEmAtrazo,
+    required this.estoque,
+    required this.qtReserva,
+    required this.maquina,
+    required this.nrOrdem,
+    required this.pedidoEspecial,
+    required this.staOrdem,
+    required this.dtPrevisao,
+    required this.cdVpd,
+    required this.cdObj,
+    required this.nivel,
+    required this.obs,
+  });
+
+  final String codigo;
+  final String descricao;
+  final String nomeArtigo;
+  final String detalhe;
+  final String ocDoCliente;
+  final String cliente;
+  final String vendedor;
+  final DateTime? dtPedido;
+  final DateTime? dtEntrega;
+  final DateTime? dtLeadTime;
+  final String diaEmAtrazo;
+  final double estoque;
+  final double qtReserva;
+  final String maquina;
+  final String nrOrdem;
+  final String pedidoEspecial;
+  final String staOrdem;
+  final DateTime? dtPrevisao;
+  final String cdVpd;
+  final String cdObj;
+  final int nivel;
+  final String obs;
+
+  factory _PedidoEspecialPlanejamento.fromJson(Map<String, dynamic> json) {
+    return _PedidoEspecialPlanejamento(
+      codigo: _asText(json['Codigo']),
+      descricao: _asText(json['Descricao']),
+      nomeArtigo: _asText(json['NomeArtigo']),
+      detalhe: _asText(json['Detalhe']),
+      ocDoCliente: _asText(json['OcDoCliente']),
+      cliente: _asText(json['Cliente']),
+      vendedor: _asText(json['Vendedor']),
+      dtPedido: _asDate(json['DtPedido']),
+      dtEntrega: _asDate(json['DtEntrega']),
+      dtLeadTime: _asDate(json['DtLeadTime']),
+      diaEmAtrazo: _asText(json['DiaEmAtrazo']),
+      estoque: _asDouble(json['Estoque']),
+      qtReserva: _asDouble(json['QtReserva']),
+      maquina: _asText(json['Maquina']),
+      nrOrdem: _asText(json['NrOrdem']),
+      pedidoEspecial: _asText(json['PedidoEspecial']),
+      staOrdem: _asText(json['StaOrdem']),
+      dtPrevisao: _asDate(json['DtPrevisao']),
+      cdVpd: _asText(json['CdVpd']),
+      cdObj: _asText(json['CdObj'] ?? json['Mae'] ?? json['Ordem2']),
+      nivel: _asInt(json['Nivel']),
+      obs: _asText(json['Obs']),
+    );
+  }
+
+  bool get ehPedidoEspecial =>
+      pedidoEspecial.trim().toLowerCase() == 'sim' ||
+      pedidoEspecial.trim() == '1';
+
+  bool get ehLinhaPedido => nivel == 3 && descricao.isNotEmpty;
+
+  String get titulo {
+    if (nomeArtigo.isNotEmpty) return nomeArtigo;
+    if (descricao.isNotEmpty && int.tryParse(descricao) == null) {
+      return descricao;
+    }
+    return 'Artigo sem descricao';
+  }
+
+  String get numeroPedido {
+    if (cdVpd.isNotEmpty) return cdVpd;
+    if (descricao.isNotEmpty && int.tryParse(descricao) != null) {
+      return descricao;
+    }
+    return codigo;
+  }
+
+  _PedidoEspecialPlanejamento copyWith({String? nomeArtigo}) {
+    return _PedidoEspecialPlanejamento(
+      codigo: codigo,
+      descricao: descricao,
+      nomeArtigo: nomeArtigo ?? this.nomeArtigo,
+      detalhe: detalhe,
+      ocDoCliente: ocDoCliente,
+      cliente: cliente,
+      vendedor: vendedor,
+      dtPedido: dtPedido,
+      dtEntrega: dtEntrega,
+      dtLeadTime: dtLeadTime,
+      diaEmAtrazo: diaEmAtrazo,
+      estoque: estoque,
+      qtReserva: qtReserva,
+      maquina: maquina,
+      nrOrdem: nrOrdem,
+      pedidoEspecial: pedidoEspecial,
+      staOrdem: staOrdem,
+      dtPrevisao: dtPrevisao,
+      cdVpd: cdVpd,
+      cdObj: cdObj,
+      nivel: nivel,
+      obs: obs,
+    );
+  }
+
+  static String _asText(dynamic value) => value?.toString().trim() ?? '';
+
+  static int _asInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.round();
+    return int.tryParse(_asText(value)) ?? 0;
+  }
+
+  static double _asDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    final raw = _asText(value);
+    if (raw.isEmpty) return 0;
+    var normalized = raw.replaceAll(RegExp(r'\s+'), '');
+    if (normalized.contains(',') && normalized.contains('.')) {
+      normalized = normalized.replaceAll('.', '').replaceAll(',', '.');
+    } else if (normalized.contains(',')) {
+      normalized = normalized.replaceAll(',', '.');
+    }
+    return double.tryParse(normalized) ?? 0;
+  }
+
+  static DateTime? _asDate(dynamic value) {
+    final raw = _asText(value);
     if (raw.isEmpty) return null;
     return DateTime.tryParse(raw);
   }
@@ -254,6 +415,22 @@ class EtiquetasPage extends StatefulWidget {
 }
 
 class _EtiquetasPageState extends State<EtiquetasPage> {
+  static const Color _bg = Color(0xFF020617);
+  static const Color _surface = Color(0xFF111827);
+  static const Color _surfaceElevated = Color(0xFF172033);
+  static const Color _fieldBg = Color(0xFF0F172A);
+  static const Color _border = Color(0xFF334155);
+  static const Color _primary = Color(0xFFD8B840);
+  static const Color _primaryPressed = Color(0xFFB89628);
+  static const Color _info = Color(0xFF38BDF8);
+  static const Color _success = Color(0xFF16A34A);
+  static const Color _successBg = Color(0xFF052E16);
+  static const Color _error = Color(0xFFDC2626);
+  static const Color _errorBg = Color(0xFF450A0A);
+  static const Color _textPrimary = Color(0xFFF8FAFC);
+  static const Color _textSecondary = Color(0xFFCBD5E1);
+  static const Color _textMuted = Color(0xFF94A3B8);
+
   static const List<Map<String, dynamic>> _fallbackPrinters = [
     {'nome': 'EtqCaixa/Carretel 2', 'ip': '168.190.30.206', 'porta': 9100},
     {'nome': 'EtqCaixa/Carretel', 'ip': '168.190.30.181', 'porta': 9100},
@@ -494,6 +671,31 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
   bool _settingOrdemBuscaText = false;
   int _ordemSkuSelecionado = 0;
 
+  // Pedido Especial
+  final TextEditingController _pedidoDataInicioController =
+      TextEditingController(text: _dateParam(DateTime.now()));
+  final TextEditingController _pedidoDataFimController =
+      TextEditingController(text: _dateParam(DateTime.now()));
+  final TextEditingController _pedidoNumeroController = TextEditingController();
+  final TextEditingController _pedidoCdObjController = TextEditingController();
+  final TextEditingController _pedidoNmObjController = TextEditingController();
+  final TextEditingController _pedidoClienteController =
+      TextEditingController();
+  final TextEditingController _pedidoSetorController = TextEditingController();
+  List<_PedidoEspecialPlanejamento> _pedidosEspeciais = [];
+  List<_PedidoEspecialPlanejamento> _pedidosEspeciaisPendentes = [];
+  List<Map<String, dynamic>> _pedidoArtigoOpcoes = [];
+  final Set<String> _pedidosEspeciaisExpandidos = {};
+  Timer? _pedidoArtigoBuscaDebounce;
+  Timer? _pedidoRenderTimer;
+  bool _buscandoPedidoArtigos = false;
+  bool _settingPedidoArtigoText = false;
+  int _pedidoCdObjSelecionado = 0;
+  bool _consultandoPedidosEspeciais = false;
+  bool _renderizandoPedidosEspeciais = false;
+  bool _somentePedidosPendentes = true;
+  bool _somentePedidosAtrasados = false;
+
   // Flags do artigo
   bool _naoImprimeLoteLinha = false;
   bool _detalheObrigatorio = false;
@@ -625,6 +827,10 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
         '168.190.30.206',
         '168.190.30.181',
       ],
+      _EtiquetaModelo.pedidoEspecial => const [
+        '168.190.30.206',
+        '168.190.30.181',
+      ],
       _EtiquetaModelo.operador || _EtiquetaModelo.livre => const [
         '168.190.30.172',
       ],
@@ -680,6 +886,15 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     _tipoCaixaController.dispose();
     _ordemBuscaDebounce?.cancel();
     _ordemSkuNameController.dispose();
+    _pedidoDataInicioController.dispose();
+    _pedidoDataFimController.dispose();
+    _pedidoNumeroController.dispose();
+    _pedidoCdObjController.dispose();
+    _pedidoNmObjController.dispose();
+    _pedidoClienteController.dispose();
+    _pedidoSetorController.dispose();
+    _pedidoArtigoBuscaDebounce?.cancel();
+    _pedidoRenderTimer?.cancel();
     _opQtdeController.dispose();
     _opFonteController.dispose();
     _buscaCarretelDebounce?.cancel();
@@ -1031,10 +1246,49 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     return texto;
   }
 
+  int _compararLotesNatural(Map<String, dynamic> a, Map<String, dynamic> b) {
+    final nomeA = (a['NmLot'] ?? '').toString().trim();
+    final nomeB = (b['NmLot'] ?? '').toString().trim();
+    final textoA = nomeA.isNotEmpty ? nomeA : _toIntPadrao(a['CdLot']).toString();
+    final textoB = nomeB.isNotEmpty ? nomeB : _toIntPadrao(b['CdLot']).toString();
+    final compare = _compararTextoNatural(textoA, textoB);
+    if (compare != 0) return compare;
+    return _toIntPadrao(a['CdLot']).compareTo(_toIntPadrao(b['CdLot']));
+  }
+
+  int _compararTextoNatural(String a, String b) {
+    final partesA = _partesTextoNatural(a);
+    final partesB = _partesTextoNatural(b);
+    final total = math.min(partesA.length, partesB.length);
+
+    for (var i = 0; i < total; i++) {
+      final pa = partesA[i];
+      final pb = partesB[i];
+      final na = int.tryParse(pa);
+      final nb = int.tryParse(pb);
+
+      final compare = na != null && nb != null
+          ? na.compareTo(nb)
+          : pa.toUpperCase().compareTo(pb.toUpperCase());
+      if (compare != 0) return compare;
+    }
+
+    return partesA.length.compareTo(partesB.length);
+  }
+
+  List<String> _partesTextoNatural(String value) {
+    return RegExp(r'\d+|\D+')
+        .allMatches(value.trim())
+        .map((match) => match.group(0) ?? '')
+        .where((part) => part.isNotEmpty)
+        .toList();
+  }
+
   Future<void> _carregarLotes(int cdObj) async {
     setState(() => _carregandoLotes = true);
     try {
       final lotes = await EtiquetasService.buscarArtigoLotes(cdObj);
+      lotes.sort(_compararLotesNatural);
       if (!mounted) return;
       final deveUsarDropdown =
           _temPreto || _detalheObrigatorio || lotes.isNotEmpty;
@@ -1095,12 +1349,13 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
           builder: (context, setModalState) {
             final termo = filtro.trim().toUpperCase();
             final filtrados = termo.isEmpty
-                ? _lotesList
+                ? List<Map<String, dynamic>>.of(_lotesList)
                 : _lotesList.where((lot) {
                     final cdLot = _toIntPadrao(lot['CdLot']).toString();
                     final nmLot = (lot['NmLot'] ?? '').toString().toUpperCase();
                     return cdLot.contains(termo) || nmLot.contains(termo);
-                  }).toList();
+                  }).toList()
+              ..sort(_compararLotesNatural);
 
             return SafeArea(
               child: SizedBox(
@@ -1171,7 +1426,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                                         : Icons.palette_rounded,
                                     color: selected
                                         ? const Color(0xFF22C55E)
-                                        : const Color(0xFF60A5FA),
+                                        : const Color(0xFFE8CE7A),
                                   ),
                                   title: Text(
                                     nmLot.isEmpty ? cdLot.toString() : nmLot,
@@ -1645,6 +1900,294 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     final dia = date.day.toString().padLeft(2, '0');
     final mes = date.month.toString().padLeft(2, '0');
     return '$dia/$mes/${date.year}';
+  }
+
+  static String _dateParam(DateTime date) {
+    final mes = date.month.toString().padLeft(2, '0');
+    final dia = date.day.toString().padLeft(2, '0');
+    return '${date.year}$mes$dia';
+  }
+
+  String _dateLabelFromParam(String value) {
+    final date = _parseDateParam(value);
+    return date == null ? value : _formatarDataOrdem(date);
+  }
+
+  DateTime? _parseDateParam(String value) {
+    final raw = value.trim();
+    if (raw.isEmpty) return null;
+    final compact = RegExp(r'^(\d{4})(\d{2})(\d{2})$').firstMatch(raw);
+    if (compact != null) {
+      final year = int.tryParse(compact.group(1)!);
+      final month = int.tryParse(compact.group(2)!);
+      final day = int.tryParse(compact.group(3)!);
+      if (year != null && month != null && day != null) {
+        return DateTime.tryParse(
+          '${year.toString().padLeft(4, '0')}-'
+          '${month.toString().padLeft(2, '0')}-'
+          '${day.toString().padLeft(2, '0')}',
+        );
+      }
+    }
+
+    final br = RegExp(r'^(\d{2})/(\d{2})/(\d{4})$').firstMatch(raw);
+    if (br != null) {
+      return DateTime.tryParse('${br.group(3)}-${br.group(2)}-${br.group(1)}');
+    }
+
+    return DateTime.tryParse(raw);
+  }
+
+  Future<void> _selecionarDataPedidoEspecial(
+    TextEditingController controller,
+  ) async {
+    final atual = _parseDateParam(controller.text) ?? DateTime.now();
+    final selecionada = await showDatePicker(
+      context: context,
+      initialDate: atual,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(DateTime.now().year + 3, 12, 31),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.dark(
+              primary: _primary,
+              onPrimary: _bg,
+              surface: _surfaceElevated,
+              onSurface: _textPrimary,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (selecionada == null) return;
+    controller.text = _dateParam(selecionada);
+  }
+
+  Future<void> _consultarPedidosEspeciais() async {
+    FocusScope.of(context).unfocus();
+    final inicioDate = _parseDateParam(_pedidoDataInicioController.text);
+    final fimDate = _parseDateParam(_pedidoDataFimController.text);
+
+    if (inicioDate == null || fimDate == null) {
+      _showSnackBar(
+        'Informe Data inicial e Data final no formato correto.',
+        isError: true,
+      );
+      return;
+    }
+
+    final dataInicio = _dateParam(inicioDate);
+    final dataFim = _dateParam(fimDate);
+
+    setState(() {
+      _consultandoPedidosEspeciais = true;
+      _renderizandoPedidosEspeciais = false;
+      _erro = null;
+      _pedidosEspeciais = [];
+      _pedidosEspeciaisPendentes = [];
+      _pedidoArtigoOpcoes = [];
+      _pedidosEspeciaisExpandidos.clear();
+    });
+
+    try {
+      final data = await EtiquetasService.consultarPlanejamentoTinturaria(
+        dataInicio: dataInicio,
+        dataFim: dataFim,
+        cdVpd: _pedidoNumeroController.text,
+        cdObj: _pedidoCdObjSelecionado > 0
+            ? _pedidoCdObjSelecionado.toString()
+            : _pedidoCdObjController.text,
+        nmObj: _pedidoNmObjController.text,
+        cdCli: _pedidoClienteController.text,
+        cdObjLin: _pedidoSetorController.text,
+        somenteAtrasados: _somentePedidosAtrasados,
+        somentePendentes: _somentePedidosPendentes,
+      );
+      if (!mounted) return;
+      final linhas = data.map(_PedidoEspecialPlanejamento.fromJson).toList();
+      final artigosPorCodigo = <String, String>{
+        for (final item in linhas)
+          if (item.nivel == 2 &&
+              item.codigo.isNotEmpty &&
+              item.descricao.isNotEmpty)
+            item.codigo: item.descricao,
+      };
+      final itens = linhas
+          .where((item) => item.ehLinhaPedido)
+          .map((item) {
+            final nomeArtigo = artigosPorCodigo[item.cdObj] ?? item.nomeArtigo;
+            return item.copyWith(nomeArtigo: nomeArtigo);
+          })
+          .toList()
+        ..sort(_compararPedidosEspeciais);
+
+      if (itens.isEmpty) {
+        setState(() {
+          _consultandoPedidosEspeciais = false;
+          _renderizandoPedidosEspeciais = false;
+        });
+        _showSnackBar('Nenhum pedido encontrado para os filtros.', isError: true);
+      } else {
+        _iniciarRenderizacaoPedidosEspeciais(itens);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _erro = e.toString().replaceFirst('Exception: ', '');
+        _consultandoPedidosEspeciais = false;
+        _renderizandoPedidosEspeciais = false;
+      });
+    }
+  }
+
+  void _iniciarRenderizacaoPedidosEspeciais(
+    List<_PedidoEspecialPlanejamento> itens,
+  ) {
+    _pedidoRenderTimer?.cancel();
+    setState(() {
+      _consultandoPedidosEspeciais = false;
+      _renderizandoPedidosEspeciais = true;
+      _pedidosEspeciaisPendentes = List.of(itens);
+      _pedidosEspeciais = [];
+      _pedidosEspeciaisExpandidos.clear();
+    });
+    _adicionarLotePedidosEspeciais();
+  }
+
+  void _adicionarLotePedidosEspeciais() {
+    if (!mounted) return;
+    const lote = 18;
+    final proximos = _pedidosEspeciaisPendentes.take(lote).toList();
+    if (proximos.isEmpty) {
+      setState(() => _renderizandoPedidosEspeciais = false);
+      return;
+    }
+
+    setState(() {
+      _pedidosEspeciais.addAll(proximos);
+      _pedidosEspeciaisPendentes.removeRange(0, proximos.length);
+      if (_pedidosEspeciaisExpandidos.length < 8) {
+        final faltam = 8 - _pedidosEspeciaisExpandidos.length;
+        _pedidosEspeciaisExpandidos.addAll(
+          proximos.take(faltam).map(_pedidoEspecialKey),
+        );
+      }
+    });
+
+    _pedidoRenderTimer = Timer(
+      const Duration(milliseconds: 45),
+      _adicionarLotePedidosEspeciais,
+    );
+  }
+
+  void _onPedidoArtigoChanged(String value) {
+    if (_settingPedidoArtigoText) return;
+    _pedidoArtigoBuscaDebounce?.cancel();
+
+    if (_pedidoCdObjSelecionado > 0) {
+      setState(() {
+        _pedidoCdObjSelecionado = 0;
+        _pedidoCdObjController.clear();
+        _pedidoArtigoOpcoes = [];
+      });
+    }
+
+    final q = value.trim();
+    if (q.length < 2) {
+      setState(() => _pedidoArtigoOpcoes = []);
+      return;
+    }
+
+    _pedidoArtigoBuscaDebounce = Timer(const Duration(milliseconds: 350), () {
+      if (mounted) _pesquisarArtigosPedidoEspecial(q);
+    });
+  }
+
+  Future<void> _pesquisarArtigosPedidoEspecial(String q) async {
+    setState(() => _buscandoPedidoArtigos = true);
+    try {
+      final opcoes = await EtiquetasService.buscarArtigosPorNome(q);
+      if (!mounted) return;
+      setState(() {
+        _pedidoArtigoOpcoes = opcoes;
+        _buscandoPedidoArtigos = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _pedidoArtigoOpcoes = [];
+        _buscandoPedidoArtigos = false;
+      });
+    }
+  }
+
+  void _selecionarArtigoPedidoEspecial(Map<String, dynamic> artigo) {
+    final cdObj = _toIntPadrao(artigo['CdObj']);
+    final nmObj = (artigo['NmObj'] ?? '').toString().trim();
+    _settingPedidoArtigoText = true;
+    _pedidoNmObjController.text = nmObj.isEmpty ? cdObj.toString() : nmObj;
+    _settingPedidoArtigoText = false;
+    setState(() {
+      _pedidoCdObjSelecionado = cdObj;
+      _pedidoCdObjController.text = cdObj > 0 ? cdObj.toString() : '';
+      _pedidoArtigoOpcoes = [];
+    });
+  }
+
+  int _compararPedidosEspeciais(
+    _PedidoEspecialPlanejamento a,
+    _PedidoEspecialPlanejamento b,
+  ) {
+    final especialCompare =
+        (b.ehPedidoEspecial ? 1 : 0).compareTo(a.ehPedidoEspecial ? 1 : 0);
+    if (especialCompare != 0) return especialCompare;
+    final entregaA = a.dtEntrega ?? DateTime(9999, 12, 31);
+    final entregaB = b.dtEntrega ?? DateTime(9999, 12, 31);
+    final entregaCompare = entregaA.compareTo(entregaB);
+    if (entregaCompare != 0) return entregaCompare;
+    return a.titulo.compareTo(b.titulo);
+  }
+
+  String _pedidoEspecialKey(_PedidoEspecialPlanejamento item) {
+    final base = item.nrOrdem.isNotEmpty
+        ? item.nrOrdem
+        : '${item.cdVpd}-${item.cdObj}-${item.codigo}';
+    return base;
+  }
+
+  void _togglePedidoEspecialCard(_PedidoEspecialPlanejamento item) {
+    final key = _pedidoEspecialKey(item);
+    setState(() {
+      if (_pedidosEspeciaisExpandidos.contains(key)) {
+        _pedidosEspeciaisExpandidos.remove(key);
+      } else {
+        _pedidosEspeciaisExpandidos.add(key);
+      }
+    });
+  }
+
+  void _limparPedidosEspeciais() {
+    final hoje = _dateParam(DateTime.now());
+    setState(() {
+      _pedidoDataInicioController.text = hoje;
+      _pedidoDataFimController.text = hoje;
+      _pedidoNumeroController.clear();
+      _pedidoCdObjController.clear();
+      _pedidoNmObjController.clear();
+      _pedidoClienteController.clear();
+      _pedidoSetorController.clear();
+      _pedidoCdObjSelecionado = 0;
+      _pedidoArtigoOpcoes = [];
+      _pedidosEspeciaisPendentes = [];
+      _renderizandoPedidosEspeciais = false;
+      _somentePedidosPendentes = true;
+      _somentePedidosAtrasados = false;
+      _pedidosEspeciais = [];
+      _pedidosEspeciaisExpandidos.clear();
+      _erro = null;
+    });
   }
 
   int _compararOrdensToc(_OrdemExpedicao a, _OrdemExpedicao b) {
@@ -2363,10 +2906,30 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(message),
-        backgroundColor: isError
-            ? const Color(0xFFB91C1C)
-            : const Color(0xFF047857),
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(16),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        backgroundColor: isError ? _errorBg : _successBg,
+        content: Row(
+          children: [
+            Icon(
+              isError
+                  ? Icons.error_outline_rounded
+                  : Icons.check_circle_outline_rounded,
+              color: isError ? const Color(0xFFFCA5A5) : const Color(0xFF86EFAC),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                message,
+                style: const TextStyle(
+                  color: _textPrimary,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -2380,25 +2943,33 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     return Theme(
       data: Theme.of(context).copyWith(
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF2563EB),
+          seedColor: _primary,
           brightness: Brightness.dark,
         ),
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
-          fillColor: const Color(0xFF0F172A),
-          labelStyle: const TextStyle(color: Color(0xFFCBD5E1)),
+          fillColor: _fieldBg,
+          labelStyle: const TextStyle(
+            color: _textSecondary,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
           hintStyle: const TextStyle(color: Color(0xFF64748B)),
-          helperStyle: const TextStyle(color: Color(0xFF94A3B8)),
-          prefixIconColor: const Color(0xFFCBD5E1),
-          suffixIconColor: const Color(0xFFCBD5E1),
+          helperStyle: const TextStyle(color: _textMuted),
+          prefixIconColor: _textSecondary,
+          suffixIconColor: _textSecondary,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 14,
+            vertical: 16,
+          ),
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: Color(0xFF334155)),
+            borderSide: const BorderSide(color: _border),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: Color(0xFF60A5FA), width: 2),
+            borderSide: const BorderSide(color: _info, width: 2),
           ),
           disabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
@@ -2407,24 +2978,34 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
         ),
         filledButtonTheme: FilledButtonThemeData(
           style: FilledButton.styleFrom(
-            backgroundColor: const Color(0xFF2563EB),
-            foregroundColor: Colors.white,
-            disabledBackgroundColor: const Color(0xFF334155),
-            disabledForegroundColor: const Color(0xFF94A3B8),
+            minimumSize: const Size(48, 48),
+            backgroundColor: _primary,
+            foregroundColor: _bg,
+            disabledBackgroundColor: _border,
+            disabledForegroundColor: _textMuted,
+            textStyle: const TextStyle(fontWeight: FontWeight.w900),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
           ),
         ),
         outlinedButtonTheme: OutlinedButtonThemeData(
           style: OutlinedButton.styleFrom(
-            foregroundColor: const Color(0xFF93C5FD),
-            side: const BorderSide(color: Color(0xFF3B82F6)),
+            minimumSize: const Size(48, 48),
+            foregroundColor: const Color(0xFFE8CE7A),
+            side: const BorderSide(color: _primary),
+            textStyle: const TextStyle(fontWeight: FontWeight.w800),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
           ),
         ),
         textButtonTheme: TextButtonThemeData(
-          style: TextButton.styleFrom(foregroundColor: const Color(0xFF93C5FD)),
+          style: TextButton.styleFrom(foregroundColor: const Color(0xFFE8CE7A)),
         ),
       ),
       child: Scaffold(
-        backgroundColor: const Color(0xFF050A14),
+        backgroundColor: _bg,
         body: SafeArea(
           child: SingleChildScrollView(
             padding: _pagePadding(context),
@@ -2442,6 +3023,8 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                       _buildCaixaPanel()
                     else if (_modelo == _EtiquetaModelo.ordens)
                       _buildOrdensPanel()
+                    else if (_modelo == _EtiquetaModelo.pedidoEspecial)
+                      _buildPedidoEspecialPanel()
                     else if (_modelo == _EtiquetaModelo.carretel)
                       _buildCarretelPanel()
                     else if (_modelo == _EtiquetaModelo.operador)
@@ -2483,9 +3066,16 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
 
   BoxDecoration _panelDecoration() {
     return BoxDecoration(
-      color: const Color(0xFF101B34),
+      color: _surfaceElevated,
       borderRadius: BorderRadius.circular(8),
-      border: Border.all(color: const Color(0x33FFFFFF)),
+      border: Border.all(color: _border),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: 0.22),
+          blurRadius: 18,
+          offset: const Offset(0, 10),
+        ),
+      ],
     );
   }
 
@@ -2518,9 +3108,9 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
             'Etiquetas',
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              color: Colors.white,
+              color: _textPrimary,
               fontSize: 30,
-              fontWeight: FontWeight.w800,
+              fontWeight: FontWeight.w900,
             ),
           ),
         ),
@@ -2530,45 +3120,74 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
 
   Widget _buildModelSelector() {
     return Container(
-      padding: const EdgeInsets.all(5),
+      padding: const EdgeInsets.all(6),
       decoration: BoxDecoration(
-        color: const Color(0xFF0B1220),
+        color: _fieldBg,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFF1E2A44)),
+        border: Border.all(color: _border),
       ),
-      child: Row(
-        children: [
-          _modelOption(
-            modelo: _EtiquetaModelo.caixa,
-            icon: Icons.qr_code_2_rounded,
-            label: 'Caixa',
-            subtitle: '',
-          ),
-          _modelOption(
-            modelo: _EtiquetaModelo.carretel,
-            icon: Icons.donut_large_rounded,
-            label: 'Carretel',
-            subtitle: '',
-          ),
-          _modelOption(
-            modelo: _EtiquetaModelo.ordens,
-            icon: Icons.assignment_rounded,
-            label: 'Ordens',
-            subtitle: '',
-          ),
-          _modelOption(
-            modelo: _EtiquetaModelo.operador,
-            icon: Icons.badge_rounded,
-            label: 'Operador',
-            subtitle: '',
-          ),
-          _modelOption(
-            modelo: _EtiquetaModelo.livre,
-            icon: Icons.dashboard_customize_rounded,
-            label: 'Livre',
-            subtitle: '',
-          ),
-        ],
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final options = [
+            _modelOption(
+              modelo: _EtiquetaModelo.caixa,
+              icon: Icons.qr_code_2_rounded,
+              label: 'Caixa',
+              subtitle: '',
+            ),
+            _modelOption(
+              modelo: _EtiquetaModelo.carretel,
+              icon: Icons.donut_large_rounded,
+              label: 'Carretel',
+              subtitle: '',
+            ),
+            _modelOption(
+              modelo: _EtiquetaModelo.ordens,
+              icon: Icons.assignment_rounded,
+              label: 'Ordens',
+              subtitle: '',
+            ),
+            _modelOption(
+              modelo: _EtiquetaModelo.pedidoEspecial,
+              icon: Icons.star_rounded,
+              label: 'Pedido Especial',
+              subtitle: '',
+            ),
+            _modelOption(
+              modelo: _EtiquetaModelo.operador,
+              icon: Icons.badge_rounded,
+              label: 'Operador',
+              subtitle: '',
+            ),
+            _modelOption(
+              modelo: _EtiquetaModelo.livre,
+              icon: Icons.dashboard_customize_rounded,
+              label: 'Livre',
+              subtitle: '',
+            ),
+          ];
+          final width = constraints.maxWidth;
+          final columns = width < 430
+              ? 2
+              : width < 760
+              ? 3
+              : 6;
+          final aspectRatio = width < 430
+              ? 1.62
+              : width < 760
+              ? 1.9
+              : 2.55;
+
+          return GridView.count(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisCount: columns,
+            crossAxisSpacing: 8,
+            mainAxisSpacing: 8,
+            childAspectRatio: aspectRatio,
+            children: options,
+          );
+        },
       ),
     );
   }
@@ -2580,39 +3199,37 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     required String subtitle,
   }) {
     final selected = _modelo == modelo;
-    return Expanded(
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOut,
-        decoration: BoxDecoration(
-          color: selected ? const Color(0xFF2563EB) : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
-          boxShadow: selected
-              ? [
-                  BoxShadow(
-                    color: const Color(0xFF2563EB).withValues(alpha: 0.28),
-                    blurRadius: 14,
-                    offset: const Offset(0, 6),
-                  ),
-                ]
-              : null,
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOut,
+      decoration: BoxDecoration(
+        color: selected ? _primary : Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: selected ? const Color(0xFFE8CE7A) : Colors.transparent,
         ),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(8),
-          onTap: () => _selecionarModelo(modelo),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  icon,
-                  color: selected
-                      ? Colors.white
-                      : const Color(0xFF94A3B8),
+        boxShadow: selected
+            ? [
+                BoxShadow(
+                  color: _primary.withValues(alpha: 0.24),
+                  blurRadius: 14,
+                  offset: const Offset(0, 6),
                 ),
-                const SizedBox(height: 6),
-                FittedBox(
+              ]
+            : null,
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () => _selecionarModelo(modelo),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, color: selected ? _bg : _textMuted, size: 24),
+              const SizedBox(height: 6),
+              Flexible(
+                child: FittedBox(
                   fit: BoxFit.scaleDown,
                   child: Text(
                     label,
@@ -2620,16 +3237,14 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                     maxLines: 1,
                     softWrap: false,
                     style: TextStyle(
-                       color: selected
-                           ? Colors.white
-                           : const Color(0xFFCBD5E1),
+                      color: selected ? _bg : _textSecondary,
                       fontSize: 15,
                       fontWeight: FontWeight.w900,
                     ),
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -2901,7 +3516,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 30),
               child: Center(
-                child: CircularProgressIndicator(color: Color(0xFF60A5FA)),
+                child: CircularProgressIndicator(color: Color(0xFFE8CE7A)),
               ),
             )
           else if (_ordensExpedicao.isEmpty)
@@ -3292,6 +3907,726 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
             ),
           ],
         ),
+      )
+    );
+  }
+
+  Widget _buildPedidoEspecialPanel() {
+    final especiais =
+        _pedidosEspeciais.where((item) => item.ehPedidoEspecial).length;
+    final totalQtd = _pedidosEspeciais.fold<double>(
+      0,
+      (total, item) => total + item.estoque,
+    );
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: _panelDecoration(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF451A03),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: _primary),
+                ),
+                child: const Icon(Icons.star_rounded, color: _primary),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Pedido Especial',
+                      style: TextStyle(
+                        color: _textPrimary,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Consulta do planejamento da tinturaria por necessidade.',
+                      style: TextStyle(
+                        color: _textMuted,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          _sectionLabel('Filtros obrigatorios'),
+          const SizedBox(height: 10),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final narrow = _isNarrow(constraints);
+              final dataInicio = _buildDateFieldPedidoEspecial(
+                controller: _pedidoDataInicioController,
+                label: 'Data inicial *',
+              );
+              final dataFim = _buildDateFieldPedidoEspecial(
+                controller: _pedidoDataFimController,
+                label: 'Data final *',
+              );
+              final consultarButton = SizedBox(
+                height: 56,
+                width: narrow ? double.infinity : 170,
+                child: FilledButton.icon(
+                  onPressed: _consultandoPedidosEspeciais
+                      ? null
+                      : _consultarPedidosEspeciais,
+                  icon: _consultandoPedidosEspeciais
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: _bg,
+                          ),
+                        )
+                      : const Icon(Icons.search_rounded),
+                  label: Text(
+                    _consultandoPedidosEspeciais
+                        ? 'Consultando'
+                        : 'Consultar',
+                  ),
+                ),
+              );
+
+              if (narrow) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    dataInicio,
+                    const SizedBox(height: 12),
+                    dataFim,
+                    const SizedBox(height: 12),
+                    consultarButton,
+                  ],
+                );
+              }
+
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: dataInicio),
+                  const SizedBox(width: 12),
+                  Expanded(child: dataFim),
+                  const SizedBox(width: 12),
+                  consultarButton,
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: 18),
+          _sectionLabel('Filtros opcionais'),
+          const SizedBox(height: 10),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final narrow = _isNarrow(constraints);
+              final pedidoField = _campo(
+                controller: _pedidoNumeroController,
+                label: 'Pedido',
+                hint: 'Codigo do pedido',
+                icon: Icons.receipt_long_rounded,
+                numeric: true,
+                enabled: !_consultandoPedidosEspeciais,
+                onSubmit: _consultarPedidosEspeciais,
+              );
+              final codigoField = _campo(
+                controller: _pedidoCdObjController,
+                label: 'Codigo do artigo',
+                hint: 'CdObj',
+                icon: Icons.qr_code_2_rounded,
+                numeric: true,
+                enabled: !_consultandoPedidosEspeciais,
+                onSubmit: _consultarPedidosEspeciais,
+              );
+              final artigoField = _campo(
+                controller: _pedidoNmObjController,
+                label: 'Nome do artigo',
+                hint: 'Parte do nome do material',
+                icon: Icons.inventory_2_rounded,
+                enabled: !_consultandoPedidosEspeciais,
+                onChanged: _onPedidoArtigoChanged,
+                onSubmit: _consultarPedidosEspeciais,
+                suffix: _buscandoPedidoArtigos
+                    ? const Padding(
+                        padding: EdgeInsets.all(14),
+                        child: SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      )
+                    : _pedidoCdObjSelecionado > 0
+                    ? const Icon(
+                        Icons.check_circle_rounded,
+                        color: Color(0xFF16A34A),
+                      )
+                    : null,
+              );
+              final clienteField = _campo(
+                controller: _pedidoClienteController,
+                label: 'Cliente',
+                hint: 'Codigo do cliente',
+                icon: Icons.person_rounded,
+                numeric: true,
+                enabled: !_consultandoPedidosEspeciais,
+                onSubmit: _consultarPedidosEspeciais,
+              );
+              final setorField = _campo(
+                controller: _pedidoSetorController,
+                label: 'Setor',
+                hint: 'Codigo da linha',
+                icon: Icons.factory_rounded,
+                numeric: true,
+                enabled: !_consultandoPedidosEspeciais,
+                onSubmit: _consultarPedidosEspeciais,
+              );
+
+              if (narrow) {
+                return Column(
+                  children: [
+                    pedidoField,
+                    const SizedBox(height: 12),
+                    codigoField,
+                    const SizedBox(height: 12),
+                    artigoField,
+                    const SizedBox(height: 12),
+                    clienteField,
+                    const SizedBox(height: 12),
+                    setorField,
+                  ],
+                );
+              }
+
+              return Column(
+                children: [
+                  Row(
+                    children: [
+                      Expanded(child: pedidoField),
+                      const SizedBox(width: 12),
+                      Expanded(child: codigoField),
+                      const SizedBox(width: 12),
+                      Expanded(flex: 2, child: artigoField),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(child: clienteField),
+                      const SizedBox(width: 12),
+                      Expanded(child: setorField),
+                    ],
+                  ),
+                ],
+              );
+            },
+          ),
+          if (_pedidoArtigoOpcoes.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            _buildPedidoEspecialAutocomplete(),
+          ],
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              FilterChip(
+                selected: _somentePedidosPendentes,
+                label: const Text('Somente pendentes'),
+                avatar: const Icon(Icons.pending_actions_rounded, size: 18),
+                onSelected: _consultandoPedidosEspeciais
+                    ? null
+                    : (value) => setState(() {
+                          _somentePedidosPendentes = value;
+                        }),
+              ),
+              FilterChip(
+                selected: _somentePedidosAtrasados,
+                label: const Text('Somente atrasados'),
+                avatar: const Icon(Icons.warning_amber_rounded, size: 18),
+                onSelected: _consultandoPedidosEspeciais
+                    ? null
+                    : (value) => setState(() {
+                          _somentePedidosAtrasados = value;
+                        }),
+              ),
+              OutlinedButton.icon(
+                onPressed:
+                    _consultandoPedidosEspeciais ? null : _limparPedidosEspeciais,
+                icon: const Icon(Icons.cleaning_services_rounded),
+                label: const Text('Limpar'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          if (_pedidosEspeciais.isNotEmpty) ...[
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _DarkMetricPill(
+                  label: 'Registros',
+                  value: _pedidosEspeciais.length.toString(),
+                  icon: Icons.list_alt_rounded,
+                ),
+                _DarkMetricPill(
+                  label: 'Pedidos especiais',
+                  value: especiais.toString(),
+                  icon: Icons.star_rounded,
+                  accent: _primary,
+                ),
+                _DarkMetricPill(
+                  label: 'Quantidade',
+                  value: _formatarNumeroOrdens(totalQtd),
+                  icon: Icons.straighten_rounded,
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+          ],
+          if (_consultandoPedidosEspeciais)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 30),
+              child: Center(
+                child: CircularProgressIndicator(color: Color(0xFFE8CE7A)),
+              ),
+            )
+          else if (_pedidosEspeciais.isEmpty)
+            _buildPedidoEspecialEmptyState()
+          else ...[
+            ListView.separated(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: _pedidosEspeciais.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 10),
+                itemBuilder: (context, index) =>
+                    _buildPedidoEspecialCard(_pedidosEspeciais[index]),
+              ),
+            if (_renderizandoPedidosEspeciais) ...[
+              const SizedBox(height: 14),
+              _buildPedidoEspecialLoadingMore(),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPedidoEspecialAutocomplete() {
+    return Container(
+      constraints: const BoxConstraints(maxHeight: 260),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0F172A),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFF334155)),
+      ),
+      child: ListView.separated(
+        shrinkWrap: true,
+        padding: EdgeInsets.zero,
+        itemCount: _pedidoArtigoOpcoes.length,
+        separatorBuilder: (_, __) =>
+            const Divider(height: 1, indent: 16, color: Color(0xFF1E293B)),
+        itemBuilder: (context, index) {
+          final artigo = _pedidoArtigoOpcoes[index];
+          final cdObj = _toIntPadrao(artigo['CdObj']);
+          final nmObj = (artigo['NmObj'] ?? '').toString().trim();
+          return InkWell(
+            onTap: () => _selecionarArtigoPedidoEspecial(artigo),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF451A03),
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: _primary),
+                    ),
+                    child: Text(
+                      cdObj.toString(),
+                      style: const TextStyle(
+                        color: Color(0xFFE8CE7A),
+                        fontWeight: FontWeight.w900,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      nmObj.isEmpty ? 'Artigo sem descricao' : nmObj,
+                      style: const TextStyle(
+                        color: Color(0xFFF8FAFC),
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  const Icon(
+                    Icons.keyboard_arrow_right_rounded,
+                    color: Color(0xFF94A3B8),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildPedidoEspecialLoadingMore() {
+    final restante = _pedidosEspeciaisPendentes.length;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0F172A),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFF334155)),
+      ),
+      child: Row(
+        children: [
+          const SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: Color(0xFFE8CE7A),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              restante > 0
+                  ? 'Carregando mais registros na tela... faltam $restante'
+                  : 'Finalizando exibicao dos registros...',
+              style: const TextStyle(
+                color: Color(0xFFCBD5E1),
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDateFieldPedidoEspecial({
+    required TextEditingController controller,
+    required String label,
+  }) {
+    final enabled = !_consultandoPedidosEspeciais;
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: enabled ? () => _selecionarDataPedidoEspecial(controller) : null,
+      child: InputDecorator(
+        decoration: InputDecoration(
+          labelText: label,
+          prefixIcon: const Icon(Icons.calendar_month_rounded),
+          suffixIcon: const Icon(Icons.expand_more_rounded),
+          border: const OutlineInputBorder(),
+          enabled: enabled,
+        ),
+        child: Text(
+          _dateLabelFromParam(controller.text),
+          style: TextStyle(
+            color: enabled ? _textPrimary : _textMuted,
+            fontSize: 15,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPedidoEspecialEmptyState() {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0F172A),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFF334155)),
+      ),
+      child: const Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.info_outline_rounded, color: _primary),
+          SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Preencha as datas de necessidade e clique em Consultar. Esta aba nao carrega dados automaticamente.',
+              style: TextStyle(
+                color: Color(0xFFCBD5E1),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPedidoEspecialCard(_PedidoEspecialPlanejamento item) {
+    final expanded = _pedidosEspeciaisExpandidos.contains(
+      _pedidoEspecialKey(item),
+    );
+    final special = item.ehPedidoEspecial;
+    final badgeBg = special ? const Color(0xFF7F1D1D) : const Color(0xFF0B1220);
+    final badgeBorder = special ? const Color(0xFFF87171) : _border;
+    final badgeText = special ? 'PEDIDO ESPECIAL' : 'Pedido normal';
+    final pedidoNumero = item.numeroPedido.isEmpty ? '-' : item.numeroPedido;
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: () => _togglePedidoEspecialCard(item),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: EdgeInsets.all(expanded ? 16 : 12),
+        decoration: BoxDecoration(
+          color: expanded ? const Color(0xFF0F172A) : const Color(0xFF0B1220),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: special ? _primary : _border),
+          boxShadow: expanded && special
+              ? [
+                  BoxShadow(
+                    color: _primary.withValues(alpha: 0.18),
+                    blurRadius: 18,
+                    offset: const Offset(0, 8),
+                  ),
+                ]
+              : null,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Container(
+                  width: expanded ? 44 : 36,
+                  height: expanded ? 44 : 36,
+                  decoration: BoxDecoration(
+                    color: special ? _primary : const Color(0xFF1E293B),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    special ? Icons.star_rounded : Icons.receipt_long_rounded,
+                    color: special ? _bg : _textSecondary,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.titulo,
+                        maxLines: expanded ? 2 : 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: _textPrimary,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _DarkTag(
+                            label: item.cdObj.isEmpty
+                                ? 'Artigo -'
+                                : 'Codigo ${item.cdObj}',
+                            icon: Icons.qr_code_2_rounded,
+                          ),
+                          _DarkTag(
+                            label: 'Pedido nº $pedidoNumero',
+                            icon: Icons.receipt_long_rounded,
+                          ),
+                          if (item.nrOrdem.isNotEmpty)
+                            _DarkTag(
+                              label: 'Ordem ${item.nrOrdem}',
+                              icon: Icons.assignment_rounded,
+                            ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: badgeBg,
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(color: badgeBorder),
+                            ),
+                            child: Text(
+                              badgeText,
+                              style: TextStyle(
+                                color: special
+                                    ? const Color(0xFFFEE2E2)
+                                    : _textSecondary,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    const Text(
+                      'Pedido nº',
+                      style: TextStyle(
+                        color: _textMuted,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 11,
+                      ),
+                    ),
+                    Text(
+                      pedidoNumero,
+                      style: const TextStyle(
+                        color: Color(0xFFE8CE7A),
+                        fontSize: 21,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    Icon(
+                      expanded
+                          ? Icons.keyboard_arrow_up_rounded
+                          : Icons.keyboard_arrow_down_rounded,
+                      color: _textMuted,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            AnimatedCrossFade(
+              firstChild: const SizedBox.shrink(),
+              secondChild: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SizedBox(height: 14),
+                  const Divider(height: 1, color: Color(0xFF1E293B)),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _DarkMetricPill(
+                        label: 'Pedido',
+                        value: pedidoNumero,
+                        icon: Icons.receipt_long_rounded,
+                      ),
+                      _DarkMetricPill(
+                        label: 'Quantidade',
+                        value: _formatarNumeroOrdens(item.estoque),
+                        icon: Icons.straighten_rounded,
+                        accent: special ? _primary : _info,
+                      ),
+                      _DarkMetricPill(
+                        label: 'Reserva',
+                        value: _formatarNumeroOrdens(item.qtReserva),
+                        icon: Icons.inventory_rounded,
+                      ),
+                      _DarkMetricPill(
+                        label: 'Entrega',
+                        value: _formatarDataOrdem(item.dtEntrega),
+                        icon: Icons.event_rounded,
+                      ),
+                      _DarkMetricPill(
+                        label: 'Data pedido',
+                        value: _formatarDataOrdem(item.dtPedido),
+                        icon: Icons.calendar_month_rounded,
+                      ),
+                      _DarkMetricPill(
+                        label: 'Lead time',
+                        value: _formatarDataOrdem(item.dtLeadTime),
+                        icon: Icons.timelapse_rounded,
+                      ),
+                      _DarkMetricPill(
+                        label: 'Previsao',
+                        value: _formatarDataOrdem(item.dtPrevisao),
+                        icon: Icons.event_available_rounded,
+                      ),
+                      _DarkMetricPill(
+                        label: 'Status',
+                        value: item.staOrdem.isEmpty ? '-' : item.staOrdem,
+                        icon: Icons.flag_rounded,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      if (item.cliente.isNotEmpty)
+                        _DarkTag(
+                          label: 'Cliente: ${item.cliente}',
+                          icon: Icons.person_rounded,
+                        ),
+                      if (item.vendedor.isNotEmpty)
+                        _DarkTag(
+                          label: 'Vendedor: ${item.vendedor}',
+                          icon: Icons.badge_rounded,
+                        ),
+                      if (item.detalhe.isNotEmpty)
+                        _DarkTag(
+                          label: 'Lote ${item.detalhe}',
+                          icon: Icons.palette_rounded,
+                        ),
+                      if (item.maquina.isNotEmpty)
+                        _DarkTag(
+                          label: item.maquina,
+                          icon: Icons.precision_manufacturing_rounded,
+                        ),
+                    ],
+                  ),
+                  if (item.obs.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      item.obs,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: _textMuted,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              crossFadeState: expanded
+                  ? CrossFadeState.showSecond
+                  : CrossFadeState.showFirst,
+              duration: const Duration(milliseconds: 160),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -3319,7 +4654,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                   color: Color(0xFFF8FAFC),
                   fontWeight: FontWeight.w600,
                 ),
-                cursorColor: const Color(0xFF60A5FA),
+                cursorColor: const Color(0xFFE8CE7A),
                 onChanged: _onBuscaChanged,
                 onSubmitted: (_) {
                   if (_cdObjSelecionado > 0) {
@@ -3757,7 +5092,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                   color: Color(0xFFF8FAFC),
                   fontWeight: FontWeight.w600,
                 ),
-                cursorColor: const Color(0xFF60A5FA),
+                cursorColor: const Color(0xFFE8CE7A),
                 onChanged: _onBuscaCarretelChanged,
                 onSubmitted: (_) {
                   if (_cdObjCarretelSelecionado > 0) {
@@ -4555,7 +5890,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                 label: Text(fio.cor),
                 selected: _fioLivreSelecionado.cor == fio.cor,
                 showCheckmark: true,
-                selectedColor: const Color(0xFF2563EB),
+                selectedColor: const Color(0xFFD8B840),
                 backgroundColor: const Color(0xFF111827),
                 disabledColor: const Color(0xFF111827),
                 side: BorderSide(
@@ -4722,7 +6057,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
               color: Color(0xFFF8FAFC),
               fontWeight: FontWeight.w600,
             ),
-            cursorColor: const Color(0xFF60A5FA),
+            cursorColor: const Color(0xFFE8CE7A),
             decoration: InputDecoration(
               labelText: 'Texto da linha ${index + 1}',
               border: const OutlineInputBorder(),
@@ -4738,7 +6073,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
               color: Color(0xFFF8FAFC),
               fontWeight: FontWeight.w600,
             ),
-            cursorColor: const Color(0xFF60A5FA),
+            cursorColor: const Color(0xFFE8CE7A),
             decoration: const InputDecoration(
               labelText: 'Fonte',
               border: OutlineInputBorder(),
@@ -4785,11 +6120,11 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
             showCheckmark: true,
             checkmarkColor: Colors.white,
             backgroundColor: const Color(0xFF111827),
-            selectedColor: const Color(0xFF2563EB),
+            selectedColor: const Color(0xFFD8B840),
             disabledColor: const Color(0xFF111827),
             side: BorderSide(
               color: linha.negrito
-                  ? const Color(0xFF60A5FA)
+                  ? const Color(0xFFE8CE7A)
                   : const Color(0xFF334155),
             ),
             labelStyle: TextStyle(
@@ -5030,10 +6365,10 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     return Text(
       text.toUpperCase(),
       style: const TextStyle(
-        color: Color(0xFF64748B),
+        color: _textMuted,
         fontSize: 11,
         fontWeight: FontWeight.w700,
-        letterSpacing: 0.8,
+        letterSpacing: 0,
       ),
     );
   }
@@ -5055,10 +6390,11 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       controller: controller,
       enabled: enabled,
       style: const TextStyle(
-        color: Color(0xFFF8FAFC),
-        fontWeight: FontWeight.w600,
+        color: _textPrimary,
+        fontSize: 15,
+        fontWeight: FontWeight.w700,
       ),
-      cursorColor: const Color(0xFF60A5FA),
+      cursorColor: const Color(0xFFE8CE7A),
       keyboardType: numeric ? TextInputType.number : TextInputType.text,
       inputFormatters: numeric
           ? [FilteringTextInputFormatter.allow(RegExp(r'[0-9]'))]
@@ -5069,6 +6405,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       onChanged: onChanged,
       onSubmitted: onSubmit != null ? (_) => onSubmit() : null,
       decoration: InputDecoration(
+        constraints: const BoxConstraints(minHeight: 56),
         labelText: label,
         hintText: hint,
         prefixIcon: Icon(icon),
@@ -5112,22 +6449,24 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
   Widget _buildError() {
     return Container(
       margin: const EdgeInsets.only(bottom: 18),
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFFEF2F2),
+        color: _errorBg,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFFECACA)),
+        border: Border.all(color: _error),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.error_outline_rounded, color: Color(0xFFB91C1C)),
-          const SizedBox(width: 10),
+          const Icon(Icons.error_outline_rounded, color: Color(0xFFFCA5A5)),
+          const SizedBox(width: 12),
           Expanded(
             child: Text(
               _erro!,
               style: const TextStyle(
-                color: Color(0xFF7F1D1D),
-                fontWeight: FontWeight.w600,
+                color: _textPrimary,
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
               ),
             ),
           ),
@@ -5261,10 +6600,10 @@ class _ToggleChip extends StatelessWidget {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 150),
       decoration: BoxDecoration(
-        color: value ? const Color(0xFF2563EB) : const Color(0xFF0F172A),
+        color: value ? const Color(0xFFD8B840) : const Color(0xFF0F172A),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: value ? const Color(0xFF60A5FA) : const Color(0xFF334155),
+          color: value ? const Color(0xFFE8CE7A) : const Color(0xFF334155),
         ),
       ),
       child: InkWell(
@@ -5278,13 +6617,13 @@ class _ToggleChip extends StatelessWidget {
               Icon(
                 value ? Icons.star_rounded : Icons.star_border_rounded,
                 size: 17,
-                color: value ? Colors.white : const Color(0xFF94A3B8),
+                color: value ? const Color(0xFF020617) : const Color(0xFF94A3B8),
               ),
               const SizedBox(width: 5),
               Text(
                 label,
                 style: TextStyle(
-                  color: value ? Colors.white : const Color(0xFFCBD5E1),
+                  color: value ? const Color(0xFF020617) : const Color(0xFFCBD5E1),
                   fontWeight: FontWeight.w700,
                   fontSize: 13,
                 ),
@@ -5327,11 +6666,11 @@ class _TipoCaixaQuickButton extends StatelessWidget {
           width: 42,
           height: 36,
           decoration: BoxDecoration(
-            color: selected ? const Color(0xFF2563EB) : const Color(0xFF111C33),
+            color: selected ? const Color(0xFFD8B840) : const Color(0xFF111C33),
             borderRadius: BorderRadius.circular(6),
             border: Border.all(
               color: selected
-                  ? const Color(0xFF60A5FA)
+                  ? const Color(0xFFE8CE7A)
                   : const Color(0xFF334155),
             ),
           ),
@@ -5413,7 +6752,7 @@ class _DarkTag extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: const Color(0xFF60A5FA), size: 14),
+          Icon(icon, color: const Color(0xFFE8CE7A), size: 14),
           const SizedBox(width: 5),
           Text(
             label,
@@ -5435,7 +6774,7 @@ class _DarkMetricPill extends StatelessWidget {
     required this.label,
     required this.value,
     required this.icon,
-    this.accent = const Color(0xFF60A5FA),
+    this.accent = const Color(0xFFE8CE7A),
   });
 
   final String label;
@@ -5546,10 +6885,10 @@ class _OrdemSortChip extends StatelessWidget {
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
-          color: selected ? const Color(0xFF2563EB) : const Color(0xFF111C33),
+          color: selected ? const Color(0xFFD8B840) : const Color(0xFF111C33),
           borderRadius: BorderRadius.circular(999),
           border: Border.all(
-            color: selected ? const Color(0xFF60A5FA) : const Color(0xFF334155),
+            color: selected ? const Color(0xFFE8CE7A) : const Color(0xFF334155),
           ),
         ),
         child: Row(
@@ -5557,14 +6896,14 @@ class _OrdemSortChip extends StatelessWidget {
           children: [
             Icon(
               icon,
-              color: selected ? Colors.white : const Color(0xFF60A5FA),
+              color: selected ? const Color(0xFF020617) : const Color(0xFFE8CE7A),
               size: 15,
             ),
             const SizedBox(width: 6),
             Text(
               label,
               style: TextStyle(
-                color: selected ? Colors.white : const Color(0xFFE2E8F0),
+                color: selected ? const Color(0xFF020617) : const Color(0xFFE2E8F0),
                 fontSize: 12,
                 fontWeight: FontWeight.w900,
               ),

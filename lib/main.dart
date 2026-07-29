@@ -6,6 +6,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import 'design_system.dart';
 import 'models/registro.dart';
 import 'screens/splash_screen.dart';
 
@@ -41,6 +42,7 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'TracX',
       debugShowCheckedModeBanner: false,
+      theme: AppDesignSystem.appTheme(),
 
       // >>> CONFIGURAÇÃO ESSENCIAL DE LOCALIZAÇÃO (pt_BR) <<<
       localizationsDelegates: const [

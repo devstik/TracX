@@ -6,20 +6,20 @@ import 'package:intl/intl.dart';
 // =========================================================================
 // 🎨 PALETA OFICIAL (PADRÃO HOME + SPLASH)
 // =========================================================================
-const Color _kPrimaryColor = Color(0xFF2563EB); // Azul principal (moderno)
-const Color _kAccentColor = Color(0xFF60A5FA); // Azul claro premium
+const Color _kPrimaryColor = Color(0xFFD8B840);
+const Color _kAccentColor = Color(0xFFE8CE7A);
 
-const Color _kBgTop = Color(0xFF050A14);
-const Color _kBgBottom = Color(0xFF0B1220);
+const Color _kBgTop = Color(0xFF020617);
+const Color _kBgBottom = Color(0xFF0F172A);
 
-const Color _kSurface = Color(0xFF101B34);
-const Color _kSurface2 = Color(0xFF0F172A);
+const Color _kSurface = Color(0xFF111827);
+const Color _kSurface2 = Color(0xFF172033);
 
-const Color _kTextPrimary = Color(0xFFF9FAFB);
-const Color _kTextSecondary = Color(0xFF9CA3AF);
+const Color _kTextPrimary = Color(0xFFF8FAFC);
+const Color _kTextSecondary = Color(0xFFCBD5E1);
 
 // borda mais visível (antes tava apagada demais)
-const Color _kBorderSoft = Color(0x33FFFFFF);
+const Color _kBorderSoft = Color(0xFF334155);
 
 class HistoricoMovimentacaoScreen extends StatefulWidget {
   final int nrOrdem; // NrOrdem inicial. 0 busca todas.
@@ -106,7 +106,7 @@ class _HistoricoMovimentacaoScreenState
             ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: _kPrimaryColor,
-                foregroundColor: Colors.white,
+                foregroundColor: const Color(0xFF020617),
               ),
               child: const Text('Filtrar'),
               onPressed: () => _applyFilter(context),

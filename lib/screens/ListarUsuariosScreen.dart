@@ -16,8 +16,7 @@ class _ListarUsuariosScreenState extends State<ListarUsuariosScreen>
 
   late AnimationController _animationController;
 
-  // Cor principal consistente e moderna
-  final Color _primaryColor = const Color(0xFFC62828);
+  final Color _primaryColor = const Color(0xFFD8B840);
 
   final String _baseUrl = 'http://168.190.90.2:5000/consulta/usuarios';
 
@@ -192,16 +191,18 @@ class _ListarUsuariosScreenState extends State<ListarUsuariosScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor:
-          Colors.grey.shade50, // Fundo levemente cinza para contraste
+      backgroundColor: const Color(0xFF020617),
       appBar: AppBar(
         title: const Text(
           'Gerenciar Usuários', // Título mais focado em gerenciamento
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          style: TextStyle(
+            color: Color(0xFF020617),
+            fontWeight: FontWeight.bold,
+          ),
         ),
         backgroundColor: _primaryColor,
         elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.white),
+        iconTheme: const IconThemeData(color: Color(0xFF020617)),
       ),
       body: SafeArea(
         child: _loading

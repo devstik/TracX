@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shimmer/shimmer.dart';
+import 'package:tracx/design_system.dart';
 import '../services/auth_service.dart';
 import '../services/estoque_db_helper.dart';
 
@@ -30,14 +31,14 @@ class _LoginScreenState extends State<LoginScreen>
 
   static const String _lastLoggedInUserKey = 'lastLoggedInUser';
 
-  // Cores da Identidade Visual
-  static const Color bg = Color(0xFF050A14);
-  static const Color surface = Color(0xFF0B1220);
-  static const Color surface2 = Color(0xFF101B34);
-  static const Color primary = Color(0xFF4DA3FF);
-  static const Color accent = Color(0xFF5EF7C5);
-  static const Color danger = Color(0xFFFF5C8A);
-  static const Color borderSoft = Color(0x18FFFFFF);
+  // Cores do design system atual
+  static const Color bg = AppDesignSystem.industrialBg;
+  static const Color surface = AppDesignSystem.industrialHeader;
+  static const Color surface2 = AppDesignSystem.industrialSurfaceElevated;
+  static const Color primary = AppDesignSystem.brandGold;
+  static const Color accent = AppDesignSystem.brandGoldLight;
+  static const Color danger = AppDesignSystem.industrialError;
+  static const Color borderSoft = AppDesignSystem.industrialBorder;
 
   // Configurações de API
   static const String _authEndpoint =
@@ -323,7 +324,7 @@ class _LoginScreenState extends State<LoginScreen>
           gradient: RadialGradient(
             center: Alignment.topCenter,
             radius: 1.4,
-            colors: [Color(0xFF0B1220), Color(0xFF050A14)],
+            colors: [surface, bg],
           ),
         ),
         child: Stack(
@@ -524,7 +525,7 @@ class _LoginScreenState extends State<LoginScreen>
                                     style:
                                         ElevatedButton.styleFrom(
                                           backgroundColor: primary,
-                                          foregroundColor: Colors.white,
+                                          foregroundColor: bg,
                                           elevation: 0,
                                           shape: RoundedRectangleBorder(
                                             borderRadius: BorderRadius.circular(
@@ -544,7 +545,7 @@ class _LoginScreenState extends State<LoginScreen>
                                             height: 26,
                                             width: 26,
                                             child: CircularProgressIndicator(
-                                              color: Colors.white,
+                                              color: bg,
                                               strokeWidth: 3,
                                             ),
                                           )
@@ -669,8 +670,8 @@ class _ParticlesPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final paint = Paint()..style = PaintingStyle.fill;
 
-    const primary = Color(0xFF4DA3FF);
-    const accent = Color(0xFF5EF7C5);
+    const primary = AppDesignSystem.brandGold;
+    const accent = AppDesignSystem.brandGoldLight;
 
     // Partículas principais
     for (int i = 0; i < 30; i++) {

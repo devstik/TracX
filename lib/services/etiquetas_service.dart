@@ -325,6 +325,88 @@ class EtiquetasService {
     throw message;
   }
 
+  static Future<List<Map<String, dynamic>>> consultarPlanejamentoTinturaria({
+    required String dataInicio,
+    required String dataFim,
+    String cdUne = '',
+    String cdVpd = '',
+    String cdCli = '',
+    String cdObj = '',
+    String nmObj = '',
+    String cdObjLin = '',
+    bool somenteAtrasados = false,
+    bool somentePendentes = true,
+  }) async {
+    final params = <String, String>{
+      'DataInicio': _normalizarDataSql(dataInicio),
+      'DataFim': _normalizarDataSql(dataFim),
+      'SomenteAtrasados': somenteAtrasados ? '1' : '0',
+      'SomentePendentes': somentePendentes ? '1' : '0',
+    };
+
+    void addIfNotEmpty(String key, String value) {
+      final normalized = value.trim();
+      if (normalized.isNotEmpty) params[key] = normalized;
+    }
+
+    addIfNotEmpty('CdUne', cdUne);
+    addIfNotEmpty('CdVpd', cdVpd);
+    addIfNotEmpty('CdCli', cdCli);
+    addIfNotEmpty('CdObj', cdObj);
+    addIfNotEmpty('NmObj', nmObj);
+    addIfNotEmpty('CdObjLin', cdObjLin);
+
+    final response = await http
+        .get(
+          Uri.parse(
+            "$baseUrl/consultar/planejamento-tinturaria",
+          ).replace(queryParameters: params),
+          headers: {"Content-Type": "application/json"},
+        )
+        .timeout(const Duration(seconds: 35));
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      final decoded = jsonDecode(response.body);
+      if (decoded is List) return List<Map<String, dynamic>>.from(decoded);
+      if (decoded is Map<String, dynamic>) {
+        final data =
+            decoded["data"] ?? decoded["resultados"] ?? decoded["items"];
+        if (data is List) return List<Map<String, dynamic>>.from(data);
+      }
+    }
+
+    String message =
+        "Erro ${response.statusCode} ao consultar pedido especial.";
+    try {
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map<String, dynamic>) {
+        message =
+            (decoded["erro"] ??
+                    decoded["error"] ??
+                    decoded["message"] ??
+                    decoded["details"] ??
+                    message)
+                .toString();
+      }
+    } catch (_) {
+      if (response.body.trim().isNotEmpty) message = response.body.trim();
+    }
+    throw message;
+  }
+
+  static String _normalizarDataSql(String value) {
+    final raw = value.trim();
+    if (RegExp(r'^\d{8}$').hasMatch(raw)) return raw;
+
+    final iso = RegExp(r'^(\d{4})-(\d{2})-(\d{2})$').firstMatch(raw);
+    if (iso != null) return '${iso.group(1)}${iso.group(2)}${iso.group(3)}';
+
+    final br = RegExp(r'^(\d{2})/(\d{2})/(\d{4})$').firstMatch(raw);
+    if (br != null) return '${br.group(3)}${br.group(2)}${br.group(1)}';
+
+    return raw;
+  }
+
   static Future<List<Map<String, dynamic>>> buscarArtigoLotes(
       int cdObj) async {
     if (cdObj <= 0) throw "Informe o código do artigo.";

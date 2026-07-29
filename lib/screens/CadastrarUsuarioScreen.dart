@@ -16,8 +16,7 @@ class _CadastrarUsuarioScreenState extends State<CadastrarUsuarioScreen> {
   bool _loading = false;
   bool _obscurePassword = true;
 
-  // Cor principal consistente com as outras telas
-  final Color _primaryColor = const Color(0xFFC62828); // Vermelho Escuro
+  final Color _primaryColor = const Color(0xFFD8B840);
 
   void _showSnackBar(String message, {Color color = Colors.red}) {
     // Fecha qualquer SnackBar anterior e mostra a nova
@@ -103,15 +102,18 @@ class _CadastrarUsuarioScreenState extends State<CadastrarUsuarioScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey.shade100, // Fundo levemente cinza
+      backgroundColor: const Color(0xFF020617),
       appBar: AppBar(
         title: const Text(
           'Novo Cadastro',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+          style: TextStyle(
+            color: Color(0xFF020617),
+            fontWeight: FontWeight.w700,
+          ),
         ),
         backgroundColor: _primaryColor,
         elevation: 0, // Visual plano
-        iconTheme: const IconThemeData(color: Colors.white),
+        iconTheme: const IconThemeData(color: Color(0xFF020617)),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new),
           onPressed: () => Navigator.pop(context),
@@ -221,7 +223,7 @@ class _CadastrarUsuarioScreenState extends State<CadastrarUsuarioScreen> {
                             label: const Text('Cadastrar Usuário'),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: _primaryColor,
-                              foregroundColor: Colors.white,
+                              foregroundColor: const Color(0xFF020617),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12),
                               ),

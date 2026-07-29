@@ -8,14 +8,14 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-const Color _kAmostraBg = Color(0xFF050A14);
-const Color _kAmostraSurface = Color(0xFF101B34);
-const Color _kAmostraSurface2 = Color(0xFF0F172A);
-const Color _kAmostraPrimary = Color(0xFF2563EB);
-const Color _kAmostraAccent = Color(0xFF60A5FA);
-const Color _kAmostraText = Color(0xFFF9FAFB);
-const Color _kAmostraMuted = Color(0xFF9CA3AF);
-const Color _kAmostraBorder = Color(0x33FFFFFF);
+const Color _kAmostraBg = Color(0xFF020617);
+const Color _kAmostraSurface = Color(0xFF111827);
+const Color _kAmostraSurface2 = Color(0xFF172033);
+const Color _kAmostraPrimary = Color(0xFFD8B840);
+const Color _kAmostraAccent = Color(0xFFE8CE7A);
+const Color _kAmostraText = Color(0xFFF8FAFC);
+const Color _kAmostraMuted = Color(0xFFCBD5E1);
+const Color _kAmostraBorder = Color(0xFF334155);
 
 enum _AmostraEtapa {
   solicitacaoTriagem,
@@ -619,7 +619,7 @@ class _GestaoAmostrasScreenState extends State<GestaoAmostrasScreen> {
           valor: historicoTop,
           descricao: '$pendentesGerencia aguardando aprovacao comercial',
           icon: Icons.history_edu_outlined,
-          accent: const Color(0xFF8B5CF6),
+          accent: const Color(0xFFD8B840),
         ),
       ],
     );
@@ -644,7 +644,7 @@ class _GestaoAmostrasScreenState extends State<GestaoAmostrasScreen> {
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _loading ? null : () => _abrirEditor(),
         backgroundColor: _kAmostraPrimary,
-        foregroundColor: Colors.white,
+        foregroundColor: const Color(0xFF020617),
         icon: const Icon(Icons.add),
         label: const Text('Nova solicitacao'),
       ),
@@ -1737,7 +1737,7 @@ class _EditorAmostraScreenState extends State<_EditorAmostraScreen> {
                 onPressed: _salvar,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _kAmostraPrimary,
-                  foregroundColor: Colors.white,
+                  foregroundColor: const Color(0xFF020617),
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
                 icon: const Icon(Icons.save_outlined),

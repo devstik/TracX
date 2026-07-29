@@ -21,6 +21,7 @@ import 'package:tracx/services/update_service.dart';
 import 'dart:math' as math;
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:package_info_plus/package_info_plus.dart';
 
 class HomeMenuScreen extends StatefulWidget {
   final String conferente;
@@ -45,6 +46,7 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
   Map<String, dynamic>? _dadosProducao;
   bool _isLoadingProducao = true;
   String _ultimaAtualizacao = "Carregando...";
+  String _appVersion = "TracX";
 
   final List<String> _admins = const ['Joao', 'Leide', 'Lidinaldo'];
   bool get _isAdmin => _admins.contains(widget.conferente);
@@ -69,6 +71,7 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
 
     _controller.forward();
     _gerenciarDadosProducao();
+    _carregarVersaoApp();
   }
 
   // void _carregarDadosProducao() {
@@ -292,7 +295,7 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
   void _showAdminSheet() {
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF0A0F1D),
+      backgroundColor: const Color(0xFF0F172A),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
       ),
@@ -370,6 +373,59 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
     );
   }
 
+  Future<void> _confirmarLogout() async {
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF172033),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: Color(0xFF334155)),
+        ),
+        title: const Text(
+          "Sair da conta?",
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900),
+        ),
+        content: Text(
+          "A sessao de ${widget.conferente} sera encerrada.",
+          style: const TextStyle(color: Colors.white70, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text("Cancelar"),
+          ),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFE85C5C),
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(context, true),
+            icon: const Icon(Icons.logout_rounded),
+            label: const Text("Sair"),
+          ),
+        ],
+      ),
+    );
+    if (confirmar == true && mounted) _logout();
+  }
+
+  Future<void> _carregarVersaoApp() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (!mounted) return;
+      setState(
+        () => _appVersion = "TracX v${info.version} - build ${info.buildNumber}",
+      );
+      return;
+      // ignore: dead_code
+      setState(() => _appVersion = "TracX v${info.version} · build ${info.buildNumber}");
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _appVersion = "TracX");
+    }
+  }
+
   String _formatarNumero(double valor) {
     return valor
         .toStringAsFixed(2)
@@ -389,7 +445,7 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF050A14),
+      backgroundColor: const Color(0xFF020617),
       body: SafeArea(
         child: FadeTransition(
           opacity: _fadeAnimation,
@@ -411,16 +467,16 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
   Widget _buildBottomNav() {
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFF070C17),
+        color: const Color(0xFF0F172A),
         border: Border(
           top: BorderSide(color: Colors.white.withOpacity(0.06), width: 1),
         ),
       ),
       child: BottomNavigationBar(
         currentIndex: _currentIndex,
-        backgroundColor: const Color(0xFF070C17),
+        backgroundColor: const Color(0xFF0F172A),
         type: BottomNavigationBarType.fixed,
-        selectedItemColor: const Color(0xFF4DA3FF),
+        selectedItemColor: const Color(0xFFD8B840),
         unselectedItemColor: Colors.white54,
         selectedFontSize: 12,
         unselectedFontSize: 11,
@@ -460,7 +516,7 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
             nome: widget.conferente,
             isAdmin: _isAdmin,
             onAdminTap: _showAdminSheet,
-            onLogoutTap: _logout,
+            onLogoutTap: _confirmarLogout,
           ),
 
           const SizedBox(height: 18),
@@ -473,7 +529,9 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
 
           const SizedBox(height: 18),
 
-          if (!_isLoadingProducao && _dadosProducao != null)
+          if (_isLoadingProducao)
+            _buildGaugeSkeleton()
+          else if (_dadosProducao != null)
             _buildGaugeProducao(),
 
           const SizedBox(height: 16),
@@ -490,12 +548,12 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: const Color(0xFF0B1220),
+        color: const Color(0xFF172033),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white10),
+        border: Border.all(color: const Color(0xFF334155)),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF4DA3FF).withOpacity(0.08),
+            color: const Color(0xFFD8B840).withOpacity(0.12),
             blurRadius: 18,
             offset: const Offset(0, 10),
           ),
@@ -548,7 +606,7 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
             decoration: BoxDecoration(
               color: Colors.white.withOpacity(0.06),
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.white10),
+              border: Border.all(color: const Color(0xFF334155)),
             ),
             child: Row(
               children: const [
@@ -577,7 +635,7 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
           title: "Novo Registro",
           subtitle: "Crie um registro completo com localização e rastreio.",
           icon: Icons.app_registration,
-          accent: const Color(0xFF4DA3FF),
+          accent: const Color(0xFFD8B840),
           onTap: () {
             _navigateWithTransition(
               context,
@@ -598,9 +656,16 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: const Color(0xFF0B1220),
+        color: const Color(0xFF172033),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white10),
+        border: Border.all(color: const Color(0xFF334155)),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFFD8B840).withOpacity(0.08),
+            blurRadius: 24,
+            offset: const Offset(0, 12),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -651,14 +716,14 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
                       title: "Produção atual",
                       value: _formatarNumero(totalProducao),
                       icon: Icons.factory_outlined,
-                      accent: const Color(0xFF4DA3FF),
+                      accent: const Color(0xFFD8B840),
                     ),
                     const SizedBox(height: 12),
                     _MetricCard(
                       title: "Previsão do mês",
                       value: _formatarNumero(previsaoProducao),
                       icon: Icons.timeline_outlined,
-                      accent: const Color(0xFF5EF7C5),
+                      accent: const Color(0xFF16A34A),
                     ),
                   ],
                 ),
@@ -670,13 +735,77 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
     );
   }
 
+  Widget _buildGaugeSkeleton() {
+    Widget bar(double width, double height) {
+      return Container(
+        width: width,
+        height: height,
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(999),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFF172033),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFF334155)),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFFD8B840).withOpacity(0.08),
+            blurRadius: 22,
+            offset: const Offset(0, 12),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 52,
+            height: 52,
+            child: CircularProgressIndicator(
+              strokeWidth: 4,
+              valueColor: AlwaysStoppedAnimation<Color>(
+                const Color(0xFFD8B840).withOpacity(0.75),
+              ),
+              backgroundColor: Colors.white.withOpacity(0.08),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                bar(170, 14),
+                const SizedBox(height: 12),
+                bar(double.infinity, 10),
+                const SizedBox(height: 8),
+                bar(120, 10),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildAdminShortcutCard() {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF0B1220),
+        color: const Color(0xFF172033),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white10),
+        border: Border.all(color: const Color(0xFF334155)),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFFD8B840).withOpacity(0.08),
+            blurRadius: 22,
+            offset: const Offset(0, 12),
+          ),
+        ],
       ),
       child: Row(
         children: [
@@ -899,7 +1028,9 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
           ),
           const SizedBox(height: 18),
 
-          if (!_isLoadingProducao && _dadosProducao != null)
+          if (_isLoadingProducao)
+            _buildGaugeSkeleton()
+          else if (_dadosProducao != null)
             _buildGaugeProducao(),
 
           const SizedBox(height: 12),
@@ -918,6 +1049,9 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
   // ---------------- CONFIG ----------------
 
   Widget _buildConfig() {
+    return _buildConfigContent();
+
+    // ignore: dead_code
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(18, 14, 18, 22),
       child: Column(
@@ -971,6 +1105,172 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
       ),
     );
   }
+
+  Widget _buildConfigContent() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(18, 14, 18, 22),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _PremiumHeader(
+            saudacao: "Perfil ativo",
+            nome: widget.conferente,
+            isAdmin: _isAdmin,
+            onAdminTap: _showAdminSheet,
+            onLogoutTap: _confirmarLogout,
+          ),
+          const SizedBox(height: 20),
+          _configSectionLabel("Sistema"),
+          _ConfigTile(
+            icon: Icons.system_update_alt,
+            title: "Verificar atualizacao",
+            subtitle: "Conferir se existe uma versao nova disponivel",
+            accent: const Color(0xFF38BDF8),
+            onTap: () {
+              UpdateService.check(context, showMessages: true);
+            },
+          ),
+          const SizedBox(height: 8),
+          _configSectionLabel("Seguranca"),
+          _ConfigTile(
+            icon: Icons.lock_outline,
+            title: "Alterar senha",
+            subtitle: "Atualize sua senha de acesso",
+            accent: const Color(0xFFD8B840),
+            onTap: () {
+              _navigateWithTransition(context, AlterarSenhaScreen());
+            },
+          ),
+          const SizedBox(height: 8),
+          if (_isAdmin) _configSectionLabel("Administracao"),
+          if (_isAdmin)
+            _ConfigTile(
+              icon: Icons.admin_panel_settings_outlined,
+              title: "Painel Admin",
+              subtitle: "Gerenciar usuarios e permissoes",
+              accent: const Color(0xFF16A34A),
+              onTap: _showAdminSheet,
+            ),
+          if (_isAdmin) _buildAdminMiniSummary(),
+          const SizedBox(height: 14),
+          _buildSupportCard(),
+          const SizedBox(height: 18),
+          _configSectionLabel("Sessao"),
+          _ConfigTile(
+            icon: Icons.logout,
+            title: "Sair",
+            subtitle: "Encerrar sessao do usuario",
+            accent: const Color(0xFFE85C5C),
+            destructive: true,
+            onTap: _confirmarLogout,
+          ),
+          const SizedBox(height: 22),
+          Center(
+            child: Text(
+              _appVersion,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Colors.white24,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _configSectionLabel(String label) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8, left: 2),
+      child: Text(
+        label.toUpperCase(),
+        style: const TextStyle(
+          fontSize: 11,
+          letterSpacing: 1.2,
+          fontWeight: FontWeight.w900,
+          color: Colors.white38,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSupportCard() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF172033),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF334155)),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFFD8B840).withOpacity(0.07),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: const Row(
+        children: [
+          Icon(Icons.support_agent_rounded, color: Color(0xFFD8B840)),
+          SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "Ajuda e suporte",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  "Acione o suporte interno em caso de falha de acesso, atualizacao ou sincronizacao.",
+                  style: TextStyle(
+                    color: Colors.white54,
+                    fontSize: 12,
+                    height: 1.3,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAdminMiniSummary() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF111827),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFF334155)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.verified_user_outlined, color: Color(0xFF16A34A)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              "${_admins.length} administradores cadastrados - dados: $_ultimaAtualizacao",
+              style: const TextStyle(
+                color: Colors.white60,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 // ======================= COMPONENTES PREMIUM =======================
@@ -995,9 +1295,16 @@ class _PremiumHeader extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: const Color(0xFF0B1220),
+        color: const Color(0xFF172033),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white10),
+        border: Border.all(color: const Color(0xFF334155)),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFFD8B840).withOpacity(0.08),
+            blurRadius: 24,
+            offset: const Offset(0, 12),
+          ),
+        ],
       ),
       child: Row(
         children: [
@@ -1007,7 +1314,7 @@ class _PremiumHeader extends StatelessWidget {
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(14),
               color: Colors.white.withOpacity(0.05),
-              border: Border.all(color: Colors.white10),
+              border: Border.all(color: const Color(0xFF334155)),
             ),
             child: const Icon(
               CupertinoIcons.person_crop_circle,
@@ -1034,6 +1341,30 @@ class _PremiumHeader extends StatelessWidget {
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),
+                if (isAdmin) ...[
+                  const SizedBox(height: 7),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 9,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF16A34A).withOpacity(0.14),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: const Color(0xFF16A34A).withOpacity(0.28),
+                      ),
+                    ),
+                    child: const Text(
+                      "Administrador",
+                      style: TextStyle(
+                        color: Color(0xFF86EFAC),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -1047,7 +1378,7 @@ class _PremiumHeader extends StatelessWidget {
             ),
           IconButton(
             onPressed: onLogoutTap,
-            icon: const Icon(Icons.logout_rounded, color: Colors.white70),
+            icon: const Icon(Icons.logout_rounded, color: Color(0xFFE85C5C)),
           ),
         ],
       ),
@@ -1081,8 +1412,8 @@ class _QuickCircleAction extends StatelessWidget {
           padding: const EdgeInsets.symmetric(vertical: 10),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
-            color: const Color(0xFF0B1220),
-            border: Border.all(color: Colors.white10),
+            color: const Color(0xFF172033),
+            border: Border.all(color: const Color(0xFF334155)),
           ),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -1138,8 +1469,8 @@ class _BigModuleCard extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
-          color: const Color(0xFF0B1220),
-          border: Border.all(color: Colors.white10),
+          color: const Color(0xFF172033),
+          border: Border.all(color: const Color(0xFF334155)),
         ),
         child: Row(
           children: [
@@ -1216,8 +1547,8 @@ class _MiniModuleCard extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
-          color: const Color(0xFF0B1220),
-          border: Border.all(color: Colors.white10),
+          color: const Color(0xFF172033),
+          border: Border.all(color: const Color(0xFF334155)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1276,7 +1607,7 @@ class _MetricCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.03),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white10),
+        border: Border.all(color: const Color(0xFF334155)),
       ),
       child: Row(
         children: [
@@ -1335,11 +1666,16 @@ class _ActionTile extends StatelessWidget {
 
   const _ActionTile({required this.item});
 
+  Color _accentForAction() {
+    return const Color(0xFFD8B840);
+  }
+
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final compact = constraints.maxWidth < 190;
+        final accent = _accentForAction();
 
         return InkWell(
           borderRadius: BorderRadius.circular(16),
@@ -1348,8 +1684,15 @@ class _ActionTile extends StatelessWidget {
             padding: EdgeInsets.all(compact ? 12 : 14),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(16),
-              color: const Color(0xFF0B1220),
-              border: Border.all(color: Colors.white10),
+              color: const Color(0xFF172033),
+              border: Border.all(color: const Color(0xFF334155)),
+              boxShadow: [
+                BoxShadow(
+                  color: accent.withOpacity(0.08),
+                  blurRadius: 18,
+                  offset: const Offset(0, 10),
+                ),
+              ],
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1359,9 +1702,10 @@ class _ActionTile extends StatelessWidget {
                   height: compact ? 42 : 48,
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(16),
-                    color: Colors.white.withOpacity(0.04),
+                    color: accent.withOpacity(0.12),
+                    border: Border.all(color: accent.withOpacity(0.22)),
                   ),
-                  child: Icon(item.icon, color: const Color(0xFF4DA3FF)),
+                  child: Icon(item.icon, color: accent),
                 ),
                 SizedBox(height: compact ? 10 : 12),
                 Text(
@@ -1411,16 +1755,22 @@ class _ConfigTile extends StatelessWidget {
   final String title;
   final String subtitle;
   final VoidCallback onTap;
+  final Color accent;
+  final bool destructive;
 
   const _ConfigTile({
     required this.icon,
     required this.title,
     required this.subtitle,
     required this.onTap,
+    this.accent = const Color(0xFFD8B840),
+    this.destructive = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    final color = destructive ? const Color(0xFFE85C5C) : accent;
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: InkWell(
@@ -1430,12 +1780,28 @@ class _ConfigTile extends StatelessWidget {
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
-            color: const Color(0xFF0B1220),
-            border: Border.all(color: Colors.white10),
+            color: const Color(0xFF172033),
+            border: Border.all(color: const Color(0xFF334155)),
+            boxShadow: [
+              BoxShadow(
+                color: color.withOpacity(0.07),
+                blurRadius: 18,
+                offset: const Offset(0, 9),
+              ),
+            ],
           ),
           child: Row(
             children: [
-              Icon(icon, color: const Color(0xFF4DA3FF)),
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: color.withOpacity(0.22)),
+                ),
+                child: Icon(icon, color: color),
+              ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -1443,10 +1809,10 @@ class _ConfigTile extends StatelessWidget {
                   children: [
                     Text(
                       title,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w800,
-                        color: Colors.white,
+                        color: destructive ? color : Colors.white,
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -1492,12 +1858,12 @@ class _InfoCard extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
-        color: const Color(0xFF0B1220),
-        border: Border.all(color: Colors.white10),
+        color: const Color(0xFF172033),
+        border: Border.all(color: const Color(0xFF334155)),
       ),
       child: Row(
         children: [
-          Icon(icon, color: const Color(0xFF4DA3FF)),
+          Icon(icon, color: const Color(0xFFD8B840)),
           const SizedBox(width: 12),
           Expanded(
             child: Text.rich(
@@ -1544,7 +1910,7 @@ class _AdminTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListTile(
       contentPadding: EdgeInsets.zero,
-      leading: Icon(icon, color: const Color(0xFF4DA3FF)),
+      leading: Icon(icon, color: const Color(0xFFD8B840)),
       title: Text(
         title,
         style: const TextStyle(
@@ -1602,7 +1968,7 @@ class GaugePainter extends CustomPainter {
     );
 
     final fgPaint = Paint()
-      ..color = const Color(0xFF4DA3FF)
+      ..color = const Color(0xFFD8B840)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 18
       ..strokeCap = StrokeCap.round;
@@ -1622,13 +1988,13 @@ class GaugePainter extends CustomPainter {
     final pointPosition = Offset(pointX, pointY);
 
     final pointBorderPaint = Paint()
-      ..color = const Color(0xFF0B1220)
+      ..color = const Color(0xFF172033)
       ..style = PaintingStyle.fill;
 
     canvas.drawCircle(pointPosition, 12, pointBorderPaint);
 
     final pointPaint = Paint()
-      ..color = const Color(0xFF4DA3FF)
+      ..color = const Color(0xFFD8B840)
       ..style = PaintingStyle.fill;
 
     canvas.drawCircle(pointPosition, 7, pointPaint);

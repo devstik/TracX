@@ -697,7 +697,7 @@ class _TamboresBipadosList extends StatelessWidget {
                 height: 32,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF1D4ED8),
+                  color: const Color(0xFFB89628),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
@@ -803,7 +803,7 @@ InputDecoration _inputDecoration({
     ),
     focusedBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(8),
-      borderSide: const BorderSide(color: Color(0xFF60A5FA), width: 2),
+      borderSide: const BorderSide(color: Color(0xFFE8CE7A), width: 2),
     ),
     disabledBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(8),
