@@ -62,6 +62,15 @@ class _OperadorEtiqueta {
   String get label => nome.isEmpty ? codigo : '$codigo - $nome';
 }
 
+class _PedidoLinhaFiltro {
+  final int codigo;
+  final String nome;
+
+  const _PedidoLinhaFiltro({required this.codigo, required this.nome});
+
+  String get label => nome.isEmpty ? codigo.toString() : nome;
+}
+
 class _OrdemExpedicao {
   const _OrdemExpedicao({
     required this.woid,
@@ -228,7 +237,7 @@ class _PedidoEspecialPlanejamento {
     if (descricao.isNotEmpty && int.tryParse(descricao) == null) {
       return descricao;
     }
-    return 'Artigo sem descricao';
+    return 'Artigo sem descrição';
   }
 
   String get numeroPedido {
@@ -662,11 +671,14 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
   final TextEditingController _ordemSkuNameController =
       TextEditingController();
   List<Map<String, dynamic>> _ordemArtigoOpcoes = [];
+  List<_OrdemExpedicao> _ordemNumeroOpcoes = [];
+  List<_OrdemExpedicao> _ordemNumeroCache = [];
   List<_OrdemExpedicao> _ordensExpedicao = [];
   final Set<String> _ordensExpandidas = {};
   _OrdemSortMode _ordemSortMode = _OrdemSortMode.tocColor;
   Timer? _ordemBuscaDebounce;
   bool _buscandoOrdemArtigos = false;
+  bool _buscandoOrdemNumeros = false;
   bool _consultandoOrdens = false;
   bool _settingOrdemBuscaText = false;
   int _ordemSkuSelecionado = 0;
@@ -682,11 +694,24 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
   final TextEditingController _pedidoClienteController =
       TextEditingController();
   final TextEditingController _pedidoSetorController = TextEditingController();
+  _PedidoLinhaFiltro? _pedidoLinhaSelecionada;
+  final List<_PedidoLinhaFiltro> _pedidoLinhas = const [
+    _PedidoLinhaFiltro(codigo: 4125, nome: 'Raschelina'),
+    _PedidoLinhaFiltro(codigo: 4787, nome: 'Tipo B'),
+    _PedidoLinhaFiltro(codigo: 10180, nome: 'Jacquard'),
+    _PedidoLinhaFiltro(codigo: 36554, nome: 'Tecelagem'),
+    _PedidoLinhaFiltro(codigo: 52049, nome: 'Mostruário'),
+    _PedidoLinhaFiltro(codigo: 70192, nome: 'Fios'),
+    _PedidoLinhaFiltro(codigo: 74105, nome: 'Rendas'),
+    _PedidoLinhaFiltro(codigo: 97015, nome: 'Outros'),
+    _PedidoLinhaFiltro(codigo: 102199, nome: 'Tecidos'),
+  ];
   List<_PedidoEspecialPlanejamento> _pedidosEspeciais = [];
   List<_PedidoEspecialPlanejamento> _pedidosEspeciaisPendentes = [];
   List<Map<String, dynamic>> _pedidoArtigoOpcoes = [];
   final Set<String> _pedidosEspeciaisExpandidos = {};
   Timer? _pedidoArtigoBuscaDebounce;
+  Timer? _pedidoCodigoBuscaDebounce;
   Timer? _pedidoRenderTimer;
   bool _buscandoPedidoArtigos = false;
   bool _settingPedidoArtigoText = false;
@@ -894,6 +919,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     _pedidoClienteController.dispose();
     _pedidoSetorController.dispose();
     _pedidoArtigoBuscaDebounce?.cancel();
+    _pedidoCodigoBuscaDebounce?.cancel();
     _pedidoRenderTimer?.cancel();
     _opQtdeController.dispose();
     _opFonteController.dispose();
@@ -1392,7 +1418,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                           fontWeight: FontWeight.w600,
                         ),
                         decoration: const InputDecoration(
-                          labelText: 'Filtrar por codigo, cor ou lote',
+                          labelText: 'Filtrar por código, cor ou lote',
                           prefixIcon: Icon(Icons.search_rounded),
                           border: OutlineInputBorder(),
                         ),
@@ -1436,7 +1462,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                                     ),
                                   ),
                                   subtitle: Text(
-                                    'Codigo $cdLot',
+                                    'Código $cdLot',
                                     style: const TextStyle(
                                       color: Color(0xFF94A3B8),
                                       fontSize: 12,
@@ -1480,7 +1506,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       return;
     }
     if (nrOrdem.isEmpty) {
-      _showSnackBar('Informe o numero da ordem.', isError: true);
+      _showSnackBar('Informe o número da ordem.', isError: true);
       return;
     }
     if (_detalheObrigatorio && detalhe <= 0) {
@@ -1569,7 +1595,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     final metros = tipo == 'P' ? _caixaPMetros : _caixaGMetros;
     if (metros <= 0) {
       _showSnackBar(
-        'Nao ha metragem cadastrada para caixa $tipo deste artigo.',
+        'Não há metragem cadastrada para caixa $tipo deste artigo.',
         isError: true,
       );
       return;
@@ -1642,11 +1668,14 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
 
   Future<void> _consultarOrdensExpedicao() async {
     FocusScope.of(context).unfocus();
-    final skuName = await _resolverSkuNameParaConsultaOrdens();
+    final ordemFiltro = _resolverNumeroOrdemDigitado();
+    final skuName = ordemFiltro == null
+        ? await _resolverSkuNameParaConsultaOrdens()
+        : '';
     if (!mounted) return;
-    if (skuName.isEmpty) {
+    if (skuName.isEmpty && ordemFiltro == null) {
       _showSnackBar(
-        'Selecione um artigo da lista ou informe o codigo do SKU.',
+        'Selecione um artigo, informe o código do SKU ou digite o número da ordem.',
         isError: true,
       );
       return;
@@ -1659,17 +1688,24 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       _ordemArtigoOpcoes = [];
     });
     try {
-      final data = await EtiquetasService.buscarOrdensExpedicao(
-        skuName: skuName,
-      );
+      final base = ordemFiltro == null
+          ? (await EtiquetasService.buscarOrdensExpedicao(
+              skuName: skuName,
+            )).map(_OrdemExpedicao.fromJson).toList()
+          : await _carregarOrdensParaFiltroNumero();
       if (!mounted) return;
+      final ordens = base.where((ordem) {
+        if (ordemFiltro == null) return true;
+        return ordem.woid.contains(ordemFiltro);
+      }).toList();
       setState(() {
-        _ordensExpedicao = data.map(_OrdemExpedicao.fromJson).toList();
+        _ordensExpedicao = ordens;
         _ordenarOrdensExpedicao();
         _ordensExpandidas
           ..clear()
           ..addAll(_ordensExpedicao.map(_ordemKey));
         _consultandoOrdens = false;
+        _ordemNumeroOpcoes = [];
       });
       if (_ordensExpedicao.isEmpty) {
         _showSnackBar('Nenhuma ordem encontrada.', isError: true);
@@ -1681,6 +1717,22 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
         _consultandoOrdens = false;
       });
     }
+  }
+
+  String? _resolverNumeroOrdemDigitado() {
+    if (_ordemSkuSelecionado > 0) return null;
+    final texto = _ordemSkuNameController.text.trim();
+    final somenteNumeros = texto.replaceAll(RegExp(r'\D'), '');
+    if (somenteNumeros.length >= 7) return somenteNumeros;
+    return null;
+  }
+
+  Future<List<_OrdemExpedicao>> _carregarOrdensParaFiltroNumero() async {
+    if (_ordemNumeroCache.isNotEmpty) return _ordemNumeroCache;
+    final data = await EtiquetasService.buscarOrdensExpedicao();
+    final ordens = data.map(_OrdemExpedicao.fromJson).toList();
+    _ordemNumeroCache = ordens;
+    return ordens;
   }
 
   Future<String> _resolverSkuNameParaConsultaOrdens() async {
@@ -1715,12 +1767,33 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
         _ordensExpedicao = [];
         _ordensExpandidas.clear();
         _ordemArtigoOpcoes = [];
+        _ordemNumeroOpcoes = [];
+        _buscandoOrdemArtigos = false;
+        _buscandoOrdemNumeros = false;
       });
     }
 
     final q = value.trim();
+    final numeroOrdem = q.replaceAll(RegExp(r'\D'), '');
+    final digitandoOrdem = numeroOrdem.length >= 4;
+    if (digitandoOrdem) {
+      setState(() {
+        _ordemArtigoOpcoes = [];
+        _ordensExpedicao = [];
+        _ordensExpandidas.clear();
+        _buscandoOrdemArtigos = false;
+      });
+      _ordemBuscaDebounce = Timer(const Duration(milliseconds: 350), () {
+        if (mounted) _pesquisarOrdensPorNumero(numeroOrdem);
+      });
+      return;
+    }
+
     if (q.length < 2) {
-      setState(() => _ordemArtigoOpcoes = []);
+      setState(() {
+        _ordemArtigoOpcoes = [];
+        _ordemNumeroOpcoes = [];
+      });
       return;
     }
 
@@ -1736,6 +1809,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       if (!mounted) return;
       setState(() {
         _ordemArtigoOpcoes = opcoes;
+        _ordemNumeroOpcoes = [];
         _buscandoOrdemArtigos = false;
       });
     } catch (_) {
@@ -1743,6 +1817,30 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       setState(() {
         _ordemArtigoOpcoes = [];
         _buscandoOrdemArtigos = false;
+      });
+    }
+  }
+
+  Future<void> _pesquisarOrdensPorNumero(String numero) async {
+    if (numero.length < 4) return;
+    setState(() => _buscandoOrdemNumeros = true);
+    try {
+      final base = await _carregarOrdensParaFiltroNumero();
+      if (!mounted) return;
+      final opcoes = base
+          .where((ordem) => ordem.woid.contains(numero))
+          .take(12)
+          .toList();
+      setState(() {
+        _ordemNumeroOpcoes = opcoes;
+        _ordemArtigoOpcoes = [];
+        _buscandoOrdemNumeros = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _ordemNumeroOpcoes = [];
+        _buscandoOrdemNumeros = false;
       });
     }
   }
@@ -1759,8 +1857,24 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     setState(() {
       _ordemSkuSelecionado = cdObj;
       _ordemArtigoOpcoes = [];
+      _ordemNumeroOpcoes = [];
     });
     if (consultar) _consultarOrdensExpedicao();
+  }
+
+  void _selecionarOrdemAutocomplete(_OrdemExpedicao ordem) {
+    _settingOrdemBuscaText = true;
+    _ordemSkuNameController.text = ordem.woid;
+    _settingOrdemBuscaText = false;
+    setState(() {
+      _ordemSkuSelecionado = 0;
+      _ordemNumeroOpcoes = [];
+      _ordemArtigoOpcoes = [];
+      _ordensExpedicao = [ordem];
+      _ordensExpandidas
+        ..clear()
+        ..add(_ordemKey(ordem));
+    });
   }
 
   String _ordemKey(_OrdemExpedicao ordem) {
@@ -1828,7 +1942,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
 
     if (artigo == null) {
       _showSnackBar(
-        'Nao foi possivel localizar o artigo da ordem para preencher a Caixa.',
+        'Não foi possível localizar o artigo da ordem para preencher a Caixa.',
         isError: true,
       );
       return;
@@ -1980,6 +2094,17 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
 
     final dataInicio = _dateParam(inicioDate);
     final dataFim = _dateParam(fimDate);
+    final artigoFiltro = _pedidoNmObjController.text.trim();
+    final artigoCodigoDigitado = int.tryParse(artigoFiltro);
+    final cdObjFiltro = _pedidoCdObjSelecionado > 0
+        ? _pedidoCdObjSelecionado.toString()
+        : artigoCodigoDigitado != null
+        ? artigoCodigoDigitado.toString()
+        : _pedidoCdObjController.text.trim();
+    final nmObjFiltro = cdObjFiltro.isEmpty ? artigoFiltro : '';
+    final linhaFiltro =
+        _pedidoLinhaSelecionada?.codigo.toString() ??
+        _pedidoSetorController.text.trim();
 
     setState(() {
       _consultandoPedidosEspeciais = true;
@@ -1995,13 +2120,11 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       final data = await EtiquetasService.consultarPlanejamentoTinturaria(
         dataInicio: dataInicio,
         dataFim: dataFim,
-        cdVpd: _pedidoNumeroController.text,
-        cdObj: _pedidoCdObjSelecionado > 0
-            ? _pedidoCdObjSelecionado.toString()
-            : _pedidoCdObjController.text,
-        nmObj: _pedidoNmObjController.text,
-        cdCli: _pedidoClienteController.text,
-        cdObjLin: _pedidoSetorController.text,
+        cdVpd: _pedidoNumeroController.text.trim(),
+        cdObj: cdObjFiltro,
+        nmObj: nmObjFiltro,
+        cdCli: _pedidoClienteController.text.trim(),
+        cdObjLin: linhaFiltro,
         somenteAtrasados: _somentePedidosAtrasados,
         somentePendentes: _somentePedidosPendentes,
       );
@@ -2085,6 +2208,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
   void _onPedidoArtigoChanged(String value) {
     if (_settingPedidoArtigoText) return;
     _pedidoArtigoBuscaDebounce?.cancel();
+    _pedidoCodigoBuscaDebounce?.cancel();
 
     if (_pedidoCdObjSelecionado > 0) {
       setState(() {
@@ -2095,6 +2219,20 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     }
 
     final q = value.trim();
+    final codigo = int.tryParse(q);
+    if (codigo != null && codigo > 0) {
+      _pedidoCdObjController.text = codigo.toString();
+      setState(() => _pedidoArtigoOpcoes = []);
+      _pedidoCodigoBuscaDebounce = Timer(
+        const Duration(milliseconds: 350),
+        () {
+          if (mounted) _preencherArtigoPedidoPorCodigo(codigo);
+        },
+      );
+      return;
+    }
+
+    _pedidoCdObjController.clear();
     if (q.length < 2) {
       setState(() => _pedidoArtigoOpcoes = []);
       return;
@@ -2123,11 +2261,42 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     }
   }
 
+  Future<void> _preencherArtigoPedidoPorCodigo(int cdObj) async {
+    setState(() => _buscandoPedidoArtigos = true);
+    try {
+      final artigo = await EtiquetasService.buscarArtigoInfo(cdObj);
+      if (!mounted) return;
+      final nome = (artigo['NmObj'] ?? artigo['NomeArtigo'] ?? '')
+          .toString()
+          .trim();
+      _settingPedidoArtigoText = true;
+      _pedidoNmObjController.text = nome.isEmpty
+          ? cdObj.toString()
+          : '$cdObj - $nome';
+      _settingPedidoArtigoText = false;
+      setState(() {
+        _pedidoCdObjSelecionado = cdObj;
+        _pedidoCdObjController.text = cdObj.toString();
+        _pedidoArtigoOpcoes = [];
+        _buscandoPedidoArtigos = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _pedidoCdObjSelecionado = 0;
+        _pedidoArtigoOpcoes = [];
+        _buscandoPedidoArtigos = false;
+      });
+    }
+  }
+
   void _selecionarArtigoPedidoEspecial(Map<String, dynamic> artigo) {
     final cdObj = _toIntPadrao(artigo['CdObj']);
     final nmObj = (artigo['NmObj'] ?? '').toString().trim();
     _settingPedidoArtigoText = true;
-    _pedidoNmObjController.text = nmObj.isEmpty ? cdObj.toString() : nmObj;
+    _pedidoNmObjController.text = nmObj.isEmpty
+        ? cdObj.toString()
+        : '$cdObj - $nmObj';
     _settingPedidoArtigoText = false;
     setState(() {
       _pedidoCdObjSelecionado = cdObj;
@@ -2178,6 +2347,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       _pedidoNmObjController.clear();
       _pedidoClienteController.clear();
       _pedidoSetorController.clear();
+      _pedidoLinhaSelecionada = null;
       _pedidoCdObjSelecionado = 0;
       _pedidoArtigoOpcoes = [];
       _pedidosEspeciaisPendentes = [];
@@ -2340,7 +2510,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
           builder: (ctx) => AlertDialog(
             title: const Text('Dados da etiqueta'),
             content: const Text(
-              'Deseja manter as informacoes preenchidas para imprimir novamente?',
+              'Deseja manter as informações preenchidas para imprimir novamente?',
             ),
             actions: [
               TextButton(
@@ -2774,7 +2944,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       return;
     }
     if (numero.isEmpty) {
-      _showSnackBar('Informe o nÃºmero de destaque do Tipo B.', isError: true);
+      _showSnackBar('Informe o número de destaque do Tipo B.', isError: true);
       return;
     }
 
@@ -2811,7 +2981,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       );
       if (!mounted) return;
       setState(() => _imprimindoLivre = false);
-      _showSnackBar('Comando de impressao enviado.', isError: false);
+      _showSnackBar('Comando de impressão enviado.', isError: false);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -2832,7 +3002,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       return;
     }
     if (codigo.replaceAll(RegExp(r'\D'), '').length != 13) {
-      _showSnackBar('Informe um cÃƒÂ³digo de barras EAN-13 vÃƒÂ¡lido.', isError: true);
+      _showSnackBar('Informe um código de barras EAN-13 válido.', isError: true);
       return;
     }
 
@@ -2861,7 +3031,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       );
       if (!mounted) return;
       setState(() => _imprimindoLivre = false);
-      _showSnackBar('Comando de impressÃƒÂ£o enviado.', isError: false);
+      _showSnackBar('Comando de impressão enviado.', isError: false);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -3410,13 +3580,13 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
               final narrow = _isNarrow(constraints);
               final skuField = _campo(
                 controller: _ordemSkuNameController,
-                label: 'Material',
-                hint: 'Digite o nome ou codigo do artigo',
+                label: 'Material ou ordem',
+                hint: 'Digite nome/código do artigo ou nº da ordem',
                 icon: Icons.inventory_2_rounded,
                 enabled: !_consultandoOrdens,
                 onChanged: _onOrdemBuscaChanged,
                 onSubmit: _consultarOrdensExpedicao,
-                suffix: _buscandoOrdemArtigos
+                suffix: _buscandoOrdemArtigos || _buscandoOrdemNumeros
                     ? const Padding(
                         padding: EdgeInsets.all(14),
                         child: SizedBox(
@@ -3482,7 +3652,10 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
             },
           ),
           const SizedBox(height: 16),
-          if (_ordemArtigoOpcoes.isNotEmpty) ...[
+          if (_ordemNumeroOpcoes.isNotEmpty) ...[
+            _buildOrdensNumeroAutocomplete(),
+            const SizedBox(height: 16),
+          ] else if (_ordemArtigoOpcoes.isNotEmpty) ...[
             _buildOrdensAutocomplete(),
             const SizedBox(height: 16),
           ],
@@ -3533,7 +3706,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                   SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      'Digite o nome do material, selecione um artigo e consulte as ordens.',
+                      'Digite o nome do material, o código do artigo ou o número da ordem para consultar.',
                       style: TextStyle(
                         color: Color(0xFFCBD5E1),
                         fontWeight: FontWeight.w700,
@@ -3678,12 +3851,102 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      nmObj.isEmpty ? 'Artigo sem descricao' : nmObj,
+                      nmObj.isEmpty ? 'Artigo sem descrição' : nmObj,
                       style: const TextStyle(
                         color: Color(0xFFF8FAFC),
                         fontWeight: FontWeight.w600,
                         fontSize: 14,
                       ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  const Icon(
+                    Icons.keyboard_arrow_right_rounded,
+                    color: Color(0xFF94A3B8),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildOrdensNumeroAutocomplete() {
+    return Container(
+      constraints: const BoxConstraints(maxHeight: 280),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0F172A),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFF334155)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: ListView.separated(
+        shrinkWrap: true,
+        padding: EdgeInsets.zero,
+        itemCount: _ordemNumeroOpcoes.length,
+        separatorBuilder: (_, __) =>
+            const Divider(height: 1, indent: 16, color: Color(0xFF1E293B)),
+        itemBuilder: (context, index) {
+          final ordem = _ordemNumeroOpcoes[index];
+          return InkWell(
+            onTap: () => _selecionarOrdemAutocomplete(ordem),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF451A03),
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: _primary),
+                    ),
+                    child: Text(
+                      ordem.woid.isEmpty ? '-' : ordem.woid,
+                      style: const TextStyle(
+                        color: Color(0xFFE8CE7A),
+                        fontWeight: FontWeight.w900,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          ordem.titulo,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Color(0xFFF8FAFC),
+                            fontWeight: FontWeight.w800,
+                            fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          'Qtd ${_formatarNumeroOrdens(ordem.quantity)} • Entrega ${_formatarDataOrdem(ordem.dueDate)}',
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Color(0xFF94A3B8),
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -3755,7 +4018,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                     children: [
                       Text(
                         ordem.titulo.isEmpty
-                            ? 'Artigo sem descricao'
+                            ? 'Artigo sem descrição'
                             : ordem.titulo,
                         maxLines: expanded ? 2 : 1,
                         overflow: TextOverflow.ellipsis,
@@ -3848,7 +4111,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                         icon: Icons.receipt_long_rounded,
                       ),
                       _DarkMetricPill(
-                        label: 'Familia',
+                        label: 'Família',
                         value: ordem.productionFamily.isEmpty
                             ? '-'
                             : ordem.productionFamily,
@@ -3860,7 +4123,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                         icon: Icons.event_rounded,
                       ),
                       _DarkMetricPill(
-                        label: 'Liberacao',
+                        label: 'Liberação',
                         value: _formatarDataOrdem(ordem.releaseDate),
                         icon: Icons.event_available_rounded,
                       ),
@@ -3882,7 +4145,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                       Expanded(
                         child: Text(
                           unidadeLocal.isEmpty
-                              ? 'Unidade/local nao informados'
+                              ? 'Unidade/local não informados'
                               : unidadeLocal,
                           style: const TextStyle(
                             color: Color(0xFF94A3B8),
@@ -3965,7 +4228,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
             ],
           ),
           const SizedBox(height: 18),
-          _sectionLabel('Filtros obrigatorios'),
+          _sectionLabel('Filtros obrigatórios'),
           const SizedBox(height: 10),
           LayoutBuilder(
             builder: (context, constraints) {
@@ -4037,25 +4300,16 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
               final pedidoField = _campo(
                 controller: _pedidoNumeroController,
                 label: 'Pedido',
-                hint: 'Codigo do pedido',
+                hint: 'Código do pedido',
                 icon: Icons.receipt_long_rounded,
-                numeric: true,
-                enabled: !_consultandoPedidosEspeciais,
-                onSubmit: _consultarPedidosEspeciais,
-              );
-              final codigoField = _campo(
-                controller: _pedidoCdObjController,
-                label: 'Codigo do artigo',
-                hint: 'CdObj',
-                icon: Icons.qr_code_2_rounded,
                 numeric: true,
                 enabled: !_consultandoPedidosEspeciais,
                 onSubmit: _consultarPedidosEspeciais,
               );
               final artigoField = _campo(
                 controller: _pedidoNmObjController,
-                label: 'Nome do artigo',
-                hint: 'Parte do nome do material',
+                label: 'Artigo',
+                hint: 'Digite o código ou nome do artigo',
                 icon: Icons.inventory_2_rounded,
                 enabled: !_consultandoPedidosEspeciais,
                 onChanged: _onPedidoArtigoChanged,
@@ -4079,28 +4333,20 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
               final clienteField = _campo(
                 controller: _pedidoClienteController,
                 label: 'Cliente',
-                hint: 'Codigo do cliente',
+                hint: 'Código do cliente',
                 icon: Icons.person_rounded,
                 numeric: true,
                 enabled: !_consultandoPedidosEspeciais,
                 onSubmit: _consultarPedidosEspeciais,
               );
-              final setorField = _campo(
-                controller: _pedidoSetorController,
-                label: 'Setor',
-                hint: 'Codigo da linha',
-                icon: Icons.factory_rounded,
-                numeric: true,
+              final setorField = _campoSetorPedidoEspecial(
                 enabled: !_consultandoPedidosEspeciais,
-                onSubmit: _consultarPedidosEspeciais,
               );
 
               if (narrow) {
                 return Column(
                   children: [
                     pedidoField,
-                    const SizedBox(height: 12),
-                    codigoField,
                     const SizedBox(height: 12),
                     artigoField,
                     const SizedBox(height: 12),
@@ -4116,8 +4362,6 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                   Row(
                     children: [
                       Expanded(child: pedidoField),
-                      const SizedBox(width: 12),
-                      Expanded(child: codigoField),
                       const SizedBox(width: 12),
                       Expanded(flex: 2, child: artigoField),
                     ],
@@ -4271,7 +4515,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      nmObj.isEmpty ? 'Artigo sem descricao' : nmObj,
+                      nmObj.isEmpty ? 'Artigo sem descrição' : nmObj,
                       style: const TextStyle(
                         color: Color(0xFFF8FAFC),
                         fontWeight: FontWeight.w700,
@@ -4317,7 +4561,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
             child: Text(
               restante > 0
                   ? 'Carregando mais registros na tela... faltam $restante'
-                  : 'Finalizando exibicao dos registros...',
+                  : 'Finalizando exibição dos registros...',
               style: const TextStyle(
                 color: Color(0xFFCBD5E1),
                 fontWeight: FontWeight.w800,
@@ -4372,7 +4616,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
           SizedBox(width: 10),
           Expanded(
             child: Text(
-              'Preencha as datas de necessidade e clique em Consultar. Esta aba nao carrega dados automaticamente.',
+              'Preencha as datas de necessidade e clique em Consultar. Esta aba não carrega dados automaticamente.',
               style: TextStyle(
                 color: Color(0xFFCBD5E1),
                 fontWeight: FontWeight.w700,
@@ -4455,7 +4699,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                           _DarkTag(
                             label: item.cdObj.isEmpty
                                 ? 'Artigo -'
-                                : 'Codigo ${item.cdObj}',
+                                : 'Código ${item.cdObj}',
                             icon: Icons.qr_code_2_rounded,
                           ),
                           _DarkTag(
@@ -4567,7 +4811,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                         icon: Icons.timelapse_rounded,
                       ),
                       _DarkMetricPill(
-                        label: 'Previsao',
+                        label: 'Previsão',
                         value: _formatarDataOrdem(item.dtPrevisao),
                         icon: Icons.event_available_rounded,
                       ),
@@ -4982,7 +5226,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                 width: narrow ? double.infinity : null,
                 child: Tooltip(
                   message:
-                      'Mantem as proximas caixas impressas no mesmo lote (LI).',
+                      'Mantém as próximas caixas impressas no mesmo lote (LI).',
                   child: _ToggleChip(
                     label: 'Manter lote',
                     value: _manterLoteCaixa,
@@ -5032,8 +5276,8 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
             const SizedBox(height: 8),
             Text(
               _loteImpressaoCaixa == null
-                  ? 'Lote: sera gerado na proxima impressao'
-                  : 'Lote (LI): $_loteImpressaoCaixa - proximas caixas entram no mesmo lote',
+                  ? 'Lote: será gerado na próxima impressão'
+                  : 'Lote (LI): $_loteImpressaoCaixa - próximas caixas entram no mesmo lote',
               style: const TextStyle(
                 fontSize: 12,
                 color: Color(0xFF64748B),
@@ -5564,7 +5808,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
         children: [
           _buildPrinterSelector(enabled: !busy),
           const SizedBox(height: 16),
-          _sectionLabel('Tipo de impressao'),
+          _sectionLabel('Tipo de impressão'),
           const SizedBox(height: 10),
           SegmentedButton<_LivreTipoModelo>(
             segments: const [
@@ -5780,7 +6024,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
         );
         final numeroField = _campo(
           controller: _tipoBNumeroController,
-          label: 'Numero *',
+          label: 'Número *',
           hint: '116',
           icon: Icons.pin_rounded,
           numeric: true,
@@ -5812,7 +6056,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
         );
         final fonteNumeroField = _campo(
           controller: _tipoBFonteNumeroController,
-          label: 'Fonte numero',
+          label: 'Fonte número',
           hint: '72',
           icon: Icons.format_size_rounded,
           numeric: true,
@@ -5916,8 +6160,8 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
             final narrow = _isNarrow(constraints);
             final tituloField = _campo(
               controller: _fioTituloController,
-              label: 'Titulo *',
-              hint: 'Fio Poliester 167/48',
+              label: 'Título *',
+              hint: 'Fio Poliéster 167/48',
               icon: Icons.short_text_rounded,
               enabled: !busy,
               onChanged: (_) => setState(() {}),
@@ -5933,7 +6177,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
             );
             final pesoField = _campo(
               controller: _fioPesoController,
-              label: 'Peso liquido *',
+              label: 'Peso líquido *',
               hint: '300g',
               icon: Icons.scale_rounded,
               enabled: !busy,
@@ -5950,7 +6194,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
             );
             final codigoField = _campo(
               controller: _fioCodigoController,
-              label: 'Codigo de barras *',
+              label: 'Código de barras *',
               hint: '7896714231266',
               icon: Icons.barcode_reader,
               numeric: true,
@@ -6420,6 +6664,67 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
 
   // ── Preview etiqueta caixa ────────────────────────────────────
 
+  Widget _campoSetorPedidoEspecial({required bool enabled}) {
+    final selecionado =
+        _pedidoLinhaSelecionada != null &&
+            _pedidoLinhas.any(
+              (linha) => linha.codigo == _pedidoLinhaSelecionada!.codigo,
+            )
+        ? _pedidoLinhas.firstWhere(
+            (linha) => linha.codigo == _pedidoLinhaSelecionada!.codigo,
+          )
+        : null;
+
+    return DropdownButtonFormField<_PedidoLinhaFiltro>(
+      initialValue: selecionado,
+      isExpanded: true,
+      dropdownColor: const Color(0xFF111827),
+      style: const TextStyle(
+        color: _textPrimary,
+        fontSize: 15,
+        fontWeight: FontWeight.w700,
+      ),
+      items: _pedidoLinhas
+          .map(
+            (linha) => DropdownMenuItem<_PedidoLinhaFiltro>(
+              value: linha,
+              child: Text(linha.label, overflow: TextOverflow.ellipsis),
+            ),
+          )
+          .toList(),
+      onChanged: enabled
+          ? (linha) {
+              setState(() {
+                _pedidoLinhaSelecionada = linha;
+                _pedidoSetorController.text =
+                    linha == null ? '' : linha.codigo.toString();
+              });
+            }
+          : null,
+      decoration: InputDecoration(
+        constraints: const BoxConstraints(minHeight: 56),
+        labelText: 'Setor / linha',
+        hintText: 'Selecione pelo nome',
+        prefixIcon: const Icon(Icons.factory_rounded),
+        suffixIcon: _pedidoLinhaSelecionada == null
+            ? null
+            : IconButton(
+                tooltip: 'Limpar setor',
+                onPressed: enabled
+                    ? () {
+                        setState(() {
+                          _pedidoLinhaSelecionada = null;
+                          _pedidoSetorController.clear();
+                        });
+                      }
+                    : null,
+                icon: const Icon(Icons.close_rounded),
+              ),
+        border: const OutlineInputBorder(),
+      ),
+    );
+  }
+
   Widget _buildCaixaPreview() {
     final previewData = _etiquetaCaixa ?? _artigoInfo!;
     return Container(
@@ -6658,7 +6963,7 @@ class _TipoCaixaQuickButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Tooltip(
-      message: value > 0 ? 'Preencher $value metros' : 'Sem padrao cadastrado',
+      message: value > 0 ? 'Preencher $value metros' : 'Sem padrão cadastrado',
       child: InkWell(
         borderRadius: BorderRadius.circular(6),
         onTap: enabled ? onTap : null,
@@ -7198,7 +7503,7 @@ class _FioLivrePreviewPainter extends CustomPainter {
 
     drawText(titulo, size.height * 0.36);
     drawText('Cor: $cor', size.height * 0.47);
-    drawText('Peso Liquido: $peso', size.height * 0.58);
+    drawText('Peso Líquido: $peso', size.height * 0.58);
     drawText('Lote: $lote', size.height * 0.69);
 
     final barcodeWidth = size.width * 0.34;

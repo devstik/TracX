@@ -14,7 +14,8 @@ import 'package:tracx/screens/ConsultaMapaProducaoScreen.dart';
 import 'package:tracx/screens/ApontamentoProdutividadeScreen.dart';
 import 'package:tracx/screens/RegistrosApontamento.dart';
 import 'package:tracx/screens/imprimir_etiquetas_page.dart';
-import 'package:tracx/screens/checkin_tambores_screen.dart';
+import 'package:tracx/screens/controle_screen.dart';
+import 'package:tracx/screens/mov_estoque_screen.dart';
 import 'package:tracx/services/estoque_db_helper.dart';
 //import 'package:tracx/widgets/widgets_dados_integrados.dart';
 import 'package:tracx/services/update_service.dart';
@@ -387,7 +388,7 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900),
         ),
         content: Text(
-          "A sessao de ${widget.conferente} sera encerrada.",
+          "A sessão de ${widget.conferente} será encerrada.",
           style: const TextStyle(color: Colors.white70, height: 1.4),
         ),
         actions: [
@@ -924,11 +925,19 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
         },
       ),
       _ActionItem(
-        title: "Check-in Tambores",
-        subtitle: "Retirada e entrega",
-        icon: Icons.inventory_2_outlined,
+        title: "Controle",
+        subtitle: "Planilha de envio",
+        icon: Icons.table_chart_outlined,
         onTap: () {
-          _navigateWithTransition(context, const CheckinTamboresScreen());
+          _navigateWithTransition(context, const ControleScreen());
+        },
+      ),
+      _ActionItem(
+        title: "Mov. De Estoque",
+        subtitle: "Entradas por data e artigo",
+        icon: Icons.warehouse_outlined,
+        onTap: () {
+          _navigateWithTransition(context, const MovEstoqueScreen());
         },
       ),
 
@@ -1147,7 +1156,7 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
             _ConfigTile(
               icon: Icons.admin_panel_settings_outlined,
               title: "Painel Admin",
-              subtitle: "Gerenciar usuarios e permissoes",
+              subtitle: "Gerenciar usuários e permissões",
               accent: const Color(0xFF16A34A),
               onTap: _showAdminSheet,
             ),
@@ -1159,7 +1168,7 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
           _ConfigTile(
             icon: Icons.logout,
             title: "Sair",
-            subtitle: "Encerrar sessao do usuario",
+            subtitle: "Encerrar sessão do usuário",
             accent: const Color(0xFFE85C5C),
             destructive: true,
             onTap: _confirmarLogout,
