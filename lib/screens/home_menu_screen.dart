@@ -14,6 +14,7 @@ import 'package:tracx/screens/ConsultaMapaProducaoScreen.dart';
 import 'package:tracx/screens/ApontamentoProdutividadeScreen.dart';
 import 'package:tracx/screens/RegistrosApontamento.dart';
 import 'package:tracx/screens/imprimir_etiquetas_page.dart';
+import 'package:tracx/screens/cadastro_ean_screen.dart';
 import 'package:tracx/screens/controle_screen.dart';
 import 'package:tracx/screens/mov_estoque_screen.dart';
 import 'package:tracx/services/estoque_db_helper.dart';
@@ -922,6 +923,14 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
         icon: Icons.stacked_line_chart_outlined,
         onTap: () {
           _navigateWithTransition(context, const EtiquetasPage(grupoId: 0));
+        },
+      ),
+      _ActionItem(
+        title: "Cadastro de EAN",
+        subtitle: "Consultar e cadastrar EAN-13",
+        icon: Icons.barcode_reader,
+        onTap: () {
+          _navigateWithTransition(context, const CadastroEanScreen());
         },
       ),
       _ActionItem(

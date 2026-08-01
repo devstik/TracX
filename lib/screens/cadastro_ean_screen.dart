@@ -22,7 +22,7 @@ class _CadastroEanScreenState extends State<CadastroEanScreen> {
   static const _text = Color(0xFFF8FAFC);
   static const _muted = Color(0xFF94A3B8);
   static const _success = Color(0xFF16A34A);
-  static const _error = Color(0xFFDC2626);
+  static const _error = Color.fromARGB(255, 143, 7, 7);
 
   final _buscaController = TextEditingController();
   final _cdObjController = TextEditingController();
