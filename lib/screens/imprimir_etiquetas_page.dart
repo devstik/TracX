@@ -26,6 +26,8 @@ enum _EtiquetaModelo {
 
 enum _OrdemSortMode { tocColor, percentDesc, percentAsc, releaseDate, quantity }
 
+enum _PedidoEspecialConsulta { planejamento, pendencias }
+
 class _OperadorEtiqueta {
   final String codigo;
   final String nome;
@@ -174,6 +176,13 @@ class _PedidoEspecialPlanejamento {
     required this.cdObj,
     required this.nivel,
     required this.obs,
+    required this.qtPedido,
+    required this.qtAcabado,
+    required this.saldoPendente,
+    required this.setor,
+    required this.situacao,
+    required this.ord1,
+    required this.ord2,
   });
 
   final String codigo;
@@ -198,12 +207,19 @@ class _PedidoEspecialPlanejamento {
   final String cdObj;
   final int nivel;
   final String obs;
+  final double qtPedido;
+  final double qtAcabado;
+  final double saldoPendente;
+  final String setor;
+  final String situacao;
+  final String ord1;
+  final String ord2;
 
   factory _PedidoEspecialPlanejamento.fromJson(Map<String, dynamic> json) {
     return _PedidoEspecialPlanejamento(
       codigo: _asText(json['Codigo']),
       descricao: _asText(json['Descricao']),
-      nomeArtigo: _asText(json['NomeArtigo']),
+      nomeArtigo: _asText(json['NomeArtigo'] ?? json['Ord1']),
       detalhe: _asText(json['Detalhe']),
       ocDoCliente: _asText(json['OcDoCliente']),
       cliente: _asText(json['Cliente']),
@@ -212,17 +228,26 @@ class _PedidoEspecialPlanejamento {
       dtEntrega: _asDate(json['DtEntrega']),
       dtLeadTime: _asDate(json['DtLeadTime']),
       diaEmAtrazo: _asText(json['DiaEmAtrazo']),
-      estoque: _asDouble(json['Estoque']),
+      estoque: _asDouble(
+        json['Estoque'] ?? json['SaldoPendente'] ?? json['QtPedido'],
+      ),
       qtReserva: _asDouble(json['QtReserva']),
       maquina: _asText(json['Maquina']),
       nrOrdem: _asText(json['NrOrdem']),
       pedidoEspecial: _asText(json['PedidoEspecial']),
-      staOrdem: _asText(json['StaOrdem']),
-      dtPrevisao: _asDate(json['DtPrevisao']),
+      staOrdem: _asText(json['StaOrdem'] ?? json['Situacao']),
+      dtPrevisao: _asDate(json['DtPrevisao'] ?? json['DtPrevMargem']),
       cdVpd: _asText(json['CdVpd']),
       cdObj: _asText(json['CdObj'] ?? json['Mae'] ?? json['Ordem2']),
       nivel: _asInt(json['Nivel']),
       obs: _asText(json['Obs']),
+      qtPedido: _asDouble(json['QtPedido']),
+      qtAcabado: _asDouble(json['QtAcabado']),
+      saldoPendente: _asDouble(json['SaldoPendente']),
+      setor: _asText(json['Setor']),
+      situacao: _asText(json['Situacao']),
+      ord1: _asText(json['Ord1']),
+      ord2: _asText(json['Ord2']),
     );
   }
 
@@ -231,6 +256,8 @@ class _PedidoEspecialPlanejamento {
       pedidoEspecial.trim() == '1';
 
   bool get ehLinhaPedido => nivel == 3 && descricao.isNotEmpty;
+
+  bool get ehPendenciaPedido => nivel == 2 && descricao.isNotEmpty;
 
   String get titulo {
     if (nomeArtigo.isNotEmpty) return nomeArtigo;
@@ -248,7 +275,7 @@ class _PedidoEspecialPlanejamento {
     return codigo;
   }
 
-  _PedidoEspecialPlanejamento copyWith({String? nomeArtigo}) {
+  _PedidoEspecialPlanejamento copyWith({String? nomeArtigo, String? cdObj}) {
     return _PedidoEspecialPlanejamento(
       codigo: codigo,
       descricao: descricao,
@@ -269,9 +296,16 @@ class _PedidoEspecialPlanejamento {
       staOrdem: staOrdem,
       dtPrevisao: dtPrevisao,
       cdVpd: cdVpd,
-      cdObj: cdObj,
+      cdObj: cdObj ?? this.cdObj,
       nivel: nivel,
       obs: obs,
+      qtPedido: qtPedido,
+      qtAcabado: qtAcabado,
+      saldoPendente: saldoPendente,
+      setor: setor,
+      situacao: situacao,
+      ord1: ord1,
+      ord2: ord2,
     );
   }
 
@@ -323,64 +357,64 @@ class _TocStatus {
   final int priority;
 
   factory _TocStatus.blue(String label, double numeric) => _TocStatus(
-        label: label,
-        name: 'Azul',
-        background: const Color(0xFF38BDF8),
-        foreground: const Color(0xFF082F49),
-        border: const Color(0xFF7DD3FC),
-        numeric: numeric,
-        priority: 10000,
-      );
+    label: label,
+    name: 'Azul',
+    background: const Color(0xFF38BDF8),
+    foreground: const Color(0xFF082F49),
+    border: const Color(0xFF7DD3FC),
+    numeric: numeric,
+    priority: 10000,
+  );
 
   factory _TocStatus.green(String label, double numeric) => _TocStatus(
-        label: label,
-        name: 'Verde',
-        background: const Color(0xFF16A34A),
-        foreground: Colors.white,
-        border: const Color(0xFF4ADE80),
-        numeric: numeric,
-        priority: 20000,
-      );
+    label: label,
+    name: 'Verde',
+    background: const Color(0xFF16A34A),
+    foreground: Colors.white,
+    border: const Color(0xFF4ADE80),
+    numeric: numeric,
+    priority: 20000,
+  );
 
   factory _TocStatus.yellow(String label, double numeric) => _TocStatus(
-        label: label,
-        name: 'Amarelo',
-        background: const Color(0xFFFACC15),
-        foreground: const Color(0xFF422006),
-        border: const Color(0xFFFDE047),
-        numeric: numeric,
-        priority: 30000,
-      );
+    label: label,
+    name: 'Amarelo',
+    background: const Color(0xFFFACC15),
+    foreground: const Color(0xFF422006),
+    border: const Color(0xFFFDE047),
+    numeric: numeric,
+    priority: 30000,
+  );
 
   factory _TocStatus.red(String label, double numeric) => _TocStatus(
-        label: label,
-        name: 'Vermelho',
-        background: const Color(0xFFDC2626),
-        foreground: Colors.white,
-        border: const Color(0xFFF87171),
-        numeric: numeric,
-        priority: 40000,
-      );
+    label: label,
+    name: 'Vermelho',
+    background: const Color(0xFFDC2626),
+    foreground: Colors.white,
+    border: const Color(0xFFF87171),
+    numeric: numeric,
+    priority: 40000,
+  );
 
   factory _TocStatus.black(String label, double numeric) => _TocStatus(
-        label: label,
-        name: 'Preto',
-        background: const Color(0xFF020617),
-        foreground: Colors.white,
-        border: const Color(0xFF64748B),
-        numeric: numeric,
-        priority: 50000,
-      );
+    label: label,
+    name: 'Preto',
+    background: const Color(0xFF020617),
+    foreground: Colors.white,
+    border: const Color(0xFF64748B),
+    numeric: numeric,
+    priority: 50000,
+  );
 
   factory _TocStatus.gray(String label, double numeric) => _TocStatus(
-        label: label,
-        name: 'Sem alvo',
-        background: const Color(0xFFE5E7EB),
-        foreground: const Color(0xFF111827),
-        border: const Color(0xFFCBD5E1),
-        numeric: numeric,
-        priority: 60000,
-      );
+    label: label,
+    name: 'Sem alvo',
+    background: const Color(0xFFE5E7EB),
+    foreground: const Color(0xFF111827),
+    border: const Color(0xFFCBD5E1),
+    numeric: numeric,
+    priority: 60000,
+  );
 }
 
 class _LinhaLivreEditor {
@@ -514,8 +548,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
   Timer? _buscaCarretelDebounce;
 
   // ── Carretel — dados da etiqueta ───────────────────────────────
-  final TextEditingController _loteCarretelController =
-      TextEditingController();
+  final TextEditingController _loteCarretelController = TextEditingController();
   final TextEditingController _operadorCarretelController =
       TextEditingController();
   final TextEditingController _qtdeCarretelController = TextEditingController(
@@ -526,10 +559,12 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
   bool _imprimindoCarretel = false;
 
   // ── Etiqueta Livre — tamanho + linhas montadas pelo usuário ────
-  final TextEditingController _larguraLivreController =
-      TextEditingController(text: '80');
-  final TextEditingController _alturaLivreController =
-      TextEditingController(text: '50');
+  final TextEditingController _larguraLivreController = TextEditingController(
+    text: '80',
+  );
+  final TextEditingController _alturaLivreController = TextEditingController(
+    text: '50',
+  );
   final TextEditingController _qtdeLivreController = TextEditingController(
     text: '1',
   );
@@ -668,8 +703,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
   String? _loteImpressaoCaixa;
 
   // Ordens
-  final TextEditingController _ordemSkuNameController =
-      TextEditingController();
+  final TextEditingController _ordemSkuNameController = TextEditingController();
   List<Map<String, dynamic>> _ordemArtigoOpcoes = [];
   List<_OrdemExpedicao> _ordemNumeroOpcoes = [];
   List<_OrdemExpedicao> _ordemNumeroCache = [];
@@ -686,8 +720,9 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
   // Pedido Especial
   final TextEditingController _pedidoDataInicioController =
       TextEditingController(text: _dateParam(DateTime.now()));
-  final TextEditingController _pedidoDataFimController =
-      TextEditingController(text: _dateParam(DateTime.now()));
+  final TextEditingController _pedidoDataFimController = TextEditingController(
+    text: _dateParam(DateTime.now()),
+  );
   final TextEditingController _pedidoNumeroController = TextEditingController();
   final TextEditingController _pedidoCdObjController = TextEditingController();
   final TextEditingController _pedidoNmObjController = TextEditingController();
@@ -704,7 +739,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     _PedidoLinhaFiltro(codigo: 70192, nome: 'Fios'),
     _PedidoLinhaFiltro(codigo: 74105, nome: 'Rendas'),
     _PedidoLinhaFiltro(codigo: 97015, nome: 'Outros'),
-    _PedidoLinhaFiltro(codigo: 102199, nome: 'Tecidos'),
+    _PedidoLinhaFiltro(codigo: 102199, nome: 'Tecido'),
   ];
   List<_PedidoEspecialPlanejamento> _pedidosEspeciais = [];
   List<_PedidoEspecialPlanejamento> _pedidosEspeciaisPendentes = [];
@@ -718,7 +753,9 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
   int _pedidoCdObjSelecionado = 0;
   bool _consultandoPedidosEspeciais = false;
   bool _renderizandoPedidosEspeciais = false;
-  bool _somentePedidosPendentes = true;
+  _PedidoEspecialConsulta _pedidoConsultaSelecionada =
+      _PedidoEspecialConsulta.planejamento;
+  bool _somentePedidosPendentes = false;
   bool _somentePedidosAtrasados = false;
 
   // Flags do artigo
@@ -783,11 +820,12 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     try {
       final data = await EtiquetasService.buscarOperadores();
       if (!mounted) return;
-      final operadores = data
-          .map(_OperadorEtiqueta.fromJson)
-          .where((item) => item.codigo.isNotEmpty)
-          .toList()
-        ..sort((a, b) => a.label.compareTo(b.label));
+      final operadores =
+          data
+              .map(_OperadorEtiqueta.fromJson)
+              .where((item) => item.codigo.isNotEmpty)
+              .toList()
+            ..sort((a, b) => a.label.compareTo(b.label));
       setState(() {
         _operadores = operadores;
         _carregandoOperadores = false;
@@ -806,12 +844,11 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       final ipOriginal = (printer['ip'] ?? '').toString().trim();
       final ip = ipOriginal.split(':').first.trim();
       final portaOriginal = printer['porta'];
-      final porta =
-          portaOriginal is int
-              ? portaOriginal
-              : int.tryParse(portaOriginal?.toString() ?? '') ??
-                    int.tryParse(ipOriginal.split(':').skip(1).firstOrNull ?? '') ??
-                    ZebraPrinterService.defaultPort;
+      final porta = portaOriginal is int
+          ? portaOriginal
+          : int.tryParse(portaOriginal?.toString() ?? '') ??
+                int.tryParse(ipOriginal.split(':').skip(1).firstOrNull ?? '') ??
+                ZebraPrinterService.defaultPort;
       String nome;
       switch (ip) {
         case '168.190.30.206':
@@ -830,12 +867,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
           nome = 'Zebra $nextZebraNumber';
           nextZebraNumber++;
       }
-      return {
-        'key': '$ip:$porta',
-        'nome': nome,
-        'ip': ip,
-        'porta': porta,
-      };
+      return {'key': '$ip:$porta', 'nome': nome, 'ip': ip, 'porta': porta};
     }).toList();
   }
 
@@ -844,21 +876,15 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     List<Map<String, dynamic>> printers,
   ) {
     final ipsPreferenciais = switch (modelo) {
-      _EtiquetaModelo.caixa || _EtiquetaModelo.carretel => const [
-        '168.190.30.206',
-        '168.190.30.181',
-      ],
-      _EtiquetaModelo.ordens => const [
-        '168.190.30.206',
-        '168.190.30.181',
-      ],
+      _EtiquetaModelo.caixa ||
+      _EtiquetaModelo.carretel => const ['168.190.30.206', '168.190.30.181'],
+      _EtiquetaModelo.ordens => const ['168.190.30.206', '168.190.30.181'],
       _EtiquetaModelo.pedidoEspecial => const [
         '168.190.30.206',
         '168.190.30.181',
       ],
-      _EtiquetaModelo.operador || _EtiquetaModelo.livre => const [
-        '168.190.30.172',
-      ],
+      _EtiquetaModelo.operador ||
+      _EtiquetaModelo.livre => const ['168.190.30.172'],
       _EtiquetaModelo.palete => const [
         '168.190.30.181',
         '168.190.30.206',
@@ -1275,8 +1301,12 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
   int _compararLotesNatural(Map<String, dynamic> a, Map<String, dynamic> b) {
     final nomeA = (a['NmLot'] ?? '').toString().trim();
     final nomeB = (b['NmLot'] ?? '').toString().trim();
-    final textoA = nomeA.isNotEmpty ? nomeA : _toIntPadrao(a['CdLot']).toString();
-    final textoB = nomeB.isNotEmpty ? nomeB : _toIntPadrao(b['CdLot']).toString();
+    final textoA = nomeA.isNotEmpty
+        ? nomeA
+        : _toIntPadrao(a['CdLot']).toString();
+    final textoB = nomeB.isNotEmpty
+        ? nomeB
+        : _toIntPadrao(b['CdLot']).toString();
     final compare = _compararTextoNatural(textoA, textoB);
     if (compare != 0) return compare;
     return _toIntPadrao(a['CdLot']).compareTo(_toIntPadrao(b['CdLot']));
@@ -1322,10 +1352,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
         lotes: lotes,
         temPreto: _temPreto,
         usaDropdownDetalhe: deveUsarDropdown,
-        fallback: {
-          ...?_artigoSelecionadoBusca,
-          ...?_artigoInfo,
-        },
+        fallback: {...?_artigoSelecionadoBusca, ...?_artigoInfo},
       );
       setState(() {
         _lotesList = lotes;
@@ -1374,14 +1401,17 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
         return StatefulBuilder(
           builder: (context, setModalState) {
             final termo = filtro.trim().toUpperCase();
-            final filtrados = termo.isEmpty
-                ? List<Map<String, dynamic>>.of(_lotesList)
-                : _lotesList.where((lot) {
-                    final cdLot = _toIntPadrao(lot['CdLot']).toString();
-                    final nmLot = (lot['NmLot'] ?? '').toString().toUpperCase();
-                    return cdLot.contains(termo) || nmLot.contains(termo);
-                  }).toList()
-              ..sort(_compararLotesNatural);
+            final filtrados =
+                termo.isEmpty
+                      ? List<Map<String, dynamic>>.of(_lotesList)
+                      : _lotesList.where((lot) {
+                          final cdLot = _toIntPadrao(lot['CdLot']).toString();
+                          final nmLot = (lot['NmLot'] ?? '')
+                              .toString()
+                              .toUpperCase();
+                          return cdLot.contains(termo) || nmLot.contains(termo);
+                        }).toList()
+                  ..sort(_compararLotesNatural);
 
             return SafeArea(
               child: SizedBox(
@@ -1399,7 +1429,9 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      _temPreto ? 'Selecionar Cor / Lote' : 'Selecionar detalhe',
+                      _temPreto
+                          ? 'Selecionar Cor / Lote'
+                          : 'Selecionar detalhe',
                       style: const TextStyle(
                         color: Color(0xFFF8FAFC),
                         fontSize: 16,
@@ -1442,8 +1474,9 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                               itemBuilder: (context, index) {
                                 final lot = filtrados[index];
                                 final cdLot = _toIntPadrao(lot['CdLot']);
-                                final nmLot =
-                                    (lot['NmLot'] ?? '').toString().trim();
+                                final nmLot = (lot['NmLot'] ?? '')
+                                    .toString()
+                                    .trim();
                                 final selected = cdLot == _detalheSelecionado;
                                 return ListTile(
                                   leading: Icon(
@@ -1621,7 +1654,8 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       nrOrdem: nrOrdem,
       detalhe: detalhe,
       lote: lote,
-      operador: int.tryParse((_operadorCaixaSelecionadoCodigo ?? '').trim()) ?? 0,
+      operador:
+          int.tryParse((_operadorCaixaSelecionadoCodigo ?? '').trim()) ?? 0,
       pedidoEspecial: _pedidoEspecial,
       qtdeImp: qtde,
       loteInline: _loteInline,
@@ -1972,10 +2006,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     final skuCode = ordem.skuCode.isNotEmpty ? ordem.skuCode : ordem.skuName;
     final codigo = int.tryParse(skuCode.trim());
     if (codigo != null && codigo > 0) {
-      return {
-        'CdObj': codigo,
-        'NmObj': ordem.titulo,
-      };
+      return {'CdObj': codigo, 'NmObj': ordem.titulo};
     }
 
     final termos = <String>[
@@ -1994,10 +2025,10 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
   String _formatarQuantidadeParaCampo(double value) {
     if (value <= 0) return '';
     if (value == value.roundToDouble()) return value.toStringAsFixed(0);
-    return value.toStringAsFixed(2).replaceAll(RegExp(r'0+$'), '').replaceAll(
-      RegExp(r'\.$'),
-      '',
-    );
+    return value
+        .toStringAsFixed(2)
+        .replaceAll(RegExp(r'0+$'), '')
+        .replaceAll(RegExp(r'\.$'), '');
   }
 
   String _formatarNumeroOrdens(double value) {
@@ -2117,41 +2148,55 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     });
 
     try {
-      final data = await EtiquetasService.consultarPlanejamentoTinturaria(
-        dataInicio: dataInicio,
-        dataFim: dataFim,
-        cdVpd: _pedidoNumeroController.text.trim(),
-        cdObj: cdObjFiltro,
-        nmObj: nmObjFiltro,
-        cdCli: _pedidoClienteController.text.trim(),
-        cdObjLin: linhaFiltro,
-        somenteAtrasados: _somentePedidosAtrasados,
-        somentePendentes: _somentePedidosPendentes,
-      );
+      final data =
+          _pedidoConsultaSelecionada == _PedidoEspecialConsulta.planejamento
+          ? await EtiquetasService.consultarPlanejamentoTinturaria(
+              dataInicio: dataInicio,
+              dataFim: dataFim,
+              cdVpd: _pedidoNumeroController.text.trim(),
+              cdObj: cdObjFiltro,
+              nmObj: nmObjFiltro,
+              cdCli: _pedidoClienteController.text.trim(),
+              cdObjLin: linhaFiltro,
+              somenteAtrasados: _somentePedidosAtrasados,
+              somentePendentes: _somentePedidosPendentes,
+            )
+          : await EtiquetasService.consultarPendenciasTinturaria(
+              dataInicio: dataInicio,
+              dataFim: dataFim,
+              cdVpd: _pedidoNumeroController.text.trim(),
+              cdObj: cdObjFiltro,
+              nmObj: nmObjFiltro,
+              cdCli: _pedidoClienteController.text.trim(),
+              cdObjLin: linhaFiltro,
+              somenteAtrasados: _somentePedidosAtrasados,
+              somentePendentes: _somentePedidosPendentes,
+            );
       if (!mounted) return;
       final linhas = data.map(_PedidoEspecialPlanejamento.fromJson).toList();
-      final artigosPorCodigo = <String, String>{
-        for (final item in linhas)
-          if (item.nivel == 2 &&
-              item.codigo.isNotEmpty &&
-              item.descricao.isNotEmpty)
-            item.codigo: item.descricao,
-      };
-      final itens = linhas
-          .where((item) => item.ehLinhaPedido)
-          .map((item) {
-            final nomeArtigo = artigosPorCodigo[item.cdObj] ?? item.nomeArtigo;
-            return item.copyWith(nomeArtigo: nomeArtigo);
-          })
-          .toList()
-        ..sort(_compararPedidosEspeciais);
+      final itens =
+          _pedidoConsultaSelecionada == _PedidoEspecialConsulta.planejamento
+          ? _prepararPedidosPlanejamento(linhas)
+          : _filtrarPendenciasTinturaria(
+              linhas: linhas,
+              inicioDate: inicioDate,
+              fimDate: fimDate,
+              pedido: _pedidoNumeroController.text.trim(),
+              cdObj: cdObjFiltro,
+              nmObj: nmObjFiltro,
+              cliente: _pedidoClienteController.text.trim(),
+              setor: linhaFiltro,
+            );
 
       if (itens.isEmpty) {
         setState(() {
           _consultandoPedidosEspeciais = false;
           _renderizandoPedidosEspeciais = false;
         });
-        _showSnackBar('Nenhum pedido encontrado para os filtros.', isError: true);
+        _showSnackBar(
+          'Nenhum pedido encontrado para os filtros.',
+          isError: true,
+        );
       } else {
         _iniciarRenderizacaoPedidosEspeciais(itens);
       }
@@ -2223,12 +2268,9 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     if (codigo != null && codigo > 0) {
       _pedidoCdObjController.text = codigo.toString();
       setState(() => _pedidoArtigoOpcoes = []);
-      _pedidoCodigoBuscaDebounce = Timer(
-        const Duration(milliseconds: 350),
-        () {
-          if (mounted) _preencherArtigoPedidoPorCodigo(codigo);
-        },
-      );
+      _pedidoCodigoBuscaDebounce = Timer(const Duration(milliseconds: 350), () {
+        if (mounted) _preencherArtigoPedidoPorCodigo(codigo);
+      });
       return;
     }
 
@@ -2309,8 +2351,9 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     _PedidoEspecialPlanejamento a,
     _PedidoEspecialPlanejamento b,
   ) {
-    final especialCompare =
-        (b.ehPedidoEspecial ? 1 : 0).compareTo(a.ehPedidoEspecial ? 1 : 0);
+    final especialCompare = (b.ehPedidoEspecial ? 1 : 0).compareTo(
+      a.ehPedidoEspecial ? 1 : 0,
+    );
     if (especialCompare != 0) return especialCompare;
     final entregaA = a.dtEntrega ?? DateTime(9999, 12, 31);
     final entregaB = b.dtEntrega ?? DateTime(9999, 12, 31);
@@ -2352,7 +2395,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       _pedidoArtigoOpcoes = [];
       _pedidosEspeciaisPendentes = [];
       _renderizandoPedidosEspeciais = false;
-      _somentePedidosPendentes = true;
+      _somentePedidosPendentes = false;
       _somentePedidosAtrasados = false;
       _pedidosEspeciais = [];
       _pedidosEspeciaisExpandidos.clear();
@@ -2377,17 +2420,17 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
         break;
       case _OrdemSortMode.percentDesc:
         _ordensExpedicao.sort((a, b) {
-          final compare = _tocStatusOrdem(b).numeric.compareTo(
-            _tocStatusOrdem(a).numeric,
-          );
+          final compare = _tocStatusOrdem(
+            b,
+          ).numeric.compareTo(_tocStatusOrdem(a).numeric);
           return compare != 0 ? compare : _compararOrdensToc(a, b);
         });
         break;
       case _OrdemSortMode.percentAsc:
         _ordensExpedicao.sort((a, b) {
-          final compare = _tocStatusOrdem(a).numeric.compareTo(
-            _tocStatusOrdem(b).numeric,
-          );
+          final compare = _tocStatusOrdem(
+            a,
+          ).numeric.compareTo(_tocStatusOrdem(b).numeric);
           return compare != 0 ? compare : _compararOrdensToc(a, b);
         });
         break;
@@ -3002,7 +3045,10 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       return;
     }
     if (codigo.replaceAll(RegExp(r'\D'), '').length != 13) {
-      _showSnackBar('Informe um código de barras EAN-13 válido.', isError: true);
+      _showSnackBar(
+        'Informe um código de barras EAN-13 válido.',
+        isError: true,
+      );
       return;
     }
 
@@ -3086,7 +3132,9 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
               isError
                   ? Icons.error_outline_rounded
                   : Icons.check_circle_outline_rounded,
-              color: isError ? const Color(0xFFFCA5A5) : const Color(0xFF86EFAC),
+              color: isError
+                  ? const Color(0xFFFCA5A5)
+                  : const Color(0xFF86EFAC),
             ),
             const SizedBox(width: 10),
             Expanded(
@@ -3611,8 +3659,9 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                       borderRadius: BorderRadius.circular(6),
                     ),
                   ),
-                  onPressed:
-                      _consultandoOrdens ? null : _consultarOrdensExpedicao,
+                  onPressed: _consultandoOrdens
+                      ? null
+                      : _consultarOrdensExpedicao,
                   icon: _consultandoOrdens
                       ? const SizedBox(
                           width: 18,
@@ -3764,9 +3813,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
             label: '% maior',
             icon: Icons.trending_up_rounded,
             selected: _ordemSortMode == _OrdemSortMode.percentDesc,
-            onTap: () => _selecionarOrdenacaoOrdens(
-              _OrdemSortMode.percentDesc,
-            ),
+            onTap: () => _selecionarOrdenacaoOrdens(_OrdemSortMode.percentDesc),
           ),
           _OrdemSortChip(
             label: '% menor',
@@ -3871,6 +3918,131 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
         },
       ),
     );
+  }
+
+  List<_PedidoEspecialPlanejamento> _prepararPedidosPlanejamento(
+    List<_PedidoEspecialPlanejamento> linhas,
+  ) {
+    final artigosPorCodigo = <String, String>{
+      for (final item in linhas)
+        if (item.nivel == 2 &&
+            item.codigo.isNotEmpty &&
+            item.descricao.isNotEmpty)
+          item.codigo: item.descricao,
+    };
+    return linhas.where((item) => item.ehLinhaPedido).map((item) {
+      final nomeArtigo = artigosPorCodigo[item.cdObj] ?? item.nomeArtigo;
+      return item.copyWith(nomeArtigo: nomeArtigo);
+    }).toList()..sort(_compararPedidosEspeciais);
+  }
+
+  List<_PedidoEspecialPlanejamento> _filtrarPendenciasTinturaria({
+    required List<_PedidoEspecialPlanejamento> linhas,
+    required DateTime inicioDate,
+    required DateTime fimDate,
+    required String pedido,
+    required String cdObj,
+    required String nmObj,
+    required String cliente,
+    required String setor,
+  }) {
+    final artigosPorNome = <String, _PedidoEspecialPlanejamento>{
+      for (final item in linhas)
+        if (item.nivel == 1 && item.ord1.isNotEmpty) item.ord1: item,
+    };
+    final artigoCodigoPorNome = <String, String>{
+      for (final entry in artigosPorNome.entries) entry.key: entry.value.codigo,
+    };
+    final dataInicio = DateTime(
+      inicioDate.year,
+      inicioDate.month,
+      inicioDate.day,
+    );
+    final dataFim = DateTime(
+      fimDate.year,
+      fimDate.month,
+      fimDate.day,
+      23,
+      59,
+      59,
+    );
+    final pedidoFiltro = pedido.trim();
+    final cdObjFiltro = cdObj.trim();
+    final nomeFiltro = nmObj.trim().toLowerCase();
+    final clienteFiltro = cliente.trim().toLowerCase();
+    final setorFiltro = setor.trim();
+
+    bool dataDentro(DateTime? value) {
+      if (value == null) return true;
+      return !value.isBefore(dataInicio) && !value.isAfter(dataFim);
+    }
+
+    bool textoContem(String value, String filtro) {
+      return filtro.isEmpty || value.toLowerCase().contains(filtro);
+    }
+
+    final itens =
+        linhas
+            .where((item) {
+              if (!item.ehPendenciaPedido) return false;
+              final itemCdObj = artigoCodigoPorNome[item.ord1] ?? item.cdObj;
+              final itemPedido = item.numeroPedido;
+              final itemSetor = item.setor;
+              final nomeArtigo = item.nomeArtigo.isNotEmpty
+                  ? item.nomeArtigo
+                  : item.ord1;
+
+              if (pedidoFiltro.isNotEmpty && itemPedido != pedidoFiltro) {
+                return false;
+              }
+              if (cdObjFiltro.isNotEmpty && itemCdObj != cdObjFiltro) {
+                return false;
+              }
+              if (!textoContem(nomeArtigo, nomeFiltro)) return false;
+              if (!textoContem(item.descricao, clienteFiltro)) return false;
+              if (setorFiltro.isNotEmpty &&
+                  !_pedidoSetorConfere(itemSetor, setorFiltro)) {
+                return false;
+              }
+              if (_somentePedidosPendentes && item.saldoPendente <= 0) {
+                return false;
+              }
+              if (_somentePedidosAtrasados &&
+                  (item.dtPrevisao == null ||
+                      !item.dtPrevisao!.isBefore(DateTime.now()))) {
+                return false;
+              }
+              if (!dataDentro(item.dtPrevisao)) return false;
+              return true;
+            })
+            .map((item) {
+              final itemCdObj = artigoCodigoPorNome[item.ord1] ?? item.cdObj;
+              final nomeArtigo = item.nomeArtigo.isNotEmpty
+                  ? item.nomeArtigo
+                  : item.ord1;
+              return item.copyWith(nomeArtigo: nomeArtigo, cdObj: itemCdObj);
+            })
+            .toList()
+          ..sort(_compararPedidosEspeciais);
+
+    return itens;
+  }
+
+  bool _pedidoSetorConfere(String itemSetor, String filtro) {
+    final setor = itemSetor.trim().toLowerCase();
+    final valor = filtro.trim();
+    if (valor.isEmpty) return true;
+    if (setor == valor.toLowerCase()) return true;
+    _PedidoLinhaFiltro? linha;
+    for (final item in _pedidoLinhas) {
+      if (item.codigo.toString() == valor) {
+        linha = item;
+        break;
+      }
+    }
+    if (linha == null) return false;
+    return setor == linha.nome.toLowerCase() ||
+        setor == linha.codigo.toString();
   }
 
   Widget _buildOrdensNumeroAutocomplete() {
@@ -4170,17 +4342,20 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
             ),
           ],
         ),
-      )
+      ),
     );
   }
 
   Widget _buildPedidoEspecialPanel() {
-    final especiais =
-        _pedidosEspeciais.where((item) => item.ehPedidoEspecial).length;
+    final especiais = _pedidosEspeciais
+        .where((item) => item.ehPedidoEspecial)
+        .length;
     final totalQtd = _pedidosEspeciais.fold<double>(
       0,
       (total, item) => total + item.estoque,
     );
+    final consultaPendencias =
+        _pedidoConsultaSelecionada == _PedidoEspecialConsulta.pendencias;
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -4228,7 +4403,40 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
             ],
           ),
           const SizedBox(height: 18),
-          _sectionLabel('Filtros obrigatórios'),
+          _sectionLabel('Tipo de consulta'),
+          const SizedBox(height: 10),
+          SegmentedButton<_PedidoEspecialConsulta>(
+            segments: const [
+              ButtonSegment(
+                value: _PedidoEspecialConsulta.planejamento,
+                icon: Icon(Icons.event_available_rounded),
+                label: Text('Planejamento tinturaria'),
+              ),
+              ButtonSegment(
+                value: _PedidoEspecialConsulta.pendencias,
+                icon: Icon(Icons.pending_actions_rounded),
+                label: Text('Pendencias Tinturaria'),
+              ),
+            ],
+            selected: {_pedidoConsultaSelecionada},
+            onSelectionChanged: _consultandoPedidosEspeciais
+                ? null
+                : (value) {
+                    setState(() {
+                      _pedidoConsultaSelecionada = value.first;
+                      _pedidoClienteController.clear();
+                      _pedidosEspeciais = [];
+                      _pedidosEspeciaisPendentes = [];
+                      _pedidosEspeciaisExpandidos.clear();
+                    });
+                  },
+          ),
+          const SizedBox(height: 18),
+          _sectionLabel(
+            consultaPendencias
+                ? 'Filtros por previsao'
+                : 'Filtros obrigatorios',
+          ),
           const SizedBox(height: 10),
           LayoutBuilder(
             builder: (context, constraints) {
@@ -4259,9 +4467,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                         )
                       : const Icon(Icons.search_rounded),
                   label: Text(
-                    _consultandoPedidosEspeciais
-                        ? 'Consultando'
-                        : 'Consultar',
+                    _consultandoPedidosEspeciais ? 'Consultando' : 'Consultar',
                   ),
                 ),
               );
@@ -4333,9 +4539,11 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
               final clienteField = _campo(
                 controller: _pedidoClienteController,
                 label: 'Cliente',
-                hint: 'Código do cliente',
+                hint: consultaPendencias
+                    ? 'Nome do cliente'
+                    : 'Codigo do cliente',
                 icon: Icons.person_rounded,
-                numeric: true,
+                numeric: !consultaPendencias,
                 enabled: !_consultandoPedidosEspeciais,
                 onSubmit: _consultarPedidosEspeciais,
               );
@@ -4394,8 +4602,8 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                 onSelected: _consultandoPedidosEspeciais
                     ? null
                     : (value) => setState(() {
-                          _somentePedidosPendentes = value;
-                        }),
+                        _somentePedidosPendentes = value;
+                      }),
               ),
               FilterChip(
                 selected: _somentePedidosAtrasados,
@@ -4404,12 +4612,13 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                 onSelected: _consultandoPedidosEspeciais
                     ? null
                     : (value) => setState(() {
-                          _somentePedidosAtrasados = value;
-                        }),
+                        _somentePedidosAtrasados = value;
+                      }),
               ),
               OutlinedButton.icon(
-                onPressed:
-                    _consultandoPedidosEspeciais ? null : _limparPedidosEspeciais,
+                onPressed: _consultandoPedidosEspeciais
+                    ? null
+                    : _limparPedidosEspeciais,
                 icon: const Icon(Icons.cleaning_services_rounded),
                 label: const Text('Limpar'),
               ),
@@ -4433,7 +4642,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                   accent: _primary,
                 ),
                 _DarkMetricPill(
-                  label: 'Quantidade',
+                  label: consultaPendencias ? 'Produzir' : 'Quantidade',
                   value: _formatarNumeroOrdens(totalQtd),
                   icon: Icons.straighten_rounded,
                 ),
@@ -4452,13 +4661,13 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
             _buildPedidoEspecialEmptyState()
           else ...[
             ListView.separated(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: _pedidosEspeciais.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 10),
-                itemBuilder: (context, index) =>
-                    _buildPedidoEspecialCard(_pedidosEspeciais[index]),
-              ),
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _pedidosEspeciais.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 10),
+              itemBuilder: (context, index) =>
+                  _buildPedidoEspecialCard(_pedidosEspeciais[index]),
+            ),
             if (_renderizandoPedidosEspeciais) ...[
               const SizedBox(height: 14),
               _buildPedidoEspecialLoadingMore(),
@@ -4635,7 +4844,9 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     final special = item.ehPedidoEspecial;
     final badgeBg = special ? const Color(0xFF7F1D1D) : const Color(0xFF0B1220);
     final badgeBorder = special ? const Color(0xFFF87171) : _border;
-    final badgeText = special ? 'PEDIDO ESPECIAL' : 'Pedido normal';
+    final consultaPendencias =
+        _pedidoConsultaSelecionada == _PedidoEspecialConsulta.pendencias;
+    final badgeText = special ? 'Pedido especial: Sim' : 'Pedido especial: Nao';
     final pedidoNumero = item.numeroPedido.isEmpty ? '-' : item.numeroPedido;
 
     return InkWell(
@@ -4785,36 +4996,74 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                         icon: Icons.receipt_long_rounded,
                       ),
                       _DarkMetricPill(
-                        label: 'Quantidade',
-                        value: _formatarNumeroOrdens(item.estoque),
+                        label: 'Pedido especial',
+                        value: special ? 'Sim' : 'Nao',
+                        icon: special
+                            ? Icons.star_rounded
+                            : Icons.star_border_rounded,
+                        accent: special ? _primary : _textMuted,
+                      ),
+                      _DarkMetricPill(
+                        label: consultaPendencias ? 'Pedido' : 'Quantidade',
+                        value: _formatarNumeroOrdens(
+                          consultaPendencias ? item.qtPedido : item.estoque,
+                        ),
                         icon: Icons.straighten_rounded,
                         accent: special ? _primary : _info,
                       ),
+                      if (consultaPendencias)
+                        _DarkMetricPill(
+                          label: 'Data prevista',
+                          value: _formatarDataOrdem(item.dtPrevisao),
+                          icon: Icons.event_available_rounded,
+                        ),
+                      if (consultaPendencias)
+                        _DarkMetricPill(
+                          label: 'Nr ordem',
+                          value: item.nrOrdem.isEmpty ? '-' : item.nrOrdem,
+                          icon: Icons.assignment_rounded,
+                        ),
+                      if (consultaPendencias)
+                        _DarkMetricPill(
+                          label: 'Produzir',
+                          value: _formatarNumeroOrdens(item.saldoPendente),
+                          icon: Icons.precision_manufacturing_rounded,
+                        ),
                       _DarkMetricPill(
-                        label: 'Reserva',
+                        label: consultaPendencias ? 'Reservada' : 'Reserva',
                         value: _formatarNumeroOrdens(item.qtReserva),
                         icon: Icons.inventory_rounded,
                       ),
-                      _DarkMetricPill(
-                        label: 'Entrega',
-                        value: _formatarDataOrdem(item.dtEntrega),
-                        icon: Icons.event_rounded,
-                      ),
-                      _DarkMetricPill(
-                        label: 'Data pedido',
-                        value: _formatarDataOrdem(item.dtPedido),
-                        icon: Icons.calendar_month_rounded,
-                      ),
-                      _DarkMetricPill(
-                        label: 'Lead time',
-                        value: _formatarDataOrdem(item.dtLeadTime),
-                        icon: Icons.timelapse_rounded,
-                      ),
-                      _DarkMetricPill(
-                        label: 'Previsão',
-                        value: _formatarDataOrdem(item.dtPrevisao),
-                        icon: Icons.event_available_rounded,
-                      ),
+                      if (consultaPendencias)
+                        _DarkMetricPill(
+                          label: 'Est acabado',
+                          value: _formatarNumeroOrdens(item.qtAcabado),
+                          icon: Icons.check_circle_rounded,
+                        ),
+                      if (!consultaPendencias)
+                        _DarkMetricPill(
+                          label: 'Entrega',
+                          value: _formatarDataOrdem(item.dtEntrega),
+                          icon: Icons.event_rounded,
+                        ),
+                      if (!consultaPendencias)
+                        _DarkMetricPill(
+                          label: 'Data pedido',
+                          value: _formatarDataOrdem(item.dtPedido),
+                          icon: Icons.calendar_month_rounded,
+                        ),
+                      if (!consultaPendencias)
+                        _DarkMetricPill(
+                          label: 'Lead time',
+                          value: _formatarDataOrdem(item.dtLeadTime),
+                          icon: Icons.timelapse_rounded,
+                        ),
+                      if (!consultaPendencias)
+                        _DarkMetricPill(
+                          label: 'Previsão',
+                          value: _formatarDataOrdem(item.dtPrevisao),
+                          icon: Icons.event_available_rounded,
+                        ),
                       _DarkMetricPill(
                         label: 'Status',
                         value: item.staOrdem.isEmpty ? '-' : item.staOrdem,
@@ -4841,6 +5090,11 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                         _DarkTag(
                           label: 'Lote ${item.detalhe}',
                           icon: Icons.palette_rounded,
+                        ),
+                      if (item.setor.isNotEmpty)
+                        _DarkTag(
+                          label: 'Setor: ${item.setor}',
+                          icon: Icons.factory_rounded,
                         ),
                       if (item.maquina.isNotEmpty)
                         _DarkTag(
@@ -5030,12 +5284,11 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                 shrinkWrap: true,
                 padding: EdgeInsets.zero,
                 itemCount: _buscaOpcoes.length,
-                separatorBuilder: (_, __) =>
-                    const Divider(
-                      height: 1,
-                      indent: 16,
-                      color: Color(0xFF1E293B),
-                    ),
+                separatorBuilder: (_, __) => const Divider(
+                  height: 1,
+                  indent: 16,
+                  color: Color(0xFF1E293B),
+                ),
                 itemBuilder: (context, i) {
                   final artigo = _buscaOpcoes[i];
                   final cdObj = artigo['CdObj'].toString();
@@ -5180,8 +5433,8 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                   helperText: _carregandoOperadores
                       ? 'Carregando operadores...'
                       : _operadores.isEmpty
-                          ? 'Nenhum operador encontrado.'
-                          : 'Selecione o operador.',
+                      ? 'Nenhum operador encontrado.'
+                      : 'Selecione o operador.',
                 ),
                 items: _operadores
                     .map(
@@ -5345,8 +5598,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                     _selecionarArtigoCarretel(_buscaCarretelOpcoes.first);
                   } else {
                     final code =
-                        int.tryParse(_buscaCarretelController.text.trim()) ??
-                        0;
+                        int.tryParse(_buscaCarretelController.text.trim()) ?? 0;
                     if (code > 0) {
                       setState(() => _cdObjCarretelSelecionado = code);
                       _buscarArtigoCarretel();
@@ -5466,12 +5718,11 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                 shrinkWrap: true,
                 padding: EdgeInsets.zero,
                 itemCount: _buscaCarretelOpcoes.length,
-                separatorBuilder: (_, __) =>
-                    const Divider(
-                      height: 1,
-                      indent: 16,
-                      color: Color(0xFF1E293B),
-                    ),
+                separatorBuilder: (_, __) => const Divider(
+                  height: 1,
+                  indent: 16,
+                  color: Color(0xFF1E293B),
+                ),
                 itemBuilder: (context, i) {
                   final artigo = _buscaCarretelOpcoes[i];
                   final cdObj = artigo['CdObj'].toString();
@@ -5600,9 +5851,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                     (_carretelInfo!['NmObj'] ?? '').toString(),
                     style: const TextStyle(fontWeight: FontWeight.w800),
                   ),
-                  if ((_carretelInfo!['Descricao'] ?? '')
-                      .toString()
-                      .isNotEmpty)
+                  if ((_carretelInfo!['Descricao'] ?? '').toString().isNotEmpty)
                     Text((_carretelInfo!['Descricao'] ?? '').toString()),
                   const SizedBox(height: 4),
                   Text(
@@ -5978,11 +6227,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
         if (_isNarrow(constraints)) {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              papelField,
-              const SizedBox(height: 12),
-              qtdeField,
-            ],
+            children: [papelField, const SizedBox(height: 12), qtdeField],
           );
         }
         return Row(
@@ -6409,13 +6654,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                   ],
                 ),
                 const SizedBox(height: 8),
-                Row(
-                  children: [
-                    negritoToggle,
-                    const Spacer(),
-                    removerButton,
-                  ],
-                ),
+                Row(children: [negritoToggle, const Spacer(), removerButton]),
               ],
             );
           }
@@ -6437,6 +6676,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       ),
     );
   }
+
   /// Detalhe: dropdown para PRETO/personalizados, campo de texto nos demais.
   Widget _buildDetalheField(bool busy) {
     if (_usaDropdownDetalhe) return _buildDetalheSearchField(busy);
@@ -6696,8 +6936,9 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
           ? (linha) {
               setState(() {
                 _pedidoLinhaSelecionada = linha;
-                _pedidoSetorController.text =
-                    linha == null ? '' : linha.codigo.toString();
+                _pedidoSetorController.text = linha == null
+                    ? ''
+                    : linha.codigo.toString();
               });
             }
           : null,
@@ -6922,13 +7163,17 @@ class _ToggleChip extends StatelessWidget {
               Icon(
                 value ? Icons.star_rounded : Icons.star_border_rounded,
                 size: 17,
-                color: value ? const Color(0xFF020617) : const Color(0xFF94A3B8),
+                color: value
+                    ? const Color(0xFF020617)
+                    : const Color(0xFF94A3B8),
               ),
               const SizedBox(width: 5),
               Text(
                 label,
                 style: TextStyle(
-                  color: value ? const Color(0xFF020617) : const Color(0xFFCBD5E1),
+                  color: value
+                      ? const Color(0xFF020617)
+                      : const Color(0xFFCBD5E1),
                   fontWeight: FontWeight.w700,
                   fontSize: 13,
                 ),
@@ -7071,7 +7316,6 @@ class _DarkTag extends StatelessWidget {
       ),
     );
   }
-
 }
 
 class _DarkMetricPill extends StatelessWidget {
@@ -7201,14 +7445,18 @@ class _OrdemSortChip extends StatelessWidget {
           children: [
             Icon(
               icon,
-              color: selected ? const Color(0xFF020617) : const Color(0xFFE8CE7A),
+              color: selected
+                  ? const Color(0xFF020617)
+                  : const Color(0xFFE8CE7A),
               size: 15,
             ),
             const SizedBox(width: 6),
             Text(
               label,
               style: TextStyle(
-                color: selected ? const Color(0xFF020617) : const Color(0xFFE2E8F0),
+                color: selected
+                    ? const Color(0xFF020617)
+                    : const Color(0xFFE2E8F0),
                 fontSize: 12,
                 fontWeight: FontWeight.w900,
               ),
@@ -7516,10 +7764,8 @@ class _FioLivrePreviewPainter extends CustomPainter {
 
     for (var i = 0; i < 95; i++) {
       final digit = int.parse(source[i % source.length]);
-      final draw = i < 3 ||
-          (i >= 45 && i < 50) ||
-          i >= 92 ||
-          ((digit + i) % 3 != 0);
+      final draw =
+          i < 3 || (i >= 45 && i < 50) || i >= 92 || ((digit + i) % 3 != 0);
       if (draw) {
         final barHeight = (i < 3 || (i >= 45 && i < 50) || i >= 92)
             ? height + 10

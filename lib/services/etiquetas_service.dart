@@ -10,10 +10,12 @@ class EtiquetasService {
   static const Duration _quickTimeout = Duration(seconds: 8);
 
   static Future<List<Map<String, dynamic>>> buscarOperadores() async {
-    final response = await http.get(
-      Uri.parse("$baseUrl/consultar/usuarios"),
-      headers: {"Content-Type": "application/json"},
-    ).timeout(_quickTimeout);
+    final response = await http
+        .get(
+          Uri.parse("$baseUrl/consultar/usuarios"),
+          headers: {"Content-Type": "application/json"},
+        )
+        .timeout(_quickTimeout);
 
     if (response.statusCode >= 200 && response.statusCode < 300) {
       final decoded = jsonDecode(response.body);
@@ -29,9 +31,9 @@ class EtiquetasService {
 
   static Future<List<Map<String, dynamic>>> buscarImpressoras() async {
     try {
-      final response = await http.get(
-        Uri.parse("$baseUrl/consulta/wms/impressoras"),
-      ).timeout(_quickTimeout);
+      final response = await http
+          .get(Uri.parse("$baseUrl/consulta/wms/impressoras"))
+          .timeout(_quickTimeout);
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final decoded = jsonDecode(response.body);
         if (decoded is Map<String, dynamic>) {
@@ -112,8 +114,9 @@ class EtiquetasService {
     if (cdObj <= 0) throw "Informe o código do artigo.";
 
     final response = await http.get(
-      Uri.parse("$baseUrl/consulta/wms/artigo-info")
-          .replace(queryParameters: {"cd_obj": cdObj.toString()}),
+      Uri.parse(
+        "$baseUrl/consulta/wms/artigo-info",
+      ).replace(queryParameters: {"cd_obj": cdObj.toString()}),
     );
 
     if (response.statusCode >= 200 && response.statusCode < 300) {
@@ -129,7 +132,8 @@ class EtiquetasService {
     try {
       final decoded = jsonDecode(response.body);
       if (decoded is Map<String, dynamic>) {
-        message = (decoded["error"] ?? decoded["message"] ?? message).toString();
+        message = (decoded["error"] ?? decoded["message"] ?? message)
+            .toString();
       }
     } catch (_) {
       if (response.body.trim().isNotEmpty) message = response.body.trim();
@@ -169,11 +173,13 @@ class EtiquetasService {
     };
 
     final sw = Stopwatch()..start();
-    final response = await http.post(
-      Uri.parse("$baseUrl/consulta/wms/etiqueta-caixa-v2"),
-      headers: {"Content-Type": "application/json"},
-      body: jsonEncode(body),
-    ).timeout(_quickTimeout);
+    final response = await http
+        .post(
+          Uri.parse("$baseUrl/consulta/wms/etiqueta-caixa-v2"),
+          headers: {"Content-Type": "application/json"},
+          body: jsonEncode(body),
+        )
+        .timeout(_quickTimeout);
     sw.stop();
 
     debugPrint(
@@ -189,8 +195,7 @@ class EtiquetasService {
       }
     }
 
-    String message =
-        "Erro ${response.statusCode} ao buscar etiqueta caixa.";
+    String message = "Erro ${response.statusCode} ao buscar etiqueta caixa.";
     try {
       final decoded = jsonDecode(response.body);
       if (decoded is Map<String, dynamic>) {
@@ -223,11 +228,13 @@ class EtiquetasService {
     };
 
     final sw = Stopwatch()..start();
-    final response = await http.post(
-      Uri.parse("$baseUrl/consulta/wms/etiqueta-carretel"),
-      headers: {"Content-Type": "application/json"},
-      body: jsonEncode(body),
-    ).timeout(_quickTimeout);
+    final response = await http
+        .post(
+          Uri.parse("$baseUrl/consulta/wms/etiqueta-carretel"),
+          headers: {"Content-Type": "application/json"},
+          body: jsonEncode(body),
+        )
+        .timeout(_quickTimeout);
     sw.stop();
 
     debugPrint(
@@ -261,11 +268,13 @@ class EtiquetasService {
   }
 
   static Future<List<Map<String, dynamic>>> buscarArtigosPorNome(
-      String q) async {
+    String q,
+  ) async {
     if (q.trim().length < 2) return [];
     final response = await http.get(
-      Uri.parse("$baseUrl/consulta/wms/artigos-busca")
-          .replace(queryParameters: {"q": q.trim()}),
+      Uri.parse(
+        "$baseUrl/consulta/wms/artigos-busca",
+      ).replace(queryParameters: {"q": q.trim()}),
     );
     if (response.statusCode >= 200 && response.statusCode < 300) {
       final decoded = jsonDecode(response.body);
@@ -394,6 +403,75 @@ class EtiquetasService {
     throw message;
   }
 
+  static Future<List<Map<String, dynamic>>> consultarPendenciasTinturaria({
+    required String dataInicio,
+    required String dataFim,
+    String cdUne = '',
+    String cdVpd = '',
+    String cdCli = '',
+    String cdObj = '',
+    String nmObj = '',
+    String cdObjLin = '',
+    bool somenteAtrasados = false,
+    bool somentePendentes = true,
+  }) async {
+    final params = <String, String>{
+      'DataInicio': _normalizarDataSql(dataInicio),
+      'DataFim': _normalizarDataSql(dataFim),
+      'SomenteAtrasados': somenteAtrasados ? '1' : '0',
+      'SomentePendentes': somentePendentes ? '1' : '0',
+    };
+
+    void addIfNotEmpty(String key, String value) {
+      final normalized = value.trim();
+      if (normalized.isNotEmpty) params[key] = normalized;
+    }
+
+    addIfNotEmpty('CdUne', cdUne);
+    addIfNotEmpty('CdVpd', cdVpd);
+    addIfNotEmpty('CdCli', cdCli);
+    addIfNotEmpty('CdObj', cdObj);
+    addIfNotEmpty('NmObj', nmObj);
+    addIfNotEmpty('CdObjLin', cdObjLin);
+
+    final response = await http
+        .get(
+          Uri.parse(
+            "$baseUrl/consultar/pedidos-pendentes-tinturaria",
+          ).replace(queryParameters: params),
+          headers: {"Content-Type": "application/json"},
+        )
+        .timeout(const Duration(seconds: 35));
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      final decoded = jsonDecode(response.body);
+      if (decoded is List) return List<Map<String, dynamic>>.from(decoded);
+      if (decoded is Map<String, dynamic>) {
+        final data =
+            decoded["data"] ?? decoded["resultados"] ?? decoded["items"];
+        if (data is List) return List<Map<String, dynamic>>.from(data);
+      }
+    }
+
+    String message =
+        "Erro ${response.statusCode} ao consultar pendencias da tinturaria.";
+    try {
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map<String, dynamic>) {
+        message =
+            (decoded["erro"] ??
+                    decoded["error"] ??
+                    decoded["message"] ??
+                    decoded["details"] ??
+                    message)
+                .toString();
+      }
+    } catch (_) {
+      if (response.body.trim().isNotEmpty) message = response.body.trim();
+    }
+    throw message;
+  }
+
   static String _normalizarDataSql(String value) {
     final raw = value.trim();
     if (RegExp(r'^\d{8}$').hasMatch(raw)) return raw;
@@ -407,13 +485,15 @@ class EtiquetasService {
     return raw;
   }
 
-  static Future<List<Map<String, dynamic>>> buscarArtigoLotes(
-      int cdObj) async {
+  static Future<List<Map<String, dynamic>>> buscarArtigoLotes(int cdObj) async {
     if (cdObj <= 0) throw "Informe o código do artigo.";
-    final response = await http.get(
-      Uri.parse("$baseUrl/consulta/wms/artigo-lotes")
-          .replace(queryParameters: {"cd_obj": cdObj.toString()}),
-    ).timeout(_quickTimeout);
+    final response = await http
+        .get(
+          Uri.parse(
+            "$baseUrl/consulta/wms/artigo-lotes",
+          ).replace(queryParameters: {"cd_obj": cdObj.toString()}),
+        )
+        .timeout(_quickTimeout);
     if (response.statusCode >= 200 && response.statusCode < 300) {
       final decoded = jsonDecode(response.body);
       if (decoded is List) {
@@ -436,7 +516,8 @@ class EtiquetasService {
     try {
       final decoded = jsonDecode(response.body);
       if (decoded is Map<String, dynamic>) {
-        message = (decoded["error"] ?? decoded["message"] ?? message).toString();
+        message = (decoded["error"] ?? decoded["message"] ?? message)
+            .toString();
       }
     } catch (_) {}
     throw message;

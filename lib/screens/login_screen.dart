@@ -612,7 +612,7 @@ class _LoginScreenState extends State<LoginScreen>
                             ),
                             const SizedBox(height: 20),
                             Text(
-                              "© 2025 - Stik Tech",
+                              "© ${DateTime.now().year} - Stik Tech",
                               style: TextStyle(
                                 color: Colors.white.withOpacity(0.25),
                                 fontSize: 12,
