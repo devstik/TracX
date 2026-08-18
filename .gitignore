@@ -2,8 +2,15 @@
 *.class
 *.log
 *.pyc
+*.pyo
+*.pyd
 *.swp
+*.tmp
+*.temp
+*.bak
+*.orig
 .DS_Store
+.Thumbs.db
 .atom/
 .build/
 .buildlog/
@@ -17,6 +24,8 @@ migrate_working_dir/
 *.ipr
 *.iws
 .idea/
+.vscode/
+**/.vscode/
 
 # The .vscode folder contains launch configuration and tasks you configure in
 # VS Code which you may wish to be included in version control, so this line
@@ -28,10 +37,14 @@ migrate_working_dir/
 **/ios/Flutter/.last_build_id
 .dart_tool/
 .flutter-plugins-dependencies
+.flutter-plugins
 .pub-cache/
 .pub/
 /build/
 /coverage/
+**/build/
+**/.dart_tool/
+**/coverage/
 
 # Symbolication related
 app.*.symbols
@@ -43,3 +56,66 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+android/.gradle/
+android/.kotlin/
+android/build/
+android/app/build/
+android/local.properties
+
+# Python/API generated artifacts and local release binaries
+**/__pycache__/
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+**/.venv/
+**/venv/
+**/env/
+*.spec.log
+API - STIK/build/
+API - STIK/dist/
+API - STIK/files/*.apk
+API - STIK/files/*.exe
+API - STIK/*.db
+
+# Local binaries, installers, archives and generated packages
+dist/
+*.exe
+*.dll
+*.pdb
+*.msi
+*.apk
+*.aab
+*.ipa
+*.dmg
+*.pkg
+*.zip
+*.7z
+*.rar
+*.tar
+*.tar.gz
+*.tgz
+*.db
+*.sqlite
+*.sqlite3
+
+# Apple/Xcode generated files
+ios/Flutter/ephemeral/
+ios/Flutter/Generated.xcconfig
+ios/Flutter/flutter_export_environment.sh
+ios/Runner.xcworkspace/build/
+ios/**/build/
+macos/Flutter/ephemeral/
+macos/**/build/
+
+# Windows/Linux Flutter generated files
+windows/flutter/ephemeral/
+windows/**/build/
+linux/flutter/ephemeral/
+linux/**/build/
+
+# JavaScript dependencies/build outputs if added locally
+node_modules/
+**/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

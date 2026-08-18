@@ -1,4 +1,3 @@
-import 'package:uuid/uuid.dart';
 import 'package:hive/hive.dart';
 part 'registro.g.dart';
 
@@ -53,6 +52,8 @@ class Registro extends HiveObject {
   @HiveField(14)
   String? caixa;
 
+  String? bocaImatec;
+
   Registro({
     this.id,
     required this.data,
@@ -69,6 +70,7 @@ class Registro extends HiveObject {
     this.volumeProg,
     this.localizacao,
     this.dataMovimentacao,
+    this.bocaImatec,
     this.caixa, // ✅ O parâmetro nomeado 'caixa' está definido aqui.
   });
 
@@ -115,6 +117,7 @@ class Registro extends HiveObject {
       dataTingimento: '',
       localizacao: json['Localizacao'] as String?,
       dataMovimentacao: dataSaida,
+      bocaImatec: json['BocaImatec'] as String?,
       caixa: json['Caixa'] as String?, // ✅ Mapeamento do campo Caixa
     );
   }
@@ -135,6 +138,7 @@ class Registro extends HiveObject {
     'volume_prog': volumeProg,
     'localizacao': localizacao,
     'data_movimentacao': dataMovimentacao?.toIso8601String(),
+    'boca_imatec': bocaImatec,
     'caixa': caixa, // ✅ Adicionado ao toJson
   };
 }

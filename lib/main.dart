@@ -57,6 +57,9 @@ class MyApp extends StatelessWidget {
       locale: const Locale('pt', 'BR'),
 
       // FIM DA CONFIGURAÇÃO DE LOCALIZAÇÃO
+      builder: (context, child) {
+        return child ?? const SizedBox.shrink();
+      },
       home: SplashScreen(),
     );
   }

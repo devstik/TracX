@@ -7,6 +7,7 @@ class LinhaEtiquetaLivre {
   final TamanhoLinhaLivre tamanho;
   final int fonte;
   final AlinhamentoLinhaLivre alinhamento;
+  final int deslocamentoY;
   final bool negrito;
 
   const LinhaEtiquetaLivre({
@@ -14,6 +15,7 @@ class LinhaEtiquetaLivre {
     this.tamanho = TamanhoLinhaLivre.medio,
     this.fonte = 36,
     this.alinhamento = AlinhamentoLinhaLivre.esquerda,
+    this.deslocamentoY = 0,
     this.negrito = false,
   });
 }

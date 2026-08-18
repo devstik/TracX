@@ -1,5 +1,9 @@
 // ignore_for_file: avoid_print, deprecated_member_use
 
+import 'dart:async';
+import 'dart:convert';
+import 'dart:math' as math;
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:tracx/screens/login_screen.dart';
@@ -17,11 +21,12 @@ import 'package:tracx/screens/imprimir_etiquetas_page.dart';
 import 'package:tracx/screens/cadastro_ean_screen.dart';
 import 'package:tracx/screens/controle_screen.dart';
 import 'package:tracx/screens/mov_estoque_screen.dart';
+import 'package:tracx/screens/status_impressoras_screen.dart';
 import 'package:tracx/services/estoque_db_helper.dart';
+import 'package:tracx/services/mov_estoque_service.dart';
+import 'package:tracx/services/stock_monitor_service.dart';
 //import 'package:tracx/widgets/widgets_dados_integrados.dart';
 import 'package:tracx/services/update_service.dart';
-import 'dart:math' as math;
-import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 
@@ -38,9 +43,11 @@ class HomeMenuScreen extends StatefulWidget {
 final EstoqueDbHelper _dbHelper = EstoqueDbHelper();
 
 class _HomeMenuScreenState extends State<HomeMenuScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
+  static const Duration _intervaloMovEstoqueHoje = Duration(seconds: 15);
   late AnimationController _controller;
   late Animation<double> _fadeAnimation;
+  Timer? _movEstoqueHojeTimer;
   //late Future<List<DadosProducaoDiaria>> _futureHistoricoProducao;
 
   int _currentIndex = 0;
@@ -49,13 +56,29 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
   bool _isLoadingProducao = true;
   String _ultimaAtualizacao = "Carregando...";
   String _appVersion = "TracX";
+  bool _isLoadingMovEstoqueHoje = true;
+  String? _erroMovEstoqueHoje;
+  double _totalEntradaEstoqueHoje = 0;
+  int _artigosEntradaEstoqueHoje = 0;
+  String _atualizacaoMovEstoqueHoje = "Carregando...";
+  bool _consultaMovEstoqueHojeEmAndamento = false;
+  bool _monitorEstoqueTempoRealAtivo = false;
+  String _statusMonitorEstoqueTempoReal = "Ativando notificação...";
 
-  final List<String> _admins = const ['Joao', 'Leide', 'Lidinaldo'];
-  bool get _isAdmin => _admins.contains(widget.conferente);
+  final List<String> _admins = const [
+    'joao',
+    'leide',
+    'lidinaldo',
+    'andre',
+    'admin',
+    'administrador',
+  ];
+  bool get _isAdmin => _admins.contains(widget.conferente.trim().toLowerCase());
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
 
     if (widget.apiKey != null) {
       debugPrint('[HomeMenu] API key obtida para uso seguro.');
@@ -73,6 +96,9 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
 
     _controller.forward();
     _gerenciarDadosProducao();
+    _carregarMovimentacaoEstoqueHoje();
+    _iniciarAtualizacaoAutomaticaMovEstoqueHoje();
+    _iniciarMonitorEstoqueTempoReal();
     _carregarVersaoApp();
   }
 
@@ -88,8 +114,52 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _movEstoqueHojeTimer?.cancel();
     _controller.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _carregarMovimentacaoEstoqueHoje(silencioso: true);
+      _iniciarAtualizacaoAutomaticaMovEstoqueHoje();
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.detached) {
+      _movEstoqueHojeTimer?.cancel();
+      _movEstoqueHojeTimer = null;
+    }
+  }
+
+  void _iniciarAtualizacaoAutomaticaMovEstoqueHoje() {
+    _movEstoqueHojeTimer?.cancel();
+    _movEstoqueHojeTimer = Timer.periodic(
+      _intervaloMovEstoqueHoje,
+      (_) => _carregarMovimentacaoEstoqueHoje(silencioso: true),
+    );
+  }
+
+  Future<void> _iniciarMonitorEstoqueTempoReal() async {
+    try {
+      final started = await StockMonitorService.start();
+      if (!mounted) return;
+      setState(() {
+        _monitorEstoqueTempoRealAtivo = started;
+        _statusMonitorEstoqueTempoReal = started
+            ? "Notificação em tempo real ativa"
+            : "Permita notificações para ver fora do app";
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _monitorEstoqueTempoRealAtivo = false;
+        _statusMonitorEstoqueTempoReal =
+            "Não foi possível ativar a notificação";
+      });
+      debugPrint('[HomeMenu] Falha ao iniciar monitor de estoque: $e');
+    }
   }
 
   Future<void> _gerenciarDadosProducao() async {
@@ -268,6 +338,44 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
     });
   }
 
+  Future<void> _carregarMovimentacaoEstoqueHoje({
+    bool silencioso = false,
+  }) async {
+    if (!mounted || _consultaMovEstoqueHojeEmAndamento) return;
+    _consultaMovEstoqueHojeEmAndamento = true;
+
+    if (!silencioso) {
+      setState(() {
+        _isLoadingMovEstoqueHoje = true;
+        _erroMovEstoqueHoje = null;
+      });
+    }
+
+    try {
+      final resumo = await MovEstoqueService.consultarResumoHoje();
+      if (!mounted) return;
+
+      final agora = DateTime.now();
+
+      setState(() {
+        _totalEntradaEstoqueHoje = resumo.total;
+        _artigosEntradaEstoqueHoje = resumo.artigos;
+        _atualizacaoMovEstoqueHoje =
+            "Atualizado às ${agora.hour.toString().padLeft(2, '0')}:${agora.minute.toString().padLeft(2, '0')}";
+        _isLoadingMovEstoqueHoje = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _erroMovEstoqueHoje = e.toString().replaceFirst('Exception: ', '');
+        _isLoadingMovEstoqueHoje = false;
+        _atualizacaoMovEstoqueHoje = "Não atualizado";
+      });
+    } finally {
+      _consultaMovEstoqueHojeEmAndamento = false;
+    }
+  }
+
   void _navigateWithTransition(BuildContext context, Widget page) {
     Navigator.push(
       context,
@@ -360,6 +468,17 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
                   _navigateWithTransition(context, ListarUsuariosScreen());
                 },
               ),
+              _AdminTile(
+                icon: Icons.print_rounded,
+                title: "Print Server",
+                onTap: () {
+                  Navigator.pop(context);
+                  _navigateWithTransition(
+                    context,
+                    const StatusImpressorasScreen(),
+                  );
+                },
+              ),
             ],
           ),
         );
@@ -417,11 +536,15 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
       final info = await PackageInfo.fromPlatform();
       if (!mounted) return;
       setState(
-        () => _appVersion = "TracX v${info.version} - build ${info.buildNumber}",
+        () =>
+            _appVersion = "TracX v${info.version} - build ${info.buildNumber}",
       );
       return;
       // ignore: dead_code
-      setState(() => _appVersion = "TracX v${info.version} · build ${info.buildNumber}");
+      setState(
+        () =>
+            _appVersion = "TracX v${info.version} · build ${info.buildNumber}",
+      );
     } catch (_) {
       if (!mounted) return;
       setState(() => _appVersion = "TracX");
@@ -456,7 +579,6 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
             children: [
               _buildDashboard(),
               _buildCadastros(),
-              _buildRelatorios(),
               _buildConfig(),
             ],
           ),
@@ -493,10 +615,6 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
             label: "Ações",
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.analytics_outlined),
-            label: "Dados",
-          ),
-          BottomNavigationBarItem(
             icon: Icon(Icons.settings_outlined),
             label: "Conta",
           ),
@@ -524,6 +642,10 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
           const SizedBox(height: 18),
 
           _buildStatusCard(),
+
+          const SizedBox(height: 16),
+
+          _buildMovEstoqueHojeCard(),
 
           const SizedBox(height: 16),
 
@@ -644,6 +766,216 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
               RegistroPrincipalScreen(conferente: widget.conferente),
             );
           },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMovEstoqueHojeCard() {
+    final hasError = _erroMovEstoqueHoje != null;
+    final totalText = _formatarNumero(_totalEntradaEstoqueHoje);
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(18),
+      onTap: () => _navigateWithTransition(context, const MovEstoqueScreen()),
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: const Color(0xFF172033),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: hasError ? const Color(0xFF7F1D1D) : const Color(0xFF334155),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF16A34A).withOpacity(0.10),
+              blurRadius: 22,
+              offset: const Offset(0, 12),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 52,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(14),
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF16A34A), Color(0xFF5EF7C5)],
+                    ),
+                  ),
+                  child: const Icon(
+                    Icons.warehouse_rounded,
+                    color: Colors.black,
+                    size: 27,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        "Entrada de estoque hoje",
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        hasError
+                            ? "Não foi possível consultar agora"
+                            : _atualizacaoMovEstoqueHoje,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: hasError
+                              ? const Color(0xFFFCA5A5)
+                              : Colors.white60,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  tooltip: "Atualizar entrada de hoje",
+                  onPressed: _isLoadingMovEstoqueHoje
+                      ? null
+                      : _carregarMovimentacaoEstoqueHoje,
+                  icon: _isLoadingMovEstoqueHoje
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Color(0xFF5EF7C5),
+                          ),
+                        )
+                      : const Icon(Icons.refresh_rounded),
+                  color: const Color(0xFFCBD5E1),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            if (_isLoadingMovEstoqueHoje)
+              _buildMovEstoqueHojeSkeleton()
+            else if (hasError)
+              Text(
+                _erroMovEstoqueHoje!,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Color(0xFFFCA5A5),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  height: 1.35,
+                ),
+              )
+            else
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final narrow = constraints.maxWidth < 430;
+                  final totalCard = _HomeMiniMetric(
+                    title: "Total de entrada",
+                    value: totalText,
+                    icon: Icons.input_rounded,
+                    accent: const Color(0xFF5EF7C5),
+                  );
+                  final artigosCard = _HomeMiniMetric(
+                    title: "Artigos movimentados",
+                    value: _artigosEntradaEstoqueHoje.toString(),
+                    icon: Icons.category_rounded,
+                    accent: const Color(0xFF38BDF8),
+                  );
+
+                  if (narrow) {
+                    return Column(
+                      children: [
+                        totalCard,
+                        const SizedBox(height: 10),
+                        artigosCard,
+                      ],
+                    );
+                  }
+
+                  return Row(
+                    children: [
+                      Expanded(child: totalCard),
+                      const SizedBox(width: 10),
+                      Expanded(child: artigosCard),
+                    ],
+                  );
+                },
+              ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Icon(
+                  _monitorEstoqueTempoRealAtivo
+                      ? Icons.notifications_active_rounded
+                      : Icons.notifications_off_rounded,
+                  color: _monitorEstoqueTempoRealAtivo
+                      ? const Color(0xFF5EF7C5)
+                      : const Color(0xFF94A3B8),
+                  size: 16,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    "$_statusMonitorEstoqueTempoReal. Toque para ver detalhes",
+                    style: TextStyle(
+                      color: Color(0xFF94A3B8),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                const Icon(
+                  Icons.keyboard_arrow_right_rounded,
+                  color: Color(0xFF94A3B8),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMovEstoqueHojeSkeleton() {
+    Widget bar(double width, double height) {
+      return Container(
+        width: width,
+        height: height,
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(999),
+        ),
+      );
+    }
+
+    return Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [bar(110, 11), const SizedBox(height: 10), bar(180, 28)],
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [bar(130, 11), const SizedBox(height: 10), bar(90, 28)],
+          ),
         ),
       ],
     );
@@ -949,7 +1281,6 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
           _navigateWithTransition(context, const MovEstoqueScreen());
         },
       ),
-
       _ActionItem(
         title: "Apontamento",
         subtitle: "Produtividade",
@@ -1025,6 +1356,7 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
 
   // ---------------- RELATÓRIOS ----------------
 
+  // ignore: unused_element
   Widget _buildRelatorios() {
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(18, 14, 18, 22),
@@ -1168,6 +1500,19 @@ class _HomeMenuScreenState extends State<HomeMenuScreen>
               subtitle: "Gerenciar usuários e permissões",
               accent: const Color(0xFF16A34A),
               onTap: _showAdminSheet,
+            ),
+          if (_isAdmin)
+            _ConfigTile(
+              icon: Icons.print_rounded,
+              title: "Print Server",
+              subtitle: "Verificar impressoras conectadas na rede",
+              accent: const Color(0xFF38BDF8),
+              onTap: () {
+                _navigateWithTransition(
+                  context,
+                  const StatusImpressorasScreen(),
+                );
+              },
             ),
           if (_isAdmin) _buildAdminMiniSummary(),
           const SizedBox(height: 14),
@@ -1654,6 +1999,74 @@ class _MetricCard extends StatelessWidget {
                     fontSize: 14,
                     fontWeight: FontWeight.w800,
                     color: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HomeMiniMetric extends StatelessWidget {
+  final String title;
+  final String value;
+  final IconData icon;
+  final Color accent;
+
+  const _HomeMiniMetric({
+    required this.title,
+    required this.value,
+    required this.icon,
+    required this.accent,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0F172A),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFF334155)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: accent.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: accent, size: 22),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white60,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
                   ),
                 ),
               ],

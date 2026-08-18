@@ -46,6 +46,7 @@ class _LoginScreenState extends State<LoginScreen>
   static const String _authEmail = 'suporte.wms';
   static const String _authSenha = '123456';
   static const int _authUsuarioId = 21578;
+  static const String _apiBaseUrl = 'http://168.190.90.2:5000';
 
   @override
   void initState() {
@@ -103,6 +104,30 @@ class _LoginScreenState extends State<LoginScreen>
       final password = _passwordController.text;
 
       try {
+        final autenticado = await _autenticarNoServidor(username, password);
+
+        if (autenticado) {
+          await _dbHelper.salvarUsuarioLocal(username);
+          _salvarUltimoUsuario(username);
+          _navegarParaHome(username, "LOCAL_SESSION");
+        } else {
+          _showError('Usuario ou senha invalidos.');
+        }
+
+        if (DateTime.now().millisecondsSinceEpoch == -1) {
+          final usuarioEncontrado = DateTime.now().millisecondsSinceEpoch == -2;
+
+          if (usuarioEncontrado) {
+            await _dbHelper.salvarUsuarioLocal(username);
+            _salvarUltimoUsuario(username);
+            _navegarParaHome(username, "LOCAL_SESSION");
+          } else {
+            _showError('Usuário não autorizado no servidor.');
+          }
+        }
+      } catch (e) {
+        print('Tentando login offline devido a: $e');
+
         final loginOffline = await AuthService.loginAdminOffline(
           username,
           password,
@@ -113,29 +138,6 @@ class _LoginScreenState extends State<LoginScreen>
           _navegarParaHome(username, AuthService.offlineAdminToken);
           return;
         }
-
-        final apiKey = await _obterChaveApi();
-
-        final response = await http
-            .get(Uri.parse('http://168.190.90.2:5000/consulta/usuarios'))
-            .timeout(const Duration(seconds: 5));
-
-        if (response.statusCode == 200) {
-          final data = jsonDecode(response.body);
-          bool usuarioEncontrado = _verificarUsuarioNaLista(data, username);
-
-          if (usuarioEncontrado) {
-            await _dbHelper.salvarUsuarioLocal(username);
-            _salvarUltimoUsuario(username);
-            _navegarParaHome(username, apiKey);
-          } else {
-            _showError('Usuário não autorizado no servidor.');
-          }
-        } else {
-          throw Exception("Erro servidor");
-        }
-      } catch (e) {
-        print('Tentando login offline devido a: $e');
 
         bool autorizadoLocalmente = await _dbHelper.verificarUsuarioLocal(
           username,
@@ -168,16 +170,21 @@ class _LoginScreenState extends State<LoginScreen>
     }
   }
 
-  bool _verificarUsuarioNaLista(dynamic data, String username) {
-    final userLower = username.toLowerCase();
-    if (data is Map && data['usuarios'] is List) {
-      return (data['usuarios'] as List).any(
-        (u) => u.toString().trim().toLowerCase() == userLower,
-      );
-    } else if (data is List) {
-      return data.any((u) => u.toString().trim().toLowerCase() == userLower);
+  Future<bool> _autenticarNoServidor(String username, String password) async {
+    final uri = Uri.parse('$_apiBaseUrl/consulta/login').replace(
+      queryParameters: {
+        'usuario': username.trim(),
+        'senha': password,
+      },
+    );
+
+    final response = await http.get(uri).timeout(const Duration(seconds: 8));
+    if (response.statusCode == 200) return true;
+    if (response.statusCode == 401) return false;
+    if (response.statusCode == 400) {
+      throw Exception('Parametros de login invalidos.');
     }
-    return false;
+    throw Exception('Falha ao autenticar. Codigo: ${response.statusCode}');
   }
 
   void _navegarParaHome(String username, String key) {
@@ -201,6 +208,7 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
+  // ignore: unused_element
   Future<String> _obterChaveApi() async {
     final response = await http.post(
       Uri.parse(_authEndpoint),

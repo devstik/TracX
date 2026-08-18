@@ -38,7 +38,7 @@ class PadraoCaixaService {
         artigoNormalizado,
     ];
 
-    final listaCompleta = await _buscarPadroesCaixaNodeApi(
+    final listaCompleta = await _buscarPadroesCaixa(
       onApiDebug: onApiDebug,
     );
     if (listaCompleta == null || listaCompleta.isEmpty) return null;
@@ -106,32 +106,74 @@ class PadraoCaixaService {
     final ultimoSync = prefs.getString(_lastDailySyncKey) ?? '';
     if (ultimoSync == hoje) return;
 
-    final remotos = await _buscarPadroesCaixaNodeApi();
+    final remotos = await _buscarPadroesCaixa();
     if (remotos == null || remotos.isEmpty) return;
 
     await _dbHelper.salvarPadroesCaixa(remotos);
     await prefs.setString(_lastDailySyncKey, hoje);
   }
 
-  static const String _padraoCaixaUrl =
+  static const String _apiPrincipalPadraoCaixaUrl =
+      'http://168.190.90.2:5000/consulta/wms/padrao_caixa';
+  static const String _apiPrincipalPadraoCaixaUrlAlt =
+      'http://168.190.90.2:5000/consulta/wms/padrao-caixa';
+  static const String _nodeFallbackPadraoCaixaUrl =
       'https://api.stiktech.com.br/consulta/wms/padrao_caixa';
   static List<Map<String, dynamic>>? _padroesCaixaCache;
-  static DateTime? _padroesCaixaCacheAt;
-  static const Duration _padroesCaixaCacheTtl = Duration(minutes: 30);
 
-  Future<List<Map<String, dynamic>>?> _buscarPadroesCaixaNodeApi({
+  Future<List<Map<String, dynamic>>?> _buscarPadroesCaixa({
     ValueChanged<String>? onApiDebug,
   }) async {
-    final cacheAt = _padroesCaixaCacheAt;
+    for (final url in const [
+      _apiPrincipalPadraoCaixaUrl,
+      _apiPrincipalPadraoCaixaUrlAlt,
+    ]) {
+      final apiPrincipal = await _consultarPadroesCaixaEndpoint(
+        Uri.parse(url),
+        origem: 'API principal',
+        onApiDebug: onApiDebug,
+      );
+      if (apiPrincipal != null && apiPrincipal.isNotEmpty) {
+        _padroesCaixaCache = apiPrincipal;
+        return apiPrincipal;
+      }
+    }
+
+    final nodeFallback = await _consultarPadroesCaixaEndpoint(
+      Uri.parse(_nodeFallbackPadraoCaixaUrl),
+      origem: 'NodeAPI fallback',
+      onApiDebug: onApiDebug,
+    );
+    if (nodeFallback != null && nodeFallback.isNotEmpty) {
+      _padroesCaixaCache = nodeFallback;
+      return nodeFallback;
+    }
+
     final cache = _padroesCaixaCache;
-    if (cache != null &&
-        cache.isNotEmpty &&
-        cacheAt != null &&
-        DateTime.now().difference(cacheAt) < _padroesCaixaCacheTtl) {
+    if (cache != null && cache.isNotEmpty) {
+      onApiDebug?.call(
+        'Padrao de caixa usando cache em memoria apos falha da API principal e NodeAPI.',
+      );
       return cache;
     }
 
-    final uri = Uri.parse(_padraoCaixaUrl);
+    final localFallback = await _dbHelper.listarPadroesCaixa();
+    final localNormalizado = _extrairListaPadroes(localFallback);
+    if (localNormalizado.isNotEmpty) {
+      onApiDebug?.call(
+        'Padrao de caixa usando cache local SQLite (${localNormalizado.length} itens).',
+      );
+      return localNormalizado;
+    }
+
+    return null;
+  }
+
+  Future<List<Map<String, dynamic>>?> _consultarPadroesCaixaEndpoint(
+    Uri uri, {
+    required String origem,
+    ValueChanged<String>? onApiDebug,
+  }) async {
     try {
       final response = await http
           .get(uri, headers: {'Content-Type': 'application/json'})
@@ -139,6 +181,7 @@ class PadraoCaixaService {
 
       onApiDebug?.call(
         _buildApiDebug(
+          origem: origem,
           uri: uri,
           status: response.statusCode,
           body: response.body,
@@ -152,12 +195,10 @@ class PadraoCaixaService {
       final decoded = jsonDecode(response.body);
       final result = _extrairListaPadroes(decoded);
       if (result.isNotEmpty) {
-        _padroesCaixaCache = result;
-        _padroesCaixaCacheAt = DateTime.now();
         return result;
       }
     } catch (e) {
-      onApiDebug?.call('NodeAPI padrao de caixa erro ao consultar $uri: $e');
+      onApiDebug?.call('$origem padrao de caixa erro ao consultar $uri: $e');
     }
 
     return null;
@@ -220,6 +261,7 @@ class PadraoCaixaService {
 
       onApiDebug?.call(
         _buildApiDebug(
+          origem: 'NodeAPI auth',
           uri: uri,
           status: response.statusCode,
           body: response.body,
@@ -294,6 +336,7 @@ class PadraoCaixaService {
 
       onApiDebug?.call(
         _buildApiDebug(
+          origem: 'NodeAPI artigos',
           uri: uri,
           status: response.statusCode,
           body: response.body,
@@ -535,6 +578,7 @@ class PadraoCaixaService {
   }
 
   String _buildApiDebug({
+    required String origem,
     required Uri uri,
     required int status,
     required String body,
@@ -543,6 +587,6 @@ class PadraoCaixaService {
     final preview = compact.length > 700
         ? '${compact.substring(0, 700)}...'
         : compact;
-    return 'NodeAPI padrao de caixa\nURI: $uri\nStatus: $status\nJSON: $preview';
+    return '$origem padrao de caixa\nURI: $uri\nStatus: $status\nJSON: $preview';
   }
 }

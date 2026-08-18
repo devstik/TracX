@@ -1,6 +1,7 @@
 // ignore_for_file: unused_element, unused_field
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -27,6 +28,8 @@ enum _EtiquetaModelo {
 enum _OrdemSortMode { tocColor, percentDesc, percentAsc, releaseDate, quantity }
 
 enum _PedidoEspecialConsulta { planejamento, pendencias }
+
+enum _PrinterTransport { rede, bluetooth }
 
 class _OperadorEtiqueta {
   final String codigo;
@@ -222,7 +225,20 @@ class _PedidoEspecialPlanejamento {
       nomeArtigo: _asText(json['NomeArtigo'] ?? json['Ord1']),
       detalhe: _asText(json['Detalhe']),
       ocDoCliente: _asText(json['OcDoCliente']),
-      cliente: _asText(json['Cliente']),
+      cliente: _firstText(json, const [
+        'Cliente',
+        'NmCli',
+        'NomeCliente',
+        'NomeDoCliente',
+        'RazaoSocial',
+        'Razao',
+        'DescricaoCliente',
+        'NomeFantasia',
+        'Cli',
+        'cliente',
+        'nm_cli',
+        'nome_cliente',
+      ]),
       vendedor: _asText(json['Vendedor']),
       dtPedido: _asDate(json['DtPedido']),
       dtEntrega: _asDate(json['DtEntrega']),
@@ -255,6 +271,10 @@ class _PedidoEspecialPlanejamento {
       pedidoEspecial.trim().toLowerCase() == 'sim' ||
       pedidoEspecial.trim() == '1';
 
+  bool get ehLinhaSaldo => diaEmAtrazo.trim().toUpperCase().startsWith('SALDO');
+
+  bool get semOrdem => nrOrdem.isEmpty && !ehLinhaSaldo;
+
   bool get ehLinhaPedido => nivel == 3 && descricao.isNotEmpty;
 
   bool get ehPendenciaPedido => nivel == 2 && descricao.isNotEmpty;
@@ -273,6 +293,16 @@ class _PedidoEspecialPlanejamento {
       return descricao;
     }
     return codigo;
+  }
+
+  String get clienteExibicao {
+    if (cliente.isNotEmpty) return cliente;
+    final descricaoLimpa = descricao.trim();
+    if (descricaoLimpa.isEmpty || int.tryParse(descricaoLimpa) != null) {
+      return '';
+    }
+    if (descricaoLimpa == titulo) return '';
+    return descricaoLimpa;
   }
 
   _PedidoEspecialPlanejamento copyWith({String? nomeArtigo, String? cdObj}) {
@@ -311,6 +341,14 @@ class _PedidoEspecialPlanejamento {
 
   static String _asText(dynamic value) => value?.toString().trim() ?? '';
 
+  static String _firstText(Map<String, dynamic> json, List<String> keys) {
+    for (final key in keys) {
+      final value = _asText(json[key]);
+      if (value.isNotEmpty) return value;
+    }
+    return '';
+  }
+
   static int _asInt(dynamic value) {
     if (value is int) return value;
     if (value is num) return value.round();
@@ -335,6 +373,51 @@ class _PedidoEspecialPlanejamento {
     if (raw.isEmpty) return null;
     return DateTime.tryParse(raw);
   }
+}
+
+class _PedidoEspecialGrupo {
+  _PedidoEspecialGrupo({
+    required this.key,
+    required this.codigo,
+    required this.titulo,
+    required this.itens,
+  });
+
+  final String key;
+  final String codigo;
+  final String titulo;
+  final List<_PedidoEspecialPlanejamento> itens;
+
+  int get pedidosSemOrdem => itens.where((item) => item.semOrdem).length;
+
+  int get pedidosEspeciais =>
+      itens.where((item) => item.ehPedidoEspecial).length;
+
+  double get total => itens.fold<double>(0, (sum, item) => sum + item.estoque);
+
+  DateTime? get menorEntrega {
+    DateTime? menor;
+    for (final item in itens) {
+      final data = item.dtEntrega ?? item.dtLeadTime ?? item.dtPrevisao;
+      if (data == null) continue;
+      if (menor == null || data.isBefore(menor)) menor = data;
+    }
+    return menor;
+  }
+}
+
+class _PedidoEspecialInfo {
+  const _PedidoEspecialInfo({
+    required this.label,
+    required this.value,
+    required this.icon,
+    this.accent,
+  });
+
+  final String label;
+  final String value;
+  final IconData icon;
+  final Color? accent;
 }
 
 class _TocStatus {
@@ -422,6 +505,9 @@ class _LinhaLivreEditor {
   final TextEditingController fonteController = TextEditingController(
     text: '36',
   );
+  final TextEditingController deslocamentoYController = TextEditingController(
+    text: '0',
+  );
   TamanhoLinhaLivre tamanho = TamanhoLinhaLivre.medio;
   AlinhamentoLinhaLivre alinhamento = AlinhamentoLinhaLivre.centro;
   bool negrito = false;
@@ -429,6 +515,7 @@ class _LinhaLivreEditor {
   void dispose() {
     controller.dispose();
     fonteController.dispose();
+    deslocamentoYController.dispose();
   }
 }
 
@@ -446,7 +533,7 @@ class _FioLivreEtiqueta {
   final String codigoBarras;
 }
 
-enum _LivreTipoModelo { livre, tipoB, fios }
+enum _LivreTipoModelo { livre, tipoB, fios, imatecs }
 
 class EtiquetasPage extends StatefulWidget {
   final int grupoId;
@@ -478,6 +565,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     {'nome': 'EtqCaixa/Carretel 2', 'ip': '168.190.30.206', 'porta': 9100},
     {'nome': 'EtqCaixa/Carretel', 'ip': '168.190.30.181', 'porta': 9100},
     {'nome': 'EtqManual', 'ip': '168.190.30.172', 'porta': 9100},
+    {'nome': 'EtqManual', 'ip': '168.190.31.22', 'porta': 9100},
   ];
   // ── Palete ───────────────────────────────────────────────────
   final TextEditingController _paleteController = TextEditingController();
@@ -670,6 +758,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
   ];
   _FioLivreEtiqueta _fioLivreSelecionado = _fiosLivre.first;
   _LivreTipoModelo _livreTipoModelo = _LivreTipoModelo.livre;
+  int _imatecLivreSelecionada = 1;
   final List<_LinhaLivreEditor> _linhasLivre = [
     _LinhaLivreEditor(),
     _LinhaLivreEditor(),
@@ -679,9 +768,17 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
   final AlocacaoService _alocacaoService = AlocacaoService();
   final ZebraPrinterService _zebraPrinterService = ZebraPrinterService();
   List<Map<String, dynamic>> _printers = const [];
+  List<ZebraBluetoothDevice> _bluetoothPrinters = const [];
+  _PrinterTransport _printerTransport = _PrinterTransport.rede;
   String? _selectedPrinterKey;
+  String? _selectedBluetoothPort;
+  String? _bluetoothErro;
+  String? _printerFeedbackText;
+  bool _printerFeedbackOk = true;
   String _printerIp = ZebraPrinterService.defaultIp;
   int _printerPort = ZebraPrinterService.defaultPort;
+  bool _carregandoBluetooth = false;
+  bool _testandoImpressora = false;
 
   _EtiquetaModelo _modelo = _EtiquetaModelo.caixa;
   List<PaleteEmbalagemItemEntry> _itens = const [];
@@ -697,8 +794,8 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
   // Resultado do buscarEtiquetaCaixaV2 (preenchido ao imprimir)
   Map<String, dynamic>? _etiquetaCaixa;
 
-  // Lote de impressao (LI): quando ativo, as proximas caixas impressas
-  // compartilham o mesmo LI retornado pela API.
+  // Lote de impressão (LI): compartilhado apenas dentro da mesma impressão
+  // quando a quantidade informada for maior que 1.
   bool _manterLoteCaixa = false;
   String? _loteImpressaoCaixa;
 
@@ -745,6 +842,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
   List<_PedidoEspecialPlanejamento> _pedidosEspeciaisPendentes = [];
   List<Map<String, dynamic>> _pedidoArtigoOpcoes = [];
   final Set<String> _pedidosEspeciaisExpandidos = {};
+  final Set<String> _pedidoEspecialGruposExpandidos = {};
   Timer? _pedidoArtigoBuscaDebounce;
   Timer? _pedidoCodigoBuscaDebounce;
   Timer? _pedidoRenderTimer;
@@ -781,6 +879,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     super.initState();
     _aplicarFioLivre(_fioLivreSelecionado, notify: false);
     _carregarImpressora();
+    _carregarBluetoothPrinters();
     _carregarOperadores();
   }
 
@@ -812,6 +911,169 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       if (_selectedPrinterKey == null && printers.isNotEmpty) {
         _aplicarImpressora(_impressoraPadraoParaModelo(_modelo, printers));
       }
+    });
+  }
+
+  Future<void> _carregarBluetoothPrinters() async {
+    if (_carregandoBluetooth) return;
+    setState(() {
+      _carregandoBluetooth = true;
+      _bluetoothErro = null;
+    });
+    try {
+      final devices = await _zebraPrinterService.listarDispositivosBluetooth();
+      if (!mounted) return;
+      setState(() {
+        _bluetoothPrinters = devices;
+        if (_selectedBluetoothPort == null && devices.isNotEmpty) {
+          _selectedBluetoothPort = devices.first.port;
+        }
+        _carregandoBluetooth = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _bluetoothErro = e.toString().replaceFirst('Exception: ', '');
+        _carregandoBluetooth = false;
+      });
+    }
+  }
+
+  Future<void> _abrirSeletorBluetooth() async {
+    if (_carregandoBluetooth) return;
+    if (_bluetoothPrinters.isEmpty && _bluetoothErro == null) {
+      await _carregarBluetoothPrinters();
+    }
+    if (!mounted) return;
+
+    final selecionado = await showModalBottomSheet<ZebraBluetoothDevice>(
+      context: context,
+      backgroundColor: _surfaceElevated,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            Future<void> atualizar() async {
+              await _carregarBluetoothPrinters();
+              if (mounted) setModalState(() {});
+            }
+
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.bluetooth_rounded, color: _primary),
+                        const SizedBox(width: 10),
+                        const Expanded(
+                          child: Text(
+                            'Escolher aparelho Bluetooth',
+                            style: TextStyle(
+                              color: _textPrimary,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: _carregandoBluetooth ? null : atualizar,
+                          icon: _carregandoBluetooth
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.refresh_rounded),
+                          color: _textMuted,
+                        ),
+                        IconButton(
+                          onPressed: () => Navigator.pop(context),
+                          icon: const Icon(Icons.close_rounded),
+                          color: _textMuted,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    if (_bluetoothErro != null)
+                      _BluetoothInfoBox(
+                        icon: Icons.error_outline_rounded,
+                        text: _bluetoothErro!,
+                      )
+                    else if (_bluetoothPrinters.isEmpty)
+                      const _BluetoothInfoBox(
+                        icon: Icons.bluetooth_searching_rounded,
+                        text:
+                            'Nenhum aparelho encontrado. Ative o Bluetooth, deixe a impressora visível ou pareada e toque em atualizar.',
+                      )
+                    else
+                      Flexible(
+                        child: ListView.separated(
+                          shrinkWrap: true,
+                          itemCount: _bluetoothPrinters.length,
+                          separatorBuilder: (_, __) =>
+                              const Divider(height: 1, color: _border),
+                          itemBuilder: (context, index) {
+                            final device = _bluetoothPrinters[index];
+                            final selected =
+                                device.port == _selectedBluetoothPort;
+                            return ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              leading: Icon(
+                                selected
+                                    ? Icons.bluetooth_connected_rounded
+                                    : Icons.bluetooth_rounded,
+                                color: selected ? _primary : _textMuted,
+                              ),
+                              title: Text(
+                                device.name.isEmpty ? device.port : device.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: _textPrimary,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                              subtitle: Text(
+                                device.bonded
+                                    ? '${device.port} - Pareado'
+                                    : '${device.port} - Disponivel',
+                                style: const TextStyle(
+                                  color: _textMuted,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              trailing: selected
+                                  ? const Icon(
+                                      Icons.check_circle_rounded,
+                                      color: _primary,
+                                    )
+                                  : null,
+                              onTap: () => Navigator.pop(context, device),
+                            );
+                          },
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    if (selecionado == null || !mounted) return;
+    setState(() {
+      _selectedBluetoothPort = selecionado.port;
+      _printerFeedbackText = null;
     });
   }
 
@@ -861,6 +1123,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
           nome = 'Zebra 1';
           break;
         case '168.190.30.172':
+        case '168.190.31.22':
           nome = 'EtqManual';
           break;
         default:
@@ -909,6 +1172,12 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     return '$nome ($ip:$porta)';
   }
 
+  String? get _bluetoothPortParaImpressao {
+    if (_printerTransport != _PrinterTransport.bluetooth) return null;
+    final port = _selectedBluetoothPort?.trim();
+    return port == null || port.isEmpty ? null : port;
+  }
+
   void _aplicarImpressora(Map<String, dynamic> printer) {
     _selectedPrinterKey = printer['key'] as String?;
     _printerIp = (printer['ip'] as String?) ?? _printerIp;
@@ -916,12 +1185,87 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
   }
 
   bool _garantirImpressoraSelecionada() {
+    if (_printerTransport == _PrinterTransport.bluetooth) {
+      if (_bluetoothPortParaImpressao != null) return true;
+      _showSnackBar(
+        'Selecione uma impressora Bluetooth antes de enviar a impressão.',
+        isError: true,
+      );
+      return false;
+    }
+
     if (_selectedPrinterKey != null) return true;
     _showSnackBar(
       'Selecione a impressora antes de enviar a impressão.',
       isError: true,
     );
     return false;
+  }
+
+  String get _printerDestinoAtual {
+    if (_printerTransport == _PrinterTransport.bluetooth) {
+      final selectedDevice = _bluetoothPrinters
+          .where((device) => device.port == _selectedBluetoothPort)
+          .cast<ZebraBluetoothDevice?>()
+          .firstOrNull;
+      return selectedDevice?.label ?? _selectedBluetoothPort ?? 'Bluetooth';
+    }
+    return '$_printerIp:$_printerPort';
+  }
+
+  void _registrarImpressaoEnviada() {
+    if (!mounted) return;
+
+    final mensagem = _printerTransport == _PrinterTransport.bluetooth
+        ? 'Bluetooth conectado e etiqueta enviada para $_printerDestinoAtual.'
+        : 'Impressora de rede recebeu o comando em $_printerDestinoAtual.';
+
+    setState(() {
+      _printerFeedbackText = mensagem;
+      _printerFeedbackOk = true;
+    });
+
+    _showSnackBar(mensagem, isError: false);
+  }
+
+  Future<void> _testarConexaoImpressora() async {
+    if (!_garantirImpressoraSelecionada()) return;
+
+    setState(() {
+      _testandoImpressora = true;
+      _printerFeedbackText = 'Conectando em $_printerDestinoAtual...';
+      _printerFeedbackOk = true;
+    });
+
+    try {
+      await _zebraPrinterService.imprimirTesteConexao(
+        ip: _printerIp,
+        port: _printerPort,
+        bluetoothPort: _bluetoothPortParaImpressao,
+      );
+      if (!mounted) return;
+
+      final mensagem = _printerTransport == _PrinterTransport.bluetooth
+          ? 'Teste impresso. Bluetooth conectado em $_printerDestinoAtual.'
+          : 'Teste impresso. Rede conectada em $_printerDestinoAtual.';
+
+      setState(() {
+        _testandoImpressora = false;
+        _printerFeedbackText = mensagem;
+        _printerFeedbackOk = true;
+      });
+      _showSnackBar(mensagem, isError: false);
+    } catch (e) {
+      if (!mounted) return;
+      final erro = e.toString().replaceFirst('Exception: ', '');
+      setState(() {
+        _testandoImpressora = false;
+        _printerFeedbackText =
+            'Falha ao conectar em $_printerDestinoAtual. $erro';
+        _printerFeedbackOk = false;
+      });
+      _showSnackBar('Falha no teste da impressora. $erro', isError: true);
+    }
   }
 
   @override
@@ -1032,10 +1376,11 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
         palete: palete,
         ip: _printerIp,
         port: _printerPort,
+        bluetoothPort: _bluetoothPortParaImpressao,
       );
       if (!mounted) return;
       setState(() => _imprimindo = false);
-      _showSnackBar('Comando de impressão enviado.', isError: false);
+      _registrarImpressaoEnviada();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -1079,6 +1424,8 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
         _detalheObrigatorio = false;
         _temPreto = false;
         _loteInline = false;
+        _manterLoteCaixa = false;
+        _loteImpressaoCaixa = null;
         _lotesList = [];
         _detalheSelecionado = 0;
         _buscaOpcoes = [];
@@ -1124,6 +1471,8 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       _cdObjSelecionado = cdObj;
       _artigoSelecionadoBusca = artigo;
       _buscaOpcoes = [];
+      _manterLoteCaixa = false;
+      _loteImpressaoCaixa = null;
     });
     _buscarArtigo();
   }
@@ -1155,6 +1504,8 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       _detalheObrigatorio = false;
       _temPreto = false;
       _loteInline = false;
+      _manterLoteCaixa = false;
+      _loteImpressaoCaixa = null;
       _lotesList = [];
       _detalheSelecionado = 0;
       _caixaPMetros = 0;
@@ -1579,14 +1930,13 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     );
     if (!confirmouQuantidade) return;
 
-    final ativouManterLoteAutomaticamente = qtde >= 2 && !_manterLoteCaixa;
-    if (ativouManterLoteAutomaticamente) {
-      setState(() => _manterLoteCaixa = true);
-    }
+    final manterLiNestaImpressao = qtde >= 2;
 
     setState(() {
       _imprimindo = true;
       _erro = null;
+      _manterLoteCaixa = manterLiNestaImpressao;
+      _loteImpressaoCaixa = null;
     });
     try {
       for (var i = 0; i < qtde; i++) {
@@ -1602,7 +1952,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       }
       if (!mounted) return;
       setState(() => _imprimindo = false);
-      _showSnackBar('Comando de impressão enviado.', isError: false);
+      _registrarImpressaoEnviada();
       final manterDados = await _perguntarManterDadosEtiqueta();
       if (!mounted) return;
       if (!manterDados) {
@@ -1615,7 +1965,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
         _imprimindo = false;
       });
     } finally {
-      if (ativouManterLoteAutomaticamente && mounted) {
+      if (mounted) {
         setState(() {
           _manterLoteCaixa = false;
           _loteImpressaoCaixa = null;
@@ -1697,17 +2047,18 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       dados: data,
       ip: _printerIp,
       port: _printerPort,
+      bluetoothPort: _bluetoothPortParaImpressao,
     );
   }
 
   Future<void> _consultarOrdensExpedicao() async {
     FocusScope.of(context).unfocus();
     final ordemFiltro = _resolverNumeroOrdemDigitado();
-    final skuName = ordemFiltro == null
-        ? await _resolverSkuNameParaConsultaOrdens()
-        : '';
+    final termosSku = ordemFiltro == null
+        ? await _resolverTermosSkuParaConsultaOrdens()
+        : const <String>[];
     if (!mounted) return;
-    if (skuName.isEmpty && ordemFiltro == null) {
+    if (termosSku.isEmpty && ordemFiltro == null) {
       _showSnackBar(
         'Selecione um artigo, informe o código do SKU ou digite o número da ordem.',
         isError: true,
@@ -1723,9 +2074,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     });
     try {
       final base = ordemFiltro == null
-          ? (await EtiquetasService.buscarOrdensExpedicao(
-              skuName: skuName,
-            )).map(_OrdemExpedicao.fromJson).toList()
+          ? await _buscarOrdensExpedicaoPorTermos(termosSku)
           : await _carregarOrdensParaFiltroNumero();
       if (!mounted) return;
       final ordens = base.where((ordem) {
@@ -1767,6 +2116,112 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     final ordens = data.map(_OrdemExpedicao.fromJson).toList();
     _ordemNumeroCache = ordens;
     return ordens;
+  }
+
+  Future<List<_OrdemExpedicao>> _buscarOrdensExpedicaoPorTermos(
+    List<String> termos,
+  ) async {
+    final ordensPorChave = <String, _OrdemExpedicao>{};
+
+    for (final termo in _uniqueStrings(termos)) {
+      final consulta = termo.trim();
+      if (consulta.length < 2) continue;
+      final data = await EtiquetasService.buscarOrdensExpedicao(
+        skuName: consulta,
+      );
+      for (final ordem in data.map(_OrdemExpedicao.fromJson)) {
+        ordensPorChave[_ordemKey(ordem)] = ordem;
+      }
+    }
+
+    if (ordensPorChave.isEmpty) {
+      final termosNormalizados = _uniqueStrings(
+        termos,
+      ).map(_normalizarBusca).where((item) => item.length >= 2).toList();
+      if (termosNormalizados.isNotEmpty) {
+        final data = await EtiquetasService.buscarOrdensExpedicao();
+        for (final ordem in data.map(_OrdemExpedicao.fromJson)) {
+          final textoOrdem = _normalizarBusca(
+            [
+              ordem.skuCode,
+              ordem.skuName,
+              ordem.skuDescription,
+              ordem.titulo,
+            ].join(' '),
+          );
+          final encontrou = termosNormalizados.any(textoOrdem.contains);
+          if (encontrou) {
+            ordensPorChave[_ordemKey(ordem)] = ordem;
+          }
+        }
+      }
+    }
+
+    return ordensPorChave.values.toList();
+  }
+
+  List<String> _uniqueStrings(Iterable<String> values) {
+    final seen = <String>{};
+    final result = <String>[];
+    for (final value in values) {
+      final normalized = value.trim();
+      final key = normalized.toLowerCase();
+      if (normalized.isEmpty || seen.contains(key)) continue;
+      seen.add(key);
+      result.add(normalized);
+    }
+    return result;
+  }
+
+  String _normalizarBusca(String value) {
+    const from =
+        '\u00E1\u00E0\u00E3\u00E2\u00E4'
+        '\u00C1\u00C0\u00C3\u00C2\u00C4'
+        '\u00E9\u00E8\u00EA\u00EB'
+        '\u00C9\u00C8\u00CA\u00CB'
+        '\u00ED\u00EC\u00EE\u00EF'
+        '\u00CD\u00CC\u00CE\u00CF'
+        '\u00F3\u00F2\u00F5\u00F4\u00F6'
+        '\u00D3\u00D2\u00D5\u00D4\u00D6'
+        '\u00FA\u00F9\u00FB\u00FC'
+        '\u00DA\u00D9\u00DB\u00DC'
+        '\u00E7\u00C7\u00F1\u00D1';
+    const to = 'aaaaaAAAAAeeeeEEEEiiiiIIIIoooooOOOOOuuuuUUUUcCnN';
+    final buffer = StringBuffer();
+    for (final rune in value.runes) {
+      final char = String.fromCharCode(rune);
+      final index = from.indexOf(char);
+      buffer.write(index >= 0 ? to[index] : char);
+    }
+    return buffer.toString().toLowerCase().trim();
+  }
+
+  Future<List<String>> _resolverTermosSkuParaConsultaOrdens() async {
+    final texto = _ordemSkuNameController.text.trim();
+
+    if (_ordemSkuSelecionado > 0) {
+      return _uniqueStrings([_ordemSkuSelecionado.toString(), texto]);
+    }
+
+    if (texto.isEmpty) return const [];
+
+    final codigoDireto = int.tryParse(texto);
+    if (codigoDireto != null && codigoDireto > 0) {
+      return [codigoDireto.toString()];
+    }
+
+    final encontrados = await EtiquetasService.buscarArtigosPorNome(texto);
+    if (!mounted) return const [];
+    if (encontrados.length == 1) {
+      final artigo = encontrados.first;
+      _selecionarArtigoOrdem(artigo, consultar: false);
+      final cdObj = _toIntPadrao(artigo['CdObj']);
+      final nmObj = (artigo['NmObj'] ?? '').toString().trim();
+      return _uniqueStrings([if (cdObj > 0) cdObj.toString(), nmObj, texto]);
+    }
+
+    setState(() => _ordemArtigoOpcoes = encontrados);
+    return const [];
   }
 
   Future<String> _resolverSkuNameParaConsultaOrdens() async {
@@ -1994,6 +2449,8 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       _cdObjSelecionado = cdObj;
       _artigoSelecionadoBusca = artigo;
       _buscaOpcoes = [];
+      _manterLoteCaixa = false;
+      _loteImpressaoCaixa = null;
     });
     await _buscarArtigo();
     if (!mounted) return;
@@ -2145,6 +2602,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       _pedidosEspeciaisPendentes = [];
       _pedidoArtigoOpcoes = [];
       _pedidosEspeciaisExpandidos.clear();
+      _pedidoEspecialGruposExpandidos.clear();
     });
 
     try {
@@ -2220,13 +2678,14 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       _pedidosEspeciaisPendentes = List.of(itens);
       _pedidosEspeciais = [];
       _pedidosEspeciaisExpandidos.clear();
+      _pedidoEspecialGruposExpandidos.clear();
     });
     _adicionarLotePedidosEspeciais();
   }
 
   void _adicionarLotePedidosEspeciais() {
     if (!mounted) return;
-    const lote = 18;
+    const lote = 10;
     final proximos = _pedidosEspeciaisPendentes.take(lote).toList();
     if (proximos.isEmpty) {
       setState(() => _renderizandoPedidosEspeciais = false);
@@ -2236,16 +2695,10 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     setState(() {
       _pedidosEspeciais.addAll(proximos);
       _pedidosEspeciaisPendentes.removeRange(0, proximos.length);
-      if (_pedidosEspeciaisExpandidos.length < 8) {
-        final faltam = 8 - _pedidosEspeciaisExpandidos.length;
-        _pedidosEspeciaisExpandidos.addAll(
-          proximos.take(faltam).map(_pedidoEspecialKey),
-        );
-      }
     });
 
     _pedidoRenderTimer = Timer(
-      const Duration(milliseconds: 45),
+      const Duration(milliseconds: 80),
       _adicionarLotePedidosEspeciais,
     );
   }
@@ -2399,6 +2852,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       _somentePedidosAtrasados = false;
       _pedidosEspeciais = [];
       _pedidosEspeciaisExpandidos.clear();
+      _pedidoEspecialGruposExpandidos.clear();
       _erro = null;
     });
   }
@@ -2587,7 +3041,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
           builder: (ctx) => AlertDialog(
             title: const Text('Quantidade alta'),
             content: Text(
-              'Voce informou $qtde impressoes na aba $aba.\n\n'
+              'Você informou $qtde impressões na aba $aba.\n\n'
               'Deseja imprimir mesmo essa quantidade?',
             ),
             actions: [
@@ -2630,8 +3084,60 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       _lotesList = [];
       _detalheSelecionado = 0;
       _erro = null;
-      if (!_manterLoteCaixa) {
-        _loteImpressaoCaixa = null;
+      _manterLoteCaixa = false;
+      _loteImpressaoCaixa = null;
+    });
+  }
+
+  List<_PedidoEspecialGrupo> _agruparPedidosEspeciais(
+    List<_PedidoEspecialPlanejamento> itens,
+  ) {
+    final grupos = <String, _PedidoEspecialGrupo>{};
+    for (final item in itens) {
+      final codigo = item.cdObj.isNotEmpty ? item.cdObj : item.codigo;
+      final titulo = item.titulo;
+      final key = '${codigo.isEmpty ? titulo : codigo}::$titulo';
+      final grupo = grupos.putIfAbsent(
+        key,
+        () => _PedidoEspecialGrupo(
+          key: key,
+          codigo: codigo,
+          titulo: titulo,
+          itens: [],
+        ),
+      );
+      grupo.itens.add(item);
+    }
+
+    final lista = grupos.values.toList()
+      ..sort((a, b) {
+        final dataA = a.menorEntrega ?? DateTime(9999, 12, 31);
+        final dataB = b.menorEntrega ?? DateTime(9999, 12, 31);
+        final dateCompare = dataA.compareTo(dataB);
+        if (dateCompare != 0) return dateCompare;
+        return a.titulo.compareTo(b.titulo);
+      });
+
+    if (_pedidoEspecialGruposExpandidos.isEmpty && lista.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _pedidoEspecialGruposExpandidos.isNotEmpty) return;
+        setState(() {
+          _pedidoEspecialGruposExpandidos.addAll(
+            lista.take(1).map((grupo) => grupo.key),
+          );
+        });
+      });
+    }
+
+    return lista;
+  }
+
+  void _togglePedidoEspecialGrupo(_PedidoEspecialGrupo grupo) {
+    setState(() {
+      if (_pedidoEspecialGruposExpandidos.contains(grupo.key)) {
+        _pedidoEspecialGruposExpandidos.remove(grupo.key);
+      } else {
+        _pedidoEspecialGruposExpandidos.add(grupo.key);
       }
     });
   }
@@ -2775,10 +3281,11 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
         dados: data,
         ip: _printerIp,
         port: _printerPort,
+        bluetoothPort: _bluetoothPortParaImpressao,
       );
       if (!mounted) return;
       setState(() => _imprimindoCarretel = false);
-      _showSnackBar('Comando de impressão enviado.', isError: false);
+      _registrarImpressaoEnviada();
       final manterDados = await _perguntarManterDadosEtiqueta();
       if (!mounted) return;
       if (!manterDados) {
@@ -2861,6 +3368,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
         fonte: _fonteOperador(),
         ip: _printerIp,
         port: _printerPort,
+        bluetoothPort: _bluetoothPortParaImpressao,
       );
       if (!mounted) return;
       setState(() {
@@ -2868,7 +3376,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
         _operadorSelecionadoCodigo = null;
         _opPreview = 0;
       });
-      _showSnackBar('Comando de impressão enviado.', isError: false);
+      _registrarImpressaoEnviada();
       _opQtdeController.text = '1';
     } catch (e) {
       if (!mounted) return;
@@ -2904,6 +3412,10 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       await _imprimirLivreFio();
       return;
     }
+    if (_livreTipoModelo == _LivreTipoModelo.imatecs) {
+      await _imprimirLivreImatec();
+      return;
+    }
 
     final larguraMm = double.tryParse(
       _larguraLivreController.text.trim().replaceAll(',', '.'),
@@ -2927,6 +3439,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
             fonte: _fonteLivre(linha),
             tamanho: linha.tamanho,
             alinhamento: linha.alinhamento,
+            deslocamentoY: _deslocamentoYLivre(linha),
             negrito: linha.negrito,
           ),
         )
@@ -2955,10 +3468,11 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
         qtde: qtde,
         ip: _printerIp,
         port: _printerPort,
+        bluetoothPort: _bluetoothPortParaImpressao,
       );
       if (!mounted) return;
       setState(() => _imprimindoLivre = false);
-      _showSnackBar('Comando de impressão enviado.', isError: false);
+      _registrarImpressaoEnviada();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -2969,25 +3483,12 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
   }
 
   Future<void> _imprimirLivreTipoB() async {
-    final linha1 = _tipoBLinha1Controller.text.trim().toUpperCase();
-    final linha2 = _tipoBLinha2Controller.text.trim().toUpperCase();
+    final linha1 = _tipoBLinha1Controller.text.trim();
+    final linha2 = _tipoBLinha2Controller.text.trim();
     final codigo = _tipoBCodigoController.text.trim();
     final numero = _tipoBNumeroController.text.trim();
-
-    if (linha1.isEmpty) {
-      _showSnackBar('Informe a primeira linha do Tipo B.', isError: true);
-      return;
-    }
-    if (linha2.isEmpty) {
-      _showSnackBar('Informe a segunda linha do Tipo B.', isError: true);
-      return;
-    }
-    if (codigo.isEmpty) {
-      _showSnackBar('Informe o COD do Tipo B.', isError: true);
-      return;
-    }
-    if (numero.isEmpty) {
-      _showSnackBar('Informe o número de destaque do Tipo B.', isError: true);
+    if (linha1.isEmpty || linha2.isEmpty || codigo.isEmpty || numero.isEmpty) {
+      _showSnackBar('Preencha os dados da etiqueta Tipo B.', isError: true);
       return;
     }
 
@@ -3005,8 +3506,8 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     });
     try {
       await _zebraPrinterService.imprimirEtiquetaLivreTipoB(
-        linha1: linha1,
-        linha2: linha2,
+        linha1: linha1.toUpperCase(),
+        linha2: linha2.toUpperCase(),
         codigo: codigo,
         numero: numero,
         fonteLinha1: _fonteTipoB(_tipoBFonteLinha1Controller, fallback: 36),
@@ -3021,10 +3522,11 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
         qtde: qtde,
         ip: _printerIp,
         port: _printerPort,
+        bluetoothPort: _bluetoothPortParaImpressao,
       );
       if (!mounted) return;
       setState(() => _imprimindoLivre = false);
-      _showSnackBar('Comando de impressão enviado.', isError: false);
+      _registrarImpressaoEnviada();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -3074,10 +3576,11 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
         qtde: qtde,
         ip: _printerIp,
         port: _printerPort,
+        bluetoothPort: _bluetoothPortParaImpressao,
       );
       if (!mounted) return;
       setState(() => _imprimindoLivre = false);
-      _showSnackBar('Comando de impressão enviado.', isError: false);
+      _registrarImpressaoEnviada();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -3090,6 +3593,12 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
   int _fonteLivre(_LinhaLivreEditor linha) {
     final fonte = int.tryParse(linha.fonteController.text.trim()) ?? 36;
     return fonte.clamp(10, 120);
+  }
+
+  int _deslocamentoYLivre(_LinhaLivreEditor linha) {
+    final deslocamento =
+        int.tryParse(linha.deslocamentoYController.text.trim()) ?? 0;
+    return deslocamento.clamp(-200, 200);
   }
 
   int _fonteOperador() {
@@ -3120,6 +3629,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
 
   void _showSnackBar(String message, {required bool isError}) {
     if (!mounted) return;
+    final displayMessage = _corrigirTextoSnackbar(message);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         behavior: SnackBarBehavior.floating,
@@ -3139,7 +3649,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
             const SizedBox(width: 10),
             Expanded(
               child: Text(
-                message,
+                displayMessage,
                 style: const TextStyle(
                   color: _textPrimary,
                   fontWeight: FontWeight.w800,
@@ -3150,6 +3660,23 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
         ),
       ),
     );
+  }
+
+  String _corrigirTextoSnackbar(String value) {
+    var normalized = value;
+    final hasMojibake = RegExp(r'[\u00C2\u00C3\u00E2]');
+
+    for (var i = 0; i < 2 && hasMojibake.hasMatch(normalized); i++) {
+      try {
+        final decoded = utf8.decode(latin1.encode(normalized));
+        if (decoded == normalized) break;
+        normalized = decoded;
+      } catch (_) {
+        break;
+      }
+    }
+
+    return normalized;
   }
 
   // ────────────────────────────────────────────────────────────
@@ -3439,31 +3966,63 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
         onTap: () => _selecionarModelo(modelo),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, color: selected ? _bg : _textMuted, size: 24),
-              const SizedBox(height: 6),
-              Flexible(
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text(
-                    label,
-                    textAlign: TextAlign.center,
-                    maxLines: 1,
-                    softWrap: false,
-                    style: TextStyle(
-                      color: selected ? _bg : _textSecondary,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w900,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final compact = constraints.maxHeight < 46;
+            if (compact) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(icon, color: selected ? _bg : _textMuted, size: 15),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text(
+                        label,
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: selected ? _bg : _textSecondary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }
+
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(icon, color: selected ? _bg : _textMuted, size: 22),
+                  const SizedBox(height: 4),
+                  Flexible(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        label,
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        softWrap: false,
+                        style: TextStyle(
+                          color: selected ? _bg : _textSecondary,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
                     ),
                   ),
-                ),
+                ],
               ),
-            ],
-          ),
+            );
+          },
         ),
       ),
     );
@@ -3472,8 +4031,77 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
   // ── Palete ────────────────────────────────────────────────────
 
   Widget _buildPrinterSelector({required bool enabled}) {
+    final selector = _printerTransport == _PrinterTransport.bluetooth
+        ? _buildBluetoothPrinterSelector(enabled: enabled)
+        : _buildNetworkPrinterSelector(enabled: enabled);
+    final hasPrinterSelected = _printerTransport == _PrinterTransport.bluetooth
+        ? _bluetoothPortParaImpressao != null
+        : _selectedPrinterKey != null;
+    final canTestPrinter =
+        enabled && hasPrinterSelected && !_testandoImpressora;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SegmentedButton<_PrinterTransport>(
+          segments: const [
+            ButtonSegment(
+              value: _PrinterTransport.rede,
+              icon: Icon(Icons.print_rounded),
+              label: Text('Rede'),
+            ),
+            ButtonSegment(
+              value: _PrinterTransport.bluetooth,
+              icon: Icon(Icons.bluetooth_rounded),
+              label: Text('Bluetooth'),
+            ),
+          ],
+          selected: {_printerTransport},
+          onSelectionChanged: !enabled
+              ? null
+              : (value) {
+                  setState(() {
+                    _printerTransport = value.first;
+                    _printerFeedbackText = null;
+                  });
+                  if (value.first == _PrinterTransport.bluetooth) {
+                    _carregarBluetoothPrinters();
+                  }
+                },
+        ),
+        const SizedBox(height: 8),
+        selector,
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: canTestPrinter ? _testarConexaoImpressora : null,
+          icon: _testandoImpressora
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.fact_check_rounded),
+          label: Text(
+            _testandoImpressora
+                ? 'Testando conexão...'
+                : 'Testar conexão na impressora',
+          ),
+        ),
+        if (_printerFeedbackText != null) ...[
+          const SizedBox(height: 8),
+          _PrinterConnectionStatus(
+            text: _printerFeedbackText!,
+            success: _printerFeedbackOk,
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildNetworkPrinterSelector({required bool enabled}) {
     return DropdownButtonFormField<String>(
-      key: ValueKey(_selectedPrinterKey),
+      key: ValueKey('rede-$_selectedPrinterKey'),
       initialValue: _selectedPrinterKey,
       isExpanded: true,
       dropdownColor: const Color(0xFF0F172A),
@@ -3481,7 +4109,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       iconEnabledColor: const Color(0xFFCBD5E1),
       iconDisabledColor: const Color(0xFF64748B),
       decoration: const InputDecoration(
-        labelText: 'Impressora *',
+        labelText: 'Impressora de rede *',
         hintText: 'Selecione a Zebra',
         prefixIcon: Icon(Icons.print_rounded),
         border: OutlineInputBorder(),
@@ -3519,8 +4147,81 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                 }
               }
               if (selectedPrinter == null) return;
-              setState(() => _aplicarImpressora(selectedPrinter!));
+              setState(() {
+                _aplicarImpressora(selectedPrinter!);
+                _printerFeedbackText = null;
+              });
             },
+    );
+  }
+
+  Widget _buildBluetoothPrinterSelector({required bool enabled}) {
+    final selectedDevice = _bluetoothPrinters
+        .where((device) => device.port == _selectedBluetoothPort)
+        .cast<ZebraBluetoothDevice?>()
+        .firstOrNull;
+    final selectedLabel =
+        selectedDevice?.label ??
+        (_selectedBluetoothPort?.trim().isNotEmpty == true
+            ? _selectedBluetoothPort!
+            : 'Escolher aparelho');
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: InkWell(
+            borderRadius: BorderRadius.circular(6),
+            onTap: !enabled || _carregandoBluetooth
+                ? null
+                : _abrirSeletorBluetooth,
+            child: InputDecorator(
+              isEmpty: _selectedBluetoothPort == null,
+              decoration: InputDecoration(
+                labelText: 'Bluetooth *',
+                hintText: _carregandoBluetooth
+                    ? 'Procurando dispositivos...'
+                    : 'Escolha o aparelho',
+                prefixIcon: const Icon(Icons.bluetooth_rounded),
+                suffixIcon: const Icon(Icons.keyboard_arrow_down_rounded),
+                border: const OutlineInputBorder(),
+                enabled: enabled,
+              ),
+              child: Text(
+                _carregandoBluetooth
+                    ? 'Procurando dispositivos...'
+                    : selectedLabel,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: _selectedBluetoothPort == null
+                      ? _textMuted
+                      : _textPrimary,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        SizedBox(
+          height: 56,
+          width: 52,
+          child: OutlinedButton(
+            onPressed: !enabled || _carregandoBluetooth
+                ? null
+                : _carregarBluetoothPrinters,
+            style: OutlinedButton.styleFrom(padding: EdgeInsets.zero),
+            child: _carregandoBluetooth
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.refresh_rounded),
+          ),
+        ),
+      ],
     );
   }
 
@@ -3539,7 +4240,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
             textCapitalization: TextCapitalization.characters,
             onSubmitted: (_) => _consultar(),
             decoration: const InputDecoration(
-              labelText: 'Endere\u00e7o do palete',
+              labelText: 'Endereço do palete',
               hintText: 'PA-L1-R100-D-P1',
               prefixIcon: Icon(Icons.qr_code_2_rounded),
               border: OutlineInputBorder(),
@@ -4138,6 +4839,251 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
   Widget _buildOrdemCard(_OrdemExpedicao ordem) {
     final expanded = _ordensExpandidas.contains(_ordemKey(ordem));
     final tocStatus = _tocStatusOrdem(ordem);
+    final numeroOrdem = ordem.woid.isEmpty ? '-' : ordem.woid;
+    final artigoTitulo = ordem.titulo.isEmpty
+        ? 'Artigo sem descricao'
+        : ordem.titulo;
+    final unidadeLocal = [
+      if (ordem.uom.isNotEmpty) 'Unidade: ${ordem.uom}',
+      if (ordem.stockLocationName.isNotEmpty)
+        'Local: ${ordem.stockLocationName}',
+    ].join(' | ');
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: () => _toggleOrdemCard(ordem),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: EdgeInsets.all(expanded ? 16 : 12),
+        decoration: BoxDecoration(
+          color: expanded ? const Color(0xFF0F172A) : const Color(0xFF0B1220),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: expanded ? tocStatus.border : tocStatus.background,
+          ),
+          boxShadow: expanded
+              ? [
+                  BoxShadow(
+                    color: tocStatus.background.withValues(alpha: 0.16),
+                    blurRadius: 18,
+                    offset: const Offset(0, 8),
+                  ),
+                ]
+              : null,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF111C33),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFF26364E)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: tocStatus.background,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Icon(
+                          Icons.assignment_rounded,
+                          color: tocStatus.foreground,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Ordem',
+                              style: TextStyle(
+                                color: Color(0xFF94A3B8),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            Text(
+                              numeroOrdem,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Color(0xFF93C5FD),
+                                fontSize: 22,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Icon(
+                        expanded
+                            ? Icons.keyboard_arrow_up_rounded
+                            : Icons.keyboard_arrow_down_rounded,
+                        color: const Color(0xFF94A3B8),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    artigoTitulo,
+                    maxLines: expanded ? 3 : 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFFF8FAFC),
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                      height: 1.25,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _TocBadge(status: tocStatus),
+                      _DarkTag(
+                        label: ordem.skuName.isEmpty
+                            ? 'SKU -'
+                            : 'SKU ${ordem.skuName}',
+                        icon: Icons.qr_code_2_rounded,
+                      ),
+                      if (ordem.plant.isNotEmpty)
+                        _DarkTag(
+                          label: 'Fabrica ${ordem.plant}',
+                          icon: Icons.apartment_rounded,
+                        ),
+                      if (ordem.salesOrderId.isNotEmpty)
+                        _DarkTag(
+                          label: 'Pedido ${ordem.salesOrderId}',
+                          icon: Icons.receipt_long_rounded,
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            AnimatedCrossFade(
+              firstChild: const SizedBox.shrink(),
+              secondChild: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SizedBox(height: 14),
+                  const Divider(height: 1, color: Color(0xFF1E293B)),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _DarkMetricPill(
+                        label: 'Quantidade',
+                        value: _formatarNumeroOrdens(ordem.quantity),
+                        icon: Icons.straighten_rounded,
+                      ),
+                      _DarkMetricPill(
+                        label: 'Prioridade',
+                        value: '${tocStatus.name} ${tocStatus.label}',
+                        icon: Icons.speed_rounded,
+                        accent: tocStatus.background,
+                      ),
+                      _DarkMetricPill(
+                        label: 'Pedido',
+                        value: ordem.salesOrderId.isEmpty
+                            ? '-'
+                            : ordem.salesOrderId,
+                        icon: Icons.receipt_long_rounded,
+                      ),
+                      _DarkMetricPill(
+                        label: 'Familia',
+                        value: ordem.productionFamily.isEmpty
+                            ? '-'
+                            : ordem.productionFamily,
+                        icon: Icons.category_rounded,
+                      ),
+                      _DarkMetricPill(
+                        label: 'Entrega',
+                        value: _formatarDataOrdem(ordem.dueDate),
+                        icon: Icons.event_rounded,
+                      ),
+                      _DarkMetricPill(
+                        label: 'Liberacao',
+                        value: _formatarDataOrdem(ordem.releaseDate),
+                        icon: Icons.event_available_rounded,
+                      ),
+                      _DarkMetricPill(
+                        label: 'Estoque',
+                        value: _formatarNumeroOrdens(ordem.localStock),
+                        icon: Icons.warehouse_rounded,
+                      ),
+                      _DarkMetricPill(
+                        label: 'Alvo',
+                        value: _formatarNumeroOrdens(ordem.alvo),
+                        icon: Icons.flag_rounded,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final narrow = constraints.maxWidth < 430;
+                      final info = Text(
+                        unidadeLocal.isEmpty
+                            ? 'Unidade/local não informados'
+                            : unidadeLocal,
+                        maxLines: narrow ? 3 : 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xFF94A3B8),
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                        ),
+                      );
+                      final button = FilledButton.icon(
+                        onPressed: () => _selecionarOrdemParaCaixa(ordem),
+                        icon: const Icon(Icons.qr_code_2_rounded),
+                        label: const Text('Usar na Caixa'),
+                      );
+
+                      if (narrow) {
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [info, const SizedBox(height: 10), button],
+                        );
+                      }
+
+                      return Row(
+                        children: [
+                          Expanded(child: info),
+                          const SizedBox(width: 12),
+                          button,
+                        ],
+                      );
+                    },
+                  ),
+                ],
+              ),
+              crossFadeState: expanded
+                  ? CrossFadeState.showSecond
+                  : CrossFadeState.showFirst,
+              duration: const Duration(milliseconds: 160),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOrdemCardAntigo(_OrdemExpedicao ordem) {
+    final expanded = _ordensExpandidas.contains(_ordemKey(ordem));
+    final tocStatus = _tocStatusOrdem(ordem);
     final unidadeLocal = [
       if (ordem.uom.isNotEmpty) 'Unidade: ${ordem.uom}',
       if (ordem.stockLocationName.isNotEmpty)
@@ -4192,7 +5138,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                         ordem.titulo.isEmpty
                             ? 'Artigo sem descrição'
                             : ordem.titulo,
-                        maxLines: expanded ? 2 : 1,
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           color: Color(0xFFF8FAFC),
@@ -4223,32 +5169,37 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    const Text(
-                      'Ordem',
-                      style: TextStyle(
-                        color: Color(0xFF94A3B8),
-                        fontWeight: FontWeight.w700,
-                        fontSize: 11,
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 92),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      const Text(
+                        'Ordem',
+                        style: TextStyle(
+                          color: Color(0xFF94A3B8),
+                          fontWeight: FontWeight.w700,
+                          fontSize: 11,
+                        ),
                       ),
-                    ),
-                    Text(
-                      ordem.woid.isEmpty ? '-' : ordem.woid,
-                      style: const TextStyle(
-                        color: Color(0xFF93C5FD),
-                        fontSize: 22,
-                        fontWeight: FontWeight.w900,
+                      Text(
+                        ordem.woid.isEmpty ? '-' : ordem.woid,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xFF93C5FD),
+                          fontSize: 20,
+                          fontWeight: FontWeight.w900,
+                        ),
                       ),
-                    ),
-                    Icon(
-                      expanded
-                          ? Icons.keyboard_arrow_up_rounded
-                          : Icons.keyboard_arrow_down_rounded,
-                      color: const Color(0xFF94A3B8),
-                    ),
-                  ],
+                      Icon(
+                        expanded
+                            ? Icons.keyboard_arrow_up_rounded
+                            : Icons.keyboard_arrow_down_rounded,
+                        color: const Color(0xFF94A3B8),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -4356,6 +5307,10 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     );
     final consultaPendencias =
         _pedidoConsultaSelecionada == _PedidoEspecialConsulta.pendencias;
+    final gruposPedidosEspeciais = _agruparPedidosEspeciais(_pedidosEspeciais);
+    final pedidosSemOrdem = _pedidosEspeciais
+        .where((item) => item.semOrdem)
+        .length;
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -4428,6 +5383,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                       _pedidosEspeciais = [];
                       _pedidosEspeciaisPendentes = [];
                       _pedidosEspeciaisExpandidos.clear();
+                      _pedidoEspecialGruposExpandidos.clear();
                     });
                   },
           ),
@@ -4642,6 +5598,12 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                   accent: _primary,
                 ),
                 _DarkMetricPill(
+                  label: 'Sem ordem',
+                  value: pedidosSemOrdem.toString(),
+                  icon: Icons.assignment_late_rounded,
+                  accent: const Color(0xFFF97316),
+                ),
+                _DarkMetricPill(
                   label: consultaPendencias ? 'Produzir' : 'Quantidade',
                   value: _formatarNumeroOrdens(totalQtd),
                   icon: Icons.straighten_rounded,
@@ -4663,10 +5625,10 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
             ListView.separated(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
-              itemCount: _pedidosEspeciais.length,
+              itemCount: gruposPedidosEspeciais.length,
               separatorBuilder: (_, __) => const SizedBox(height: 10),
               itemBuilder: (context, index) =>
-                  _buildPedidoEspecialCard(_pedidosEspeciais[index]),
+                  _buildPedidoEspecialGrupoCard(gruposPedidosEspeciais[index]),
             ),
             if (_renderizandoPedidosEspeciais) ...[
               const SizedBox(height: 14),
@@ -4837,6 +5799,259 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     );
   }
 
+  Widget _buildPedidoEspecialGrupoCard(_PedidoEspecialGrupo grupo) {
+    final expanded = _pedidoEspecialGruposExpandidos.contains(grupo.key);
+    final entrega = grupo.menorEntrega;
+    final totalText = _formatarNumeroOrdens(grupo.total);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF0B1220),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFF334155)),
+      ),
+      child: Column(
+        children: [
+          InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: () => _togglePedidoEspecialGrupo(grupo),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 26,
+                    child: Column(
+                      children: [
+                        Icon(
+                          expanded
+                              ? Icons.indeterminate_check_box_rounded
+                              : Icons.add_box_rounded,
+                          color: _primary,
+                          size: 20,
+                        ),
+                        Container(
+                          width: 1,
+                          height: 30,
+                          margin: const EdgeInsets.only(top: 4),
+                          color: const Color(0xFF334155),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          grupo.titulo.isEmpty
+                              ? 'Artigo sem descrição'
+                              : grupo.titulo,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Color(0xFFF8FAFC),
+                            fontSize: 15,
+                            fontWeight: FontWeight.w900,
+                            height: 1.25,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 7,
+                          runSpacing: 7,
+                          children: [
+                            _DarkTag(
+                              label: grupo.codigo.isEmpty
+                                  ? 'Código -'
+                                  : 'Código ${grupo.codigo}',
+                              icon: Icons.qr_code_2_rounded,
+                            ),
+                            _DarkTag(
+                              label: '${grupo.itens.length} pedidos',
+                              icon: Icons.receipt_long_rounded,
+                            ),
+                            _DarkTag(
+                              label: 'Total $totalText',
+                              icon: Icons.straighten_rounded,
+                            ),
+                            if (grupo.pedidosSemOrdem > 0)
+                              _DarkTag(
+                                label: '${grupo.pedidosSemOrdem} sem ordem',
+                                icon: Icons.assignment_late_rounded,
+                              ),
+                            if (grupo.pedidosEspeciais > 0)
+                              _DarkTag(
+                                label: '${grupo.pedidosEspeciais} especiais',
+                                icon: Icons.star_rounded,
+                              ),
+                            if (entrega != null)
+                              _DarkTag(
+                                label: 'Entrega ${_formatarDataOrdem(entrega)}',
+                                icon: Icons.event_rounded,
+                              ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Icon(
+                    expanded
+                        ? Icons.keyboard_arrow_up_rounded
+                        : Icons.keyboard_arrow_down_rounded,
+                    color: const Color(0xFF94A3B8),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (expanded) ...[
+            const Divider(height: 1, color: Color(0xFF1E293B)),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+              child: Column(
+                children: [
+                  for (var index = 0; index < grupo.itens.length; index++) ...[
+                    _buildPedidoEspecialCard(grupo.itens[index]),
+                    if (index < grupo.itens.length - 1)
+                      const SizedBox(height: 8),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  String _qrImatecLivre(int numero) {
+    final nome = 'Imatec ${numero.toString().padLeft(2, '0')}';
+    return jsonEncode({
+      'tipo': 'TRACX_IMATEC_CHECKIN',
+      'versao': 1,
+      'fluxo': 'LOCALIZACAO_IMATEC',
+      'imatec': nome,
+      'numero': numero,
+      'validacao': 'TRACX_IMATEC_V1',
+    });
+  }
+
+  Future<void> _imprimirLivreImatec() async {
+    if (!_garantirImpressoraSelecionada()) return;
+    final numero = _imatecLivreSelecionada.clamp(1, 13);
+    final nome = 'Imatec ${numero.toString().padLeft(2, '0')}';
+    final qtde = _qtdeInformada(_qtdeLivreController);
+    final confirmouQuantidade = await _confirmarQuantidadeAlta(
+      aba: 'Livre',
+      qtde: qtde,
+      limite: 50,
+    );
+    if (!confirmouQuantidade) return;
+
+    setState(() {
+      _imprimindoLivre = true;
+      _erro = null;
+    });
+    try {
+      await _zebraPrinterService.imprimirEtiquetaLivreImatec(
+        nome: nome,
+        numero: numero,
+        qrData: _qrImatecLivre(numero),
+        qtde: qtde,
+        ip: _printerIp,
+        port: _printerPort,
+        bluetoothPort: _bluetoothPortParaImpressao,
+      );
+      if (!mounted) return;
+      setState(() => _imprimindoLivre = false);
+      _registrarImpressaoEnviada();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _erro = e.toString().replaceFirst('Exception: ', '');
+        _imprimindoLivre = false;
+      });
+    }
+  }
+
+  Widget _buildPedidoEspecialInfoGrid(List<_PedidoEspecialInfo> infos) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final narrow = _isNarrow(constraints);
+        final columns = narrow ? 2 : 4;
+        final spacing = 8.0;
+        final itemWidth =
+            (constraints.maxWidth - spacing * (columns - 1)) / columns;
+
+        return Wrap(
+          spacing: spacing,
+          runSpacing: spacing,
+          children: [
+            for (final info in infos)
+              SizedBox(
+                width: itemWidth.clamp(128.0, 280.0),
+                child: _buildPedidoEspecialInfoCell(info),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildPedidoEspecialInfoCell(_PedidoEspecialInfo info) {
+    final accent = info.accent ?? const Color(0xFFE8CE7A);
+    return Container(
+      constraints: const BoxConstraints(minHeight: 54),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0B1220),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFF26364E)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(info.icon, color: accent, size: 16),
+          const SizedBox(width: 7),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  info.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF94A3B8),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  info.value.isEmpty ? '-' : info.value,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFFF8FAFC),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                    height: 1.2,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildPedidoEspecialCard(_PedidoEspecialPlanejamento item) {
     final expanded = _pedidosEspeciaisExpandidos.contains(
       _pedidoEspecialKey(item),
@@ -4846,8 +6061,114 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     final badgeBorder = special ? const Color(0xFFF87171) : _border;
     final consultaPendencias =
         _pedidoConsultaSelecionada == _PedidoEspecialConsulta.pendencias;
-    final badgeText = special ? 'Pedido especial: Sim' : 'Pedido especial: Nao';
+    final badgeText = special ? 'Pedido especial: Sim' : 'Pedido especial: Não';
     final pedidoNumero = item.numeroPedido.isEmpty ? '-' : item.numeroPedido;
+    final clienteNome = item.clienteExibicao;
+    final semOrdem = item.semOrdem;
+    final ordemTexto = semOrdem
+        ? 'Sem ordem'
+        : item.nrOrdem.isEmpty
+        ? '-'
+        : item.nrOrdem;
+    final atrasoTexto = item.diaEmAtrazo.isEmpty ? '-' : item.diaEmAtrazo;
+    final atrasoAccent =
+        item.diaEmAtrazo.contains('-') || item.diaEmAtrazo.contains('SALDO')
+        ? const Color(0xFFF87171)
+        : const Color(0xFFE8CE7A);
+    final saldoAccent = item.estoque < 0
+        ? const Color(0xFFF87171)
+        : const Color(0xFF38BDF8);
+    final infoPrincipal = [
+      _PedidoEspecialInfo(
+        label: 'Codigo',
+        value: item.cdObj.isEmpty ? item.codigo : item.cdObj,
+        icon: Icons.qr_code_2_rounded,
+      ),
+      _PedidoEspecialInfo(
+        label: 'Pedido',
+        value: pedidoNumero,
+        icon: Icons.receipt_long_rounded,
+      ),
+      _PedidoEspecialInfo(
+        label: 'Oc cliente',
+        value: item.ocDoCliente,
+        icon: Icons.confirmation_number_rounded,
+      ),
+      _PedidoEspecialInfo(
+        label: 'Cliente',
+        value: clienteNome,
+        icon: Icons.person_rounded,
+      ),
+      _PedidoEspecialInfo(
+        label: 'Vendedor',
+        value: item.vendedor,
+        icon: Icons.badge_rounded,
+      ),
+      _PedidoEspecialInfo(
+        label: 'Data pedido',
+        value: _formatarDataOrdem(item.dtPedido),
+        icon: Icons.calendar_month_rounded,
+      ),
+      _PedidoEspecialInfo(
+        label: 'Lead time',
+        value: _formatarDataOrdem(item.dtLeadTime),
+        icon: Icons.timelapse_rounded,
+      ),
+      _PedidoEspecialInfo(
+        label: 'D. atraso',
+        value: atrasoTexto,
+        icon: Icons.warning_amber_rounded,
+        accent: atrasoAccent,
+      ),
+      _PedidoEspecialInfo(
+        label: 'Saldo/estoque',
+        value: _formatarNumeroOrdens(item.estoque),
+        icon: Icons.straighten_rounded,
+        accent: saldoAccent,
+      ),
+      _PedidoEspecialInfo(
+        label: 'Reserva',
+        value: _formatarNumeroOrdens(item.qtReserva),
+        icon: Icons.inventory_rounded,
+      ),
+      _PedidoEspecialInfo(
+        label: 'Nr. ordem',
+        value: ordemTexto,
+        icon: semOrdem
+            ? Icons.assignment_late_rounded
+            : Icons.assignment_rounded,
+        accent: semOrdem ? const Color(0xFFF97316) : null,
+      ),
+      _PedidoEspecialInfo(
+        label: 'Pedido especial',
+        value: special ? 'Sim' : 'Nao',
+        icon: special ? Icons.star_rounded : Icons.star_border_rounded,
+        accent: special ? _primary : _textMuted,
+      ),
+      _PedidoEspecialInfo(
+        label: 'Previsao',
+        value: _formatarDataOrdem(item.dtPrevisao),
+        icon: Icons.event_available_rounded,
+      ),
+      _PedidoEspecialInfo(
+        label: 'Status',
+        value: item.staOrdem.isEmpty ? item.situacao : item.staOrdem,
+        icon: Icons.flag_rounded,
+      ),
+      _PedidoEspecialInfo(
+        label: 'Maquina',
+        value: item.maquina,
+        icon: Icons.precision_manufacturing_rounded,
+      ),
+      _PedidoEspecialInfo(
+        label: 'Setor',
+        value: item.setor,
+        icon: Icons.factory_rounded,
+      ),
+    ];
+    final artigoTitulo = item.titulo.isEmpty
+        ? 'Artigo sem descrição'
+        : item.titulo;
 
     return InkWell(
       borderRadius: BorderRadius.circular(8),
@@ -4872,111 +6193,138 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Container(
-                  width: expanded ? 44 : 36,
-                  height: expanded ? 44 : 36,
-                  decoration: BoxDecoration(
-                    color: special ? _primary : const Color(0xFF1E293B),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(
-                    special ? Icons.star_rounded : Icons.receipt_long_rounded,
-                    color: special ? _bg : _textSecondary,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF111C33),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFF26364E)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
                     children: [
-                      Text(
-                        item.titulo,
-                        maxLines: expanded ? 2 : 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: _textPrimary,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w900,
+                      Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: special ? _primary : const Color(0xFF1E293B),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Icon(
+                          special
+                              ? Icons.star_rounded
+                              : Icons.receipt_long_rounded,
+                          color: special ? _bg : _textSecondary,
                         ),
                       ),
-                      const SizedBox(height: 6),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          _DarkTag(
-                            label: item.cdObj.isEmpty
-                                ? 'Artigo -'
-                                : 'Código ${item.cdObj}',
-                            icon: Icons.qr_code_2_rounded,
-                          ),
-                          _DarkTag(
-                            label: 'Pedido nº $pedidoNumero',
-                            icon: Icons.receipt_long_rounded,
-                          ),
-                          if (item.nrOrdem.isNotEmpty)
-                            _DarkTag(
-                              label: 'Ordem ${item.nrOrdem}',
-                              icon: Icons.assignment_rounded,
-                            ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              color: badgeBg,
-                              borderRadius: BorderRadius.circular(999),
-                              border: Border.all(color: badgeBorder),
-                            ),
-                            child: Text(
-                              badgeText,
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Pedido nº',
                               style: TextStyle(
-                                color: special
-                                    ? const Color(0xFFFEE2E2)
-                                    : _textSecondary,
+                                color: Color(0xFF94A3B8),
                                 fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            Text(
+                              pedidoNumero,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Color(0xFFE8CE7A),
+                                fontSize: 22,
                                 fontWeight: FontWeight.w900,
                               ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
+                      ),
+                      Icon(
+                        expanded
+                            ? Icons.keyboard_arrow_up_rounded
+                            : Icons.keyboard_arrow_down_rounded,
+                        color: const Color(0xFF94A3B8),
                       ),
                     ],
                   ),
-                ),
-                const SizedBox(width: 8),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    const Text(
-                      'Pedido nº',
-                      style: TextStyle(
-                        color: _textMuted,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 11,
+                  const SizedBox(height: 10),
+                  Text(
+                    artigoTitulo,
+                    maxLines: expanded ? 3 : 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFFF8FAFC),
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                      height: 1.25,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _DarkTag(
+                        label: item.cdObj.isEmpty
+                            ? 'Código -'
+                            : 'Código ${item.cdObj}',
+                        icon: Icons.qr_code_2_rounded,
                       ),
-                    ),
-                    Text(
-                      pedidoNumero,
-                      style: const TextStyle(
-                        color: Color(0xFFE8CE7A),
-                        fontSize: 21,
-                        fontWeight: FontWeight.w900,
+                      if (item.nrOrdem.isNotEmpty)
+                        _DarkTag(
+                          label: 'Ordem ${item.nrOrdem}',
+                          icon: Icons.assignment_rounded,
+                        ),
+                      if (semOrdem)
+                        _DarkTag(
+                          label: 'Sem ordem',
+                          icon: Icons.assignment_late_rounded,
+                        ),
+                      if (clienteNome.isNotEmpty)
+                        _DarkTag(
+                          label: 'Cliente: $clienteNome',
+                          icon: Icons.person_rounded,
+                        ),
+                      _DarkTag(
+                        label: 'Saldo ${_formatarNumeroOrdens(item.estoque)}',
+                        icon: Icons.straighten_rounded,
                       ),
-                    ),
-                    Icon(
-                      expanded
-                          ? Icons.keyboard_arrow_up_rounded
-                          : Icons.keyboard_arrow_down_rounded,
-                      color: _textMuted,
-                    ),
-                  ],
-                ),
-              ],
+                      if (item.dtLeadTime != null)
+                        _DarkTag(
+                          label: 'Lead ${_formatarDataOrdem(item.dtLeadTime)}',
+                          icon: Icons.timelapse_rounded,
+                        ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: badgeBg,
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(color: badgeBorder),
+                        ),
+                        child: Text(
+                          badgeText,
+                          style: TextStyle(
+                            color: special
+                                ? const Color(0xFFFEE2E2)
+                                : _textSecondary,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
             AnimatedCrossFade(
               firstChild: const SizedBox.shrink(),
@@ -4985,6 +6333,8 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                 children: [
                   const SizedBox(height: 14),
                   const Divider(height: 1, color: Color(0xFF1E293B)),
+                  const SizedBox(height: 12),
+                  _buildPedidoEspecialInfoGrid(infoPrincipal),
                   const SizedBox(height: 12),
                   Wrap(
                     spacing: 8,
@@ -4997,7 +6347,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                       ),
                       _DarkMetricPill(
                         label: 'Pedido especial',
-                        value: special ? 'Sim' : 'Nao',
+                        value: special ? 'Sim' : 'Não',
                         icon: special
                             ? Icons.star_rounded
                             : Icons.star_border_rounded,
@@ -5076,9 +6426,9 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                     spacing: 8,
                     runSpacing: 8,
                     children: [
-                      if (item.cliente.isNotEmpty)
+                      if (clienteNome.isNotEmpty)
                         _DarkTag(
-                          label: 'Cliente: ${item.cliente}',
+                          label: 'Cliente: $clienteNome',
                           icon: Icons.person_rounded,
                         ),
                       if (item.vendedor.isNotEmpty)
@@ -5172,8 +6522,8 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                   }
                 },
                 decoration: InputDecoration(
-                  labelText: 'Artigo - nome ou c\u00f3digo *',
-                  hintText: 'Digite o nome ou c\u00f3digo...',
+                  labelText: 'Artigo - nome ou código *',
+                  hintText: 'Digite o nome ou código...',
                   prefixIcon: const Icon(Icons.search_rounded),
                   suffixIcon: _buscandoOpcoes
                       ? const Padding(
@@ -5218,7 +6568,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                               _buscarArtigo();
                             } else {
                               _showSnackBar(
-                                'Selecione um artigo da lista ou informe o c\u00f3digo.',
+                                'Selecione um artigo da lista ou informe o código.',
                                 isError: true,
                               );
                             }
@@ -5359,7 +6709,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
               final tipoField = _buildTipoCaixaAssistidoField(busy);
               final ordemField = _campo(
                 controller: _ordemController,
-                label: 'N\u00ba da Ordem',
+                label: 'Nº da Ordem',
                 hint: '123456',
                 icon: Icons.tag_rounded,
                 numeric: true,
@@ -5474,24 +6824,6 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                   onChanged: (v) => setState(() => _pedidoEspecial = v),
                 ),
               );
-              final loteChip = SizedBox(
-                height: 56,
-                width: narrow ? double.infinity : null,
-                child: Tooltip(
-                  message:
-                      'Mantém as próximas caixas impressas no mesmo lote (LI).',
-                  child: _ToggleChip(
-                    label: 'Manter lote',
-                    value: _manterLoteCaixa,
-                    enabled: !busy,
-                    onChanged: (v) => setState(() {
-                      _manterLoteCaixa = v;
-                      if (!v) _loteImpressaoCaixa = null;
-                    }),
-                  ),
-                ),
-              );
-
               if (narrow) {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -5503,8 +6835,6 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                     qtdeField,
                     const SizedBox(height: 12),
                     toggleField,
-                    const SizedBox(height: 12),
-                    loteChip,
                   ],
                 );
               }
@@ -5519,8 +6849,6 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                   SizedBox(width: 100, child: qtdeField),
                   const SizedBox(width: 12),
                   Align(alignment: Alignment.topCenter, child: toggleField),
-                  const SizedBox(width: 12),
-                  Align(alignment: Alignment.topCenter, child: loteChip),
                 ],
               );
             },
@@ -5529,8 +6857,8 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
             const SizedBox(height: 8),
             Text(
               _loteImpressaoCaixa == null
-                  ? 'Lote: será gerado na próxima impressão'
-                  : 'Lote (LI): $_loteImpressaoCaixa - próximas caixas entram no mesmo lote',
+                  ? 'LI: será gerado para esta impressão'
+                  : 'LI: $_loteImpressaoCaixa - válido somente para esta quantidade',
               style: const TextStyle(
                 fontSize: 12,
                 color: Color(0xFF64748B),
@@ -6049,6 +7377,7 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     final busy = _imprimindoLivre;
     final tipoB = _livreTipoModelo == _LivreTipoModelo.tipoB;
     final fios = _livreTipoModelo == _LivreTipoModelo.fios;
+    final imatecs = _livreTipoModelo == _LivreTipoModelo.imatecs;
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: _panelDecoration(),
@@ -6059,33 +7388,13 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
           const SizedBox(height: 16),
           _sectionLabel('Tipo de impressão'),
           const SizedBox(height: 10),
-          SegmentedButton<_LivreTipoModelo>(
-            segments: const [
-              ButtonSegment(
-                value: _LivreTipoModelo.livre,
-                icon: Icon(Icons.edit_note_rounded),
-                label: Text('Livre'),
-              ),
-              ButtonSegment(
-                value: _LivreTipoModelo.tipoB,
-                icon: Icon(Icons.sell_outlined),
-                label: Text('Tipo B'),
-              ),
-              ButtonSegment(
-                value: _LivreTipoModelo.fios,
-                icon: Icon(Icons.palette_outlined),
-                label: Text('Fios'),
-              ),
-            ],
-            selected: {_livreTipoModelo},
-            onSelectionChanged: busy
-                ? null
-                : (value) => setState(() => _livreTipoModelo = value.first),
-          ),
+          _buildLivreTipoSelector(busy),
           const SizedBox(height: 20),
           _sectionLabel('Tamanho da etiqueta'),
           const SizedBox(height: 10),
-          tipoB || fios
+          imatecs
+              ? _buildLivreImatecTamanho(busy)
+              : tipoB || fios
               ? _buildLivreTipoBTamanho(busy)
               : _buildLivreTamanhoLivre(busy),
           const SizedBox(height: 20),
@@ -6095,6 +7404,8 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
             _buildLivreTipoBFields(busy)
           else if (fios)
             _buildLivreFiosFields(busy)
+          else if (imatecs)
+            _buildLivreImatecsFields(busy)
           else ...[
             Row(
               children: [
@@ -6143,59 +7454,122 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
     );
   }
 
-  Widget _buildLivreTamanhoLivre(bool busy) {
+  Widget _buildLivreTipoSelector(bool busy) {
+    const options = [
+      (value: _LivreTipoModelo.livre, icon: Icons.edit_note_rounded, label: 'Livre'),
+      (value: _LivreTipoModelo.tipoB, icon: Icons.sell_outlined, label: 'Tipo B'),
+      (value: _LivreTipoModelo.fios, icon: Icons.palette_outlined, label: 'Fios'),
+      (
+        value: _LivreTipoModelo.imatecs,
+        icon: Icons.precision_manufacturing_rounded,
+        label: 'Imatecs',
+      ),
+    ];
+
     return LayoutBuilder(
       builder: (context, constraints) {
-        final narrow = _isNarrow(constraints);
-        final larguraField = _campo(
+        if (constraints.maxWidth >= 560) {
+          return SegmentedButton<_LivreTipoModelo>(
+            showSelectedIcon: false,
+            segments: const [
+              ButtonSegment(
+                value: _LivreTipoModelo.livre,
+                icon: Icon(Icons.edit_note_rounded),
+                label: Text('Livre'),
+              ),
+              ButtonSegment(
+                value: _LivreTipoModelo.tipoB,
+                icon: Icon(Icons.sell_outlined),
+                label: Text('Tipo B'),
+              ),
+              ButtonSegment(
+                value: _LivreTipoModelo.fios,
+                icon: Icon(Icons.palette_outlined),
+                label: Text('Fios'),
+              ),
+              ButtonSegment(
+                value: _LivreTipoModelo.imatecs,
+                icon: Icon(Icons.precision_manufacturing_rounded),
+                label: Text('Imatecs'),
+              ),
+            ],
+            selected: {_livreTipoModelo},
+            onSelectionChanged: busy
+                ? null
+                : (value) => setState(() => _livreTipoModelo = value.first),
+          );
+        }
+
+        return Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final option in options)
+              ChoiceChip(
+                avatar: Icon(
+                  option.icon,
+                  size: 18,
+                  color: _livreTipoModelo == option.value
+                      ? _bg
+                      : const Color(0xFFCBD5E1),
+                ),
+                label: Text(option.label),
+                selected: _livreTipoModelo == option.value,
+                selectedColor: const Color(0xFFD8B840),
+                backgroundColor: const Color(0xFF111827),
+                disabledColor: const Color(0xFF111827),
+                side: BorderSide(
+                  color: _livreTipoModelo == option.value
+                      ? const Color(0xFFE8CE7A)
+                      : const Color(0xFF334155),
+                ),
+                labelStyle: TextStyle(
+                  color: busy
+                      ? const Color(0xFF64748B)
+                      : _livreTipoModelo == option.value
+                      ? _bg
+                      : const Color(0xFFCBD5E1),
+                  fontWeight: FontWeight.w800,
+                ),
+                onSelected: busy
+                    ? null
+                    : (_) => setState(() => _livreTipoModelo = option.value),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildLivreTamanhoLivre(bool busy) {
+    return _responsiveFields(
+      [
+        _campo(
           controller: _larguraLivreController,
           label: 'Largura (mm) *',
           hint: '80',
           icon: Icons.straighten_rounded,
           numeric: true,
           enabled: !busy,
-        );
-        final alturaField = _campo(
+        ),
+        _campo(
           controller: _alturaLivreController,
           label: 'Altura (mm) *',
           hint: '50',
           icon: Icons.height_rounded,
           numeric: true,
           enabled: !busy,
-        );
-        final qtdeField = _campo(
+        ),
+        _campo(
           controller: _qtdeLivreController,
           label: 'Qtde',
           hint: '1',
           icon: Icons.numbers_rounded,
           numeric: true,
           enabled: !busy,
-        );
-
-        if (narrow) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              larguraField,
-              const SizedBox(height: 12),
-              alturaField,
-              const SizedBox(height: 12),
-              qtdeField,
-            ],
-          );
-        }
-
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(child: larguraField),
-            const SizedBox(width: 12),
-            Expanded(child: alturaField),
-            const SizedBox(width: 12),
-            SizedBox(width: 110, child: qtdeField),
-          ],
-        );
-      },
+        ),
+      ],
+      minFieldWidth: 180,
     );
   }
 
@@ -6222,145 +7596,124 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
       enabled: !busy,
     );
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        if (_isNarrow(constraints)) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [papelField, const SizedBox(height: 12), qtdeField],
-          );
-        }
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(child: papelField),
-            const SizedBox(width: 12),
-            SizedBox(width: 130, child: qtdeField),
-          ],
-        );
-      },
+    return _responsiveFields(
+      [papelField, qtdeField],
+      minFieldWidth: 180,
+    );
+  }
+
+  Widget _buildLivreImatecTamanho(bool busy) {
+    final papelField = TextFormField(
+      initialValue: '100 x 70',
+      enabled: false,
+      style: const TextStyle(
+        color: Color(0xFFF8FAFC),
+        fontWeight: FontWeight.w700,
+      ),
+      decoration: const InputDecoration(
+        labelText: 'Papel (mm)',
+        border: OutlineInputBorder(),
+        prefixIcon: Icon(Icons.aspect_ratio_rounded),
+      ),
+    );
+    final qtdeField = _campo(
+      controller: _qtdeLivreController,
+      label: 'Qtde',
+      hint: '1',
+      icon: Icons.numbers_rounded,
+      numeric: true,
+      enabled: !busy,
+    );
+
+    return _responsiveFields(
+      [papelField, qtdeField],
+      minFieldWidth: 180,
     );
   }
 
   Widget _buildLivreTipoBFields(bool busy) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final narrow = _isNarrow(constraints);
-        final linha1Field = _campo(
-          controller: _tipoBLinha1Controller,
-          label: 'Linha 1 *',
-          hint: 'X NILO 16',
-          icon: Icons.short_text_rounded,
-          enabled: !busy,
-        );
-        final linha2Field = _campo(
-          controller: _tipoBLinha2Controller,
-          label: 'Linha 2 *',
-          hint: 'PRETO 2',
-          icon: Icons.short_text_rounded,
-          enabled: !busy,
-        );
-        final codigoField = _campo(
-          controller: _tipoBCodigoController,
-          label: 'COD *',
-          hint: '25',
-          icon: Icons.tag_rounded,
-          enabled: !busy,
-        );
-        final numeroField = _campo(
-          controller: _tipoBNumeroController,
-          label: 'Número *',
-          hint: '116',
-          icon: Icons.pin_rounded,
-          numeric: true,
-          enabled: !busy,
-        );
-        final fonteLinha1Field = _campo(
-          controller: _tipoBFonteLinha1Controller,
-          label: 'Fonte linha 1',
-          hint: '36',
-          icon: Icons.format_size_rounded,
-          numeric: true,
-          enabled: !busy,
-        );
-        final fonteLinha2Field = _campo(
-          controller: _tipoBFonteLinha2Controller,
-          label: 'Fonte linha 2',
-          hint: '36',
-          icon: Icons.format_size_rounded,
-          numeric: true,
-          enabled: !busy,
-        );
-        final fonteCodigoField = _campo(
-          controller: _tipoBFonteCodigoController,
-          label: 'Fonte COD',
-          hint: '32',
-          icon: Icons.format_size_rounded,
-          numeric: true,
-          enabled: !busy,
-        );
-        final fonteNumeroField = _campo(
-          controller: _tipoBFonteNumeroController,
-          label: 'Fonte número',
-          hint: '72',
-          icon: Icons.format_size_rounded,
-          numeric: true,
-          enabled: !busy,
-        );
+    final linha1Field = _campo(
+      controller: _tipoBLinha1Controller,
+      label: 'Linha 1 *',
+      hint: 'X NILO 16',
+      icon: Icons.short_text_rounded,
+      enabled: !busy,
+    );
+    final linha2Field = _campo(
+      controller: _tipoBLinha2Controller,
+      label: 'Linha 2 *',
+      hint: 'PRETO 2',
+      icon: Icons.short_text_rounded,
+      enabled: !busy,
+    );
+    final codigoField = _campo(
+      controller: _tipoBCodigoController,
+      label: 'COD *',
+      hint: '25',
+      icon: Icons.tag_rounded,
+      enabled: !busy,
+    );
+    final numeroField = _campo(
+      controller: _tipoBNumeroController,
+      label: 'Número *',
+      hint: '116',
+      icon: Icons.pin_rounded,
+      numeric: true,
+      enabled: !busy,
+    );
+    final fonteLinha1Field = _campo(
+      controller: _tipoBFonteLinha1Controller,
+      label: 'Fonte linha 1',
+      hint: '36',
+      icon: Icons.format_size_rounded,
+      numeric: true,
+      enabled: !busy,
+    );
+    final fonteLinha2Field = _campo(
+      controller: _tipoBFonteLinha2Controller,
+      label: 'Fonte linha 2',
+      hint: '36',
+      icon: Icons.format_size_rounded,
+      numeric: true,
+      enabled: !busy,
+    );
+    final fonteCodigoField = _campo(
+      controller: _tipoBFonteCodigoController,
+      label: 'Fonte COD',
+      hint: '32',
+      icon: Icons.format_size_rounded,
+      numeric: true,
+      enabled: !busy,
+    );
+    final fonteNumeroField = _campo(
+      controller: _tipoBFonteNumeroController,
+      label: 'Fonte número',
+      hint: '72',
+      icon: Icons.format_size_rounded,
+      numeric: true,
+      enabled: !busy,
+    );
 
-        if (narrow) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              linha1Field,
-              const SizedBox(height: 12),
-              fonteLinha1Field,
-              const SizedBox(height: 12),
-              linha2Field,
-              const SizedBox(height: 12),
-              fonteLinha2Field,
-              const SizedBox(height: 12),
-              codigoField,
-              const SizedBox(height: 12),
-              fonteCodigoField,
-              const SizedBox(height: 12),
-              numeroField,
-              const SizedBox(height: 12),
-              fonteNumeroField,
-            ],
-          );
-        }
-
-        return Column(
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(child: linha1Field),
-                const SizedBox(width: 12),
-                SizedBox(width: 150, child: fonteLinha1Field),
-                const SizedBox(width: 12),
-                Expanded(child: linha2Field),
-                const SizedBox(width: 12),
-                SizedBox(width: 150, child: fonteLinha2Field),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(child: codigoField),
-                const SizedBox(width: 12),
-                SizedBox(width: 150, child: fonteCodigoField),
-                const SizedBox(width: 12),
-                SizedBox(width: 170, child: numeroField),
-                const SizedBox(width: 12),
-                SizedBox(width: 150, child: fonteNumeroField),
-              ],
-            ),
-          ],
-        );
-      },
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _sectionLabel('Tipo B'),
+        const SizedBox(height: 10),
+        _responsiveFields(
+          [linha1Field, fonteLinha1Field],
+          minFieldWidth: 210,
+        ),
+        const SizedBox(height: 12),
+        _responsiveFields(
+          [linha2Field, fonteLinha2Field],
+          minFieldWidth: 210,
+        ),
+        const SizedBox(height: 12),
+        _responsiveFields(
+          [codigoField, fonteCodigoField, numeroField, fonteNumeroField],
+          minFieldWidth: 150,
+        ),
+      ],
     );
   }
 
@@ -6402,7 +7755,6 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
         const SizedBox(height: 16),
         LayoutBuilder(
           builder: (context, constraints) {
-            final narrow = _isNarrow(constraints);
             final tituloField = _campo(
               controller: _fioTituloController,
               label: 'Título *',
@@ -6447,50 +7799,18 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
               onChanged: (_) => setState(() {}),
             );
 
-            final fields = narrow
-                ? Column(
-                    children: [
-                      tituloField,
-                      const SizedBox(height: 12),
-                      corField,
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Expanded(child: pesoField),
-                          const SizedBox(width: 12),
-                          Expanded(child: loteField),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      codigoField,
-                    ],
-                  )
-                : Column(
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(child: tituloField),
-                          const SizedBox(width: 12),
-                          Expanded(child: corField),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Expanded(child: pesoField),
-                          const SizedBox(width: 12),
-                          Expanded(child: loteField),
-                          const SizedBox(width: 12),
-                          Expanded(child: codigoField),
-                        ],
-                      ),
-                    ],
-                  );
-
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                fields,
+                _responsiveFields(
+                  [tituloField, corField],
+                  minFieldWidth: 240,
+                ),
+                const SizedBox(height: 12),
+                _responsiveFields(
+                  [pesoField, loteField, codigoField],
+                  minFieldWidth: 190,
+                ),
                 const SizedBox(height: 16),
                 _buildFioLivrePreview(),
               ],
@@ -6498,6 +7818,130 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
           },
         ),
       ],
+    );
+  }
+
+  Widget _buildLivreImatecsFields(bool busy) {
+    final numero = _imatecLivreSelecionada.clamp(1, 13);
+    final nome = 'Imatec ${numero.toString().padLeft(2, '0')}';
+    final qrData = _qrImatecLivre(numero);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _sectionLabel('Maquina Imatec'),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (var i = 1; i <= 13; i++)
+              ChoiceChip(
+                label: Text('Imatec ${i.toString().padLeft(2, '0')}'),
+                selected: _imatecLivreSelecionada == i,
+                showCheckmark: true,
+                selectedColor: const Color(0xFFD8B840),
+                backgroundColor: const Color(0xFF111827),
+                disabledColor: const Color(0xFF111827),
+                side: BorderSide(
+                  color: _imatecLivreSelecionada == i
+                      ? const Color(0xFFE8CE7A)
+                      : const Color(0xFF334155),
+                ),
+                labelStyle: TextStyle(
+                  color: busy
+                      ? const Color(0xFF64748B)
+                      : _imatecLivreSelecionada == i
+                      ? Colors.white
+                      : const Color(0xFFCBD5E1),
+                  fontWeight: FontWeight.w800,
+                ),
+                onSelected: busy
+                    ? null
+                    : (_) => setState(() => _imatecLivreSelecionada = i),
+              ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: const Color(0xFF0B1224),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: const Color(0xFF334155)),
+          ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final narrow = _isNarrow(constraints);
+              final preview = _buildImatecLivrePreview(nome, qrData);
+              final details = Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    nome.toUpperCase(),
+                    style: const TextStyle(
+                      color: Color(0xFFF8FAFC),
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'QR exclusivo para check-in de localizacao Imatec.',
+                    style: TextStyle(
+                      color: Color(0xFFCBD5E1),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SelectableText(
+                    qrData,
+                    style: const TextStyle(
+                      color: Color(0xFF94A3B8),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              );
+
+              if (narrow) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [preview, const SizedBox(height: 14), details],
+                );
+              }
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(width: 250, child: preview),
+                  const SizedBox(width: 16),
+                  Expanded(child: details),
+                ],
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildImatecLivrePreview(String nome, String qrData) {
+    return Center(
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: const Color(0xFFD1D5DB)),
+        ),
+        child: AspectRatio(
+          aspectRatio: 100 / 70,
+          child: CustomPaint(
+            painter: _ImatecLivrePreviewPainter(nome: nome, qrData: qrData),
+          ),
+        ),
+      ),
     );
   }
 
@@ -6603,6 +8047,10 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                         }
                       },
               );
+          final posicaoVerticalControl = _buildPosicaoVerticalLinhaLivre(
+            linha: linha,
+            busy: busy,
+          );
           final negritoToggle = FilterChip(
             label: const Text('Negrito'),
             selected: linha.negrito,
@@ -6654,6 +8102,8 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
                   ],
                 ),
                 const SizedBox(height: 8),
+                posicaoVerticalControl,
+                const SizedBox(height: 8),
                 Row(children: [negritoToggle, const Spacer(), removerButton]),
               ],
             );
@@ -6668,6 +8118,8 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
               const SizedBox(width: 8),
               Expanded(flex: 2, child: alinhamentoField),
               const SizedBox(width: 8),
+              SizedBox(width: 230, child: posicaoVerticalControl),
+              const SizedBox(width: 8),
               negritoToggle,
               removerButton,
             ],
@@ -6675,6 +8127,88 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
         },
       ),
     );
+  }
+
+  Widget _buildPosicaoVerticalLinhaLivre({
+    required _LinhaLivreEditor linha,
+    required bool busy,
+  }) {
+    final valor = _deslocamentoYLivre(linha);
+    final rotulo = _rotuloPosicaoVerticalLivre(valor);
+
+    return Container(
+      height: 48,
+      decoration: BoxDecoration(
+        color: const Color(0xFF0F172A),
+        border: Border.all(color: const Color(0xFF334155)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          Tooltip(
+            message: 'Subir texto',
+            child: IconButton(
+              onPressed: busy
+                  ? null
+                  : () => _ajustarPosicaoVerticalLivre(linha, -8),
+              icon: const Icon(Icons.keyboard_arrow_up_rounded),
+              color: const Color(0xFFCBD5E1),
+            ),
+          ),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Text(
+                  'Posição vertical',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Color(0xFF94A3B8),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                Text(
+                  rotulo,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFFF8FAFC),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Tooltip(
+            message: 'Descer texto',
+            child: IconButton(
+              onPressed: busy
+                  ? null
+                  : () => _ajustarPosicaoVerticalLivre(linha, 8),
+              icon: const Icon(Icons.keyboard_arrow_down_rounded),
+              color: const Color(0xFFCBD5E1),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _ajustarPosicaoVerticalLivre(_LinhaLivreEditor linha, int delta) {
+    final atual = _deslocamentoYLivre(linha);
+    final proximo = (atual + delta).clamp(-80, 120);
+    setState(() => linha.deslocamentoYController.text = proximo.toString());
+  }
+
+  String _rotuloPosicaoVerticalLivre(int valor) {
+    if (valor == 0) return 'Normal';
+    if (valor > 0 && valor <= 24) return 'Um pouco abaixo';
+    if (valor > 24) return 'Mais abaixo';
+    if (valor < 0 && valor >= -24) return 'Um pouco acima';
+    return 'Mais acima';
   }
 
   /// Detalhe: dropdown para PRETO/personalizados, campo de texto nos demais.
@@ -6854,6 +8388,40 @@ class _EtiquetasPageState extends State<EtiquetasPage> {
         fontWeight: FontWeight.w700,
         letterSpacing: 0,
       ),
+    );
+  }
+
+  Widget _responsiveFields(
+    List<Widget> children, {
+    double spacing = 12,
+    double runSpacing = 12,
+    double minFieldWidth = 220,
+    double? maxFieldWidth,
+  }) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final availableWidth = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : minFieldWidth;
+        final columns = (availableWidth / minFieldWidth).floor().clamp(
+          1,
+          children.length,
+        );
+        final rawWidth =
+            (availableWidth - (spacing * (columns - 1))) / columns;
+        final itemWidth = maxFieldWidth == null
+            ? rawWidth
+            : rawWidth.clamp(minFieldWidth, maxFieldWidth);
+
+        return Wrap(
+          spacing: spacing,
+          runSpacing: runSpacing,
+          children: [
+            for (final child in children)
+              SizedBox(width: itemWidth.toDouble(), child: child),
+          ],
+        );
+      },
     );
   }
 
@@ -7284,6 +8852,88 @@ class _Pill extends StatelessWidget {
 // Etiqueta Palete painter
 // ──────────────────────────────────────────────────────────────
 
+class _PrinterConnectionStatus extends StatelessWidget {
+  const _PrinterConnectionStatus({required this.text, required this.success});
+
+  final String text;
+  final bool success;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = success ? const Color(0xFF22C55E) : const Color(0xFFF87171);
+    final bg = success ? const Color(0xFF052E1A) : const Color(0xFF3B1114);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.65)),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            success ? Icons.check_circle_rounded : Icons.error_rounded,
+            color: color,
+            size: 20,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              text,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Color(0xFFE2E8F0),
+                fontWeight: FontWeight.w800,
+                height: 1.25,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BluetoothInfoBox extends StatelessWidget {
+  const _BluetoothInfoBox({required this.icon, required this.text});
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0F172A),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFF334155)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: const Color(0xFFD8B840), size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(
+                color: Color(0xFFCBD5E1),
+                fontWeight: FontWeight.w700,
+                height: 1.3,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _DarkTag extends StatelessWidget {
   const _DarkTag({required this.label, required this.icon});
 
@@ -7293,6 +8943,7 @@ class _DarkTag extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
+      constraints: const BoxConstraints(maxWidth: 260),
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
       decoration: BoxDecoration(
         color: const Color(0xFF111C33),
@@ -7304,12 +8955,16 @@ class _DarkTag extends StatelessWidget {
         children: [
           Icon(icon, color: const Color(0xFFE8CE7A), size: 14),
           const SizedBox(width: 5),
-          Text(
-            label,
-            style: const TextStyle(
-              color: Color(0xFFE2E8F0),
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Color(0xFFE2E8F0),
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+              ),
             ),
           ),
         ],
@@ -7521,9 +9176,132 @@ class _EtiquetaPaletePainter extends CustomPainter {
   bool shouldRepaint(covariant _EtiquetaPaletePainter old) => old.data != data;
 }
 
+class _SimpleQrPainter extends CustomPainter {
+  _SimpleQrPainter(this.data);
+
+  final String data;
+  final Barcode _barcode = Barcode.qrCode();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.drawRect(Offset.zero & size, Paint()..color = Colors.white);
+    if (data.trim().isEmpty) return;
+    for (final element in _barcode.make(
+      data,
+      width: size.width,
+      height: size.height,
+      drawText: false,
+    )) {
+      if (element is BarcodeBar && element.black) {
+        canvas.drawRect(
+          Rect.fromLTWH(
+            element.left,
+            element.top,
+            element.width,
+            element.height,
+          ),
+          Paint()..color = Colors.black,
+        );
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _SimpleQrPainter oldDelegate) {
+    return oldDelegate.data != data;
+  }
+}
+
 // ──────────────────────────────────────────────────────────────
 // Etiqueta Caixa painter
 // ──────────────────────────────────────────────────────────────
+
+class _ImatecLivrePreviewPainter extends CustomPainter {
+  _ImatecLivrePreviewPainter({required this.nome, required this.qrData});
+
+  final String nome;
+  final String qrData;
+  final Barcode _barcode = Barcode.qrCode();
+
+  static const double _w = 800;
+  static const double _h = 560;
+  static const double _qrSize = 390;
+  static const double _gap = 18;
+  static const double _labelHeight = 58;
+  static const double _contentTop = (_h - _qrSize - _gap - _labelHeight) / 2;
+  static const Rect _qr = Rect.fromLTWH(
+    (_w - _qrSize) / 2,
+    _contentTop,
+    _qrSize,
+    _qrSize,
+  );
+  static const Rect _label = Rect.fromLTWH(
+    60,
+    _contentTop + _qrSize + _gap,
+    _w - 120,
+    _labelHeight,
+  );
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final scale = math.min(size.width / _w, size.height / _h);
+    final dx = (size.width - (_w * scale)) / 2;
+    final dy = (size.height - (_h * scale)) / 2;
+
+    canvas.save();
+    canvas.translate(dx, dy);
+    canvas.scale(scale);
+    canvas.drawRect(Rect.fromLTWH(0, 0, _w, _h), Paint()..color = Colors.white);
+
+    for (final element in _barcode.make(
+      qrData,
+      width: _qr.width,
+      height: _qr.height,
+      drawText: false,
+    )) {
+      if (element is BarcodeBar && element.black) {
+        canvas.drawRect(
+          Rect.fromLTWH(
+            _qr.left + element.left,
+            _qr.top + element.top,
+            element.width,
+            element.height,
+          ),
+          Paint()..color = Colors.black,
+        );
+      }
+    }
+
+    final tp = TextPainter(
+      text: TextSpan(
+        text: nome.toUpperCase(),
+        style: const TextStyle(
+          color: Colors.black,
+          fontSize: 48,
+          fontWeight: FontWeight.w900,
+          height: 1,
+          letterSpacing: 0,
+        ),
+      ),
+      textAlign: TextAlign.center,
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+    )..layout(maxWidth: _label.width);
+    tp.paint(
+      canvas,
+      Offset(
+        _label.left + ((_label.width - tp.width) / 2),
+        _label.top + ((_label.height - tp.height) / 2),
+      ),
+    );
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _ImatecLivrePreviewPainter oldDelegate) {
+    return oldDelegate.nome != nome || oldDelegate.qrData != qrData;
+  }
+}
 
 class _EtiquetaCaixaPainter extends CustomPainter {
   _EtiquetaCaixaPainter({required this.data});

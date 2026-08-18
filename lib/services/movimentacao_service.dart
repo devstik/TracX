@@ -10,12 +10,16 @@ class MovimentacaoService {
 
   // Registra movimentação COMPLETA (PUT) - MÉTODO ORIGINAL
   static Future<bool> registrarMovimentacaoCompleta({
+    int? idRegistro,
     required int idPedido,
     required String localizacaoOrigem,
     required String localizacaoDestino,
     required String conferente,
     required DateTime dataMovimentacao,
     required String tipoMovimentacao,
+    String? qrCode,
+    String? observacao,
+    String? bocaImatec,
   }) async {
     try {
       print('📤 Enviando movimentação COMPLETA:');
@@ -28,6 +32,7 @@ class MovimentacaoService {
         Uri.parse(baseUrl),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
+          if (idRegistro != null && idRegistro > 0) 'ID': idRegistro,
           'NrOrdem': idPedido,
           'LocalizacaoAnterior': localizacaoOrigem,
           'Localizacao': localizacaoDestino,
@@ -35,6 +40,12 @@ class MovimentacaoService {
           // Converte para ISO 8601 string, o parser do Python sabe lidar com isso
           'DataSaida': dataMovimentacao.toIso8601String(),
           'TipoMovimentacao': tipoMovimentacao,
+          if (qrCode != null && qrCode.trim().isNotEmpty)
+            'QrCode': qrCode.trim(),
+          if (observacao != null && observacao.trim().isNotEmpty)
+            'Observacao': observacao.trim(),
+          if (bocaImatec != null && bocaImatec.trim().isNotEmpty)
+            'BocaImatec': bocaImatec.trim(),
           // Sem 'QuantidadeMovida', API deve assumir movimento total
         }),
       );
@@ -58,6 +69,7 @@ class MovimentacaoService {
 
   // Registra movimentação PARCIAL (PUT) - NOVO MÉTODO
   static Future<bool> registrarMovimentacaoParcial({
+    int? idRegistro,
     required int idPedido,
     required String localizacaoOrigem,
     required String localizacaoDestino,
@@ -79,6 +91,7 @@ class MovimentacaoService {
         Uri.parse(baseUrl),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
+          if (idRegistro != null && idRegistro > 0) 'ID': idRegistro,
           'NrOrdem': idPedido,
           'LocalizacaoAnterior': localizacaoOrigem,
           'Localizacao': localizacaoDestino,

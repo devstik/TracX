@@ -32,15 +32,18 @@ class _MovEstoqueScreenState extends State<MovEstoqueScreen> {
   DateTime? _dataFinal;
   int _cdArtigo = 0;
   bool _loading = false;
+  bool _consultou = false;
   String? _erro;
   List<MovEstoqueItem> _resultados = const [];
+  int _consultaSeq = 0;
 
   @override
   void initState() {
     super.initState();
     final now = DateTime.now();
-    _dataInicial = DateTime(now.year, now.month, 1);
+    _dataInicial = DateTime(now.year, now.month, now.day);
     _dataFinal = DateTime(now.year, now.month, now.day);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _consultar());
   }
 
   @override
@@ -52,31 +55,57 @@ class _MovEstoqueScreenState extends State<MovEstoqueScreen> {
 
   Future<void> _consultar() async {
     FocusScope.of(context).unfocus();
+    if (!_validarPeriodo()) return;
+    final seq = ++_consultaSeq;
     setState(() {
       _loading = true;
+      _consultou = true;
       _erro = null;
     });
     try {
       final data = await MovEstoqueService.consultar(
         cdUne: int.tryParse(_unidadeController.text.trim()) ?? 0,
-        dataInicial: _dataInicial == null ? null : _dataApi.format(_dataInicial!),
+        dataInicial: _dataInicial == null
+            ? null
+            : _dataApi.format(_dataInicial!),
         dataFinal: _dataFinal == null ? null : _dataApi.format(_dataFinal!),
         cdArtigo: _cdArtigo > 0
             ? _cdArtigo
             : int.tryParse(_artigoController.text.trim()) ?? 0,
       );
-      if (!mounted) return;
+      if (!mounted || seq != _consultaSeq) return;
       setState(() {
         _resultados = data;
         _loading = false;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || seq != _consultaSeq) return;
       setState(() {
         _erro = e.toString().replaceFirst('Exception: ', '');
         _loading = false;
       });
     }
+  }
+
+  bool _validarPeriodo() {
+    final inicial = _dataInicial;
+    final finalData = _dataFinal;
+    if (inicial != null && finalData != null) {
+      if (inicial.isAfter(finalData)) {
+        setState(() {
+          _erro = 'A data inicial não pode ser maior que a data final.';
+        });
+        return false;
+      }
+      if (finalData.difference(inicial).inDays > 31) {
+        setState(() {
+          _erro =
+              'Consulte no máximo 31 dias por vez para manter a busca rápida.';
+        });
+        return false;
+      }
+    }
+    return true;
   }
 
   void _limpar() {
@@ -86,8 +115,9 @@ class _MovEstoqueScreenState extends State<MovEstoqueScreen> {
       _cdArtigo = 0;
       _resultados = const [];
       _erro = null;
+      _consultou = false;
       final now = DateTime.now();
-      _dataInicial = DateTime(now.year, now.month, 1);
+      _dataInicial = DateTime(now.year, now.month, now.day);
       _dataFinal = DateTime(now.year, now.month, now.day);
     });
   }
@@ -147,11 +177,15 @@ class _MovEstoqueScreenState extends State<MovEstoqueScreen> {
           children: [
             _buildFiltros(),
             const SizedBox(height: 14),
+            if (_loading && _resultados.isNotEmpty) ...[
+              const LinearProgressIndicator(color: _gold, minHeight: 3),
+              const SizedBox(height: 12),
+            ],
             if (_erro != null) _buildError(_erro!),
-            if (_loading)
+            if (_loading && _resultados.isEmpty)
               const _MovLoadingCard()
             else if (_resultados.isEmpty)
-              const _MovEmptyCard()
+              _MovEmptyCard(consultou: _consultou)
             else ...[
               _buildResumo(total: total, dias: grupos.length, artigos: artigos),
               const SizedBox(height: 12),
@@ -211,8 +245,9 @@ class _MovEstoqueScreenState extends State<MovEstoqueScreen> {
                   onChanged: () => _cdArtigo = 0,
                   onSelected: (artigo) {
                     _cdArtigo = _toInt(artigo['CdObj']);
-                    _artigoController.text =
-                        (artigo['NmObj'] ?? '').toString().trim();
+                    _artigoController.text = (artigo['NmObj'] ?? '')
+                        .toString()
+                        .trim();
                   },
                 ),
               ];
@@ -420,7 +455,11 @@ class _MovEstoqueScreenState extends State<MovEstoqueScreen> {
       padding: const EdgeInsets.symmetric(vertical: 5),
       child: Row(
         children: [
-          const Icon(Icons.subdirectory_arrow_right, color: Colors.white38, size: 18),
+          const Icon(
+            Icons.subdirectory_arrow_right,
+            color: Colors.white38,
+            size: 18,
+          ),
           const SizedBox(width: 6),
           Expanded(
             child: Text(
@@ -574,11 +613,7 @@ class _MovDia {
 }
 
 class _MovArtigo {
-  _MovArtigo({
-    required this.codigo,
-    required this.nome,
-    required this.total,
-  });
+  _MovArtigo({required this.codigo, required this.nome, required this.total});
 
   final String codigo;
   final String nome;
@@ -621,12 +656,22 @@ class _MovArtigoAutocompleteState extends State<_MovArtigoAutocomplete> {
         return;
       }
       setState(() => _loading = true);
-      final data = await EtiquetasService.buscarArtigosPorNome(value);
-      if (!mounted) return;
-      setState(() {
-        _opcoes = data.take(8).toList();
-        _loading = false;
-      });
+      try {
+        final data = await EtiquetasService.buscarArtigosPorNome(
+          value,
+        ).timeout(const Duration(seconds: 8));
+        if (!mounted) return;
+        setState(() {
+          _opcoes = data.take(8).toList();
+          _loading = false;
+        });
+      } catch (_) {
+        if (!mounted) return;
+        setState(() {
+          _opcoes = [];
+          _loading = false;
+        });
+      }
     });
   }
 
@@ -637,11 +682,17 @@ class _MovArtigoAutocompleteState extends State<_MovArtigoAutocomplete> {
         TextField(
           controller: widget.controller,
           onChanged: _buscar,
-          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w800,
+          ),
           decoration: InputDecoration(
             labelText: 'Artigo',
             hintText: 'Digite nome ou código',
-            prefixIcon: const Icon(Icons.search_rounded, color: Color(0xFFD8B840)),
+            prefixIcon: const Icon(
+              Icons.search_rounded,
+              color: Color(0xFFD8B840),
+            ),
             suffixIcon: _loading
                 ? const Padding(
                     padding: EdgeInsets.all(14),
@@ -735,10 +786,7 @@ class _ResumoChip extends StatelessWidget {
         children: [
           Icon(icon, color: const Color(0xFFD8B840), size: 18),
           const SizedBox(width: 8),
-          Text(
-            '$label: ',
-            style: const TextStyle(color: Colors.white54),
-          ),
+          Text('$label: ', style: const TextStyle(color: Colors.white54)),
           Text(
             value,
             style: const TextStyle(
@@ -765,7 +813,9 @@ class _MovLoadingCard extends StatelessWidget {
 }
 
 class _MovEmptyCard extends StatelessWidget {
-  const _MovEmptyCard();
+  const _MovEmptyCard({required this.consultou});
+
+  final bool consultou;
 
   @override
   Widget build(BuildContext context) {
@@ -776,16 +826,25 @@ class _MovEmptyCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: const Color(0xFF334155)),
       ),
-      child: const Column(
+      child: Column(
         children: [
-          Icon(Icons.inventory_2_outlined, color: Color(0xFFD8B840), size: 34),
-          SizedBox(height: 10),
-          Text(
-            'Informe os filtros e clique em Consultar.',
-            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900),
+          const Icon(
+            Icons.inventory_2_outlined,
+            color: Color(0xFFD8B840),
+            size: 34,
           ),
-          SizedBox(height: 6),
+          const SizedBox(height: 10),
           Text(
+            consultou
+                ? 'Nenhuma movimentação encontrada para os filtros.'
+                : 'Informe os filtros e clique em Consultar.',
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 6),
+          const Text(
             'A consulta mostra as entradas agrupadas por data, artigo e item.',
             style: TextStyle(color: Colors.white54),
             textAlign: TextAlign.center,

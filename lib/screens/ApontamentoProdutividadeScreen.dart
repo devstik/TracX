@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
@@ -138,6 +138,23 @@ class _DefeitoTipoB {
           .toString()
           .trim(),
     );
+  }
+}
+
+class _DefeitoApontamentoTipoBEntry {
+  _DefeitoApontamentoTipoBEntry();
+
+  final defeitoController = TextEditingController();
+  final quantidadeController = TextEditingController();
+  String? codigoDefeito;
+
+  bool get temDefeito =>
+      (codigoDefeito ?? '').trim().isNotEmpty &&
+      defeitoController.text.trim().isNotEmpty;
+
+  void dispose() {
+    defeitoController.dispose();
+    quantidadeController.dispose();
   }
 }
 
@@ -801,7 +818,6 @@ class _ProducaoTabsScreenState extends State<ProducaoTabsScreen>
   late TabController _tabController;
 
   @override
-  
   void initState() {
     super.initState();
     _tabController = TabController(
@@ -1152,15 +1168,16 @@ class _FormularioGeralState extends State<FormularioGeral> {
   final _setorController = TextEditingController();
   final _maquinaController = TextEditingController();
   final _maquina2Controller = TextEditingController();
-  final _defeitoController = TextEditingController();
   final _dataController = TextEditingController();
   final _turnoInfoController = TextEditingController();
   final _ordemProducaoController = TextEditingController();
   final _palletController = TextEditingController();
-  String? _defeitoSelecionadoCodigo;
   String? _operadorCdUserSelecionado;
   final List<_OperadorApontamentoEntry> _operadoresApontamento = [
     _OperadorApontamentoEntry(),
+  ];
+  final List<_DefeitoApontamentoTipoBEntry> _defeitosApontamentoTipoB = [
+    _DefeitoApontamentoTipoBEntry(),
   ];
   List<_DefeitoTipoB> _defeitosTipoB = [];
   bool _loadingDefeitosTipoB = false;
@@ -1205,10 +1222,9 @@ class _FormularioGeralState extends State<FormularioGeral> {
 
   bool get _isEnfestamento =>
       _setorSelecionado != null &&
-      _setorSelecionado!.nome
-          .toUpperCase()
-          .trim()
-          .contains(_kSetorEnfestamento);
+      _setorSelecionado!.nome.toUpperCase().trim().contains(
+        _kSetorEnfestamento,
+      );
 
   List<UsuarioOperador> get _usuariosOperadoresDisponiveis {
     if (!_isEnfestamento) return _usuariosOperadores;
@@ -1313,7 +1329,6 @@ class _FormularioGeralState extends State<FormularioGeral> {
     _setorController.dispose();
     _maquinaController.dispose();
     _maquina2Controller.dispose();
-    _defeitoController.dispose();
     _dataController.dispose();
     _turnoInfoController.dispose();
     _ordemProducaoController.dispose();
@@ -1325,6 +1340,9 @@ class _FormularioGeralState extends State<FormularioGeral> {
     _coletorOperador2Controller.dispose();
     _coletorOperador2Focus.dispose();
     for (final entry in _operadoresApontamento) {
+      entry.dispose();
+    }
+    for (final entry in _defeitosApontamentoTipoB) {
       entry.dispose();
     }
     super.dispose();
@@ -1373,6 +1391,24 @@ class _FormularioGeralState extends State<FormularioGeral> {
       if (_coletorOperadorIndex >= _operadoresApontamento.length) {
         _coletorOperadorIndex = _operadoresApontamento.length - 1;
       }
+    });
+  }
+
+  void _adicionarDefeitoApontamentoTipoB() {
+    setState(() {
+      _defeitosApontamentoTipoB.add(_DefeitoApontamentoTipoBEntry());
+    });
+  }
+
+  void _removerDefeitoApontamentoTipoB(int index) {
+    if (_defeitosApontamentoTipoB.length <= 1 ||
+        index < 0 ||
+        index >= _defeitosApontamentoTipoB.length) {
+      return;
+    }
+    setState(() {
+      final removido = _defeitosApontamentoTipoB.removeAt(index);
+      removido.dispose();
     });
   }
 
@@ -1468,7 +1504,10 @@ class _FormularioGeralState extends State<FormularioGeral> {
     );
   }
 
-  Future<void> _abrirSeletorOperador({bool segundo = false, int index = 0}) async {
+  Future<void> _abrirSeletorOperador({
+    bool segundo = false,
+    int index = 0,
+  }) async {
     final usuariosBase = _usuariosOperadoresDisponiveis;
     if (usuariosBase.isEmpty) return;
 
@@ -1660,19 +1699,13 @@ class _FormularioGeralState extends State<FormularioGeral> {
   }
 
   dynamic _valorOperadorNoQr(Map<dynamic, dynamic> decoded) {
-    const chavesAceitas = {
-      'operador',
-      'cduser',
-      'codigo',
-      'id',
-    };
+    const chavesAceitas = {'operador', 'cduser', 'codigo', 'id'};
 
     for (final entry in decoded.entries) {
-      final chave = entry.key
-          .toString()
-          .trim()
-          .toLowerCase()
-          .replaceAll('_', '');
+      final chave = entry.key.toString().trim().toLowerCase().replaceAll(
+        '_',
+        '',
+      );
       if (chavesAceitas.contains(chave)) return entry.value;
     }
     return null;
@@ -1834,8 +1867,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
       final String? code = await Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) =>
-              const ScannerPage(modo: 'qr', titulo: 'Ler Operador'),
+          builder: (_) => const ScannerPage(modo: 'qr', titulo: 'Ler Operador'),
         ),
       );
       if (code != null && code.trim().isNotEmpty) {
@@ -2306,11 +2338,14 @@ class _FormularioGeralState extends State<FormularioGeral> {
     }
   }
 
-  Future<void> _abrirSeletorDefeitoTipoB() async {
+  Future<void> _abrirSeletorDefeitoTipoB(int index) async {
     if (_defeitosTipoB.isEmpty) {
       await _carregarDefeitosTipoB(mostrarErro: true);
     }
     if (!mounted || _defeitosTipoB.isEmpty) return;
+    if (index < 0 || index >= _defeitosApontamentoTipoB.length) return;
+
+    final entry = _defeitosApontamentoTipoB[index];
 
     String busca = '';
     final selecionado = await showModalBottomSheet<_DefeitoTipoB>(
@@ -2434,7 +2469,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
                               itemBuilder: (_, index) {
                                 final defeito = itens[index];
                                 final ativo =
-                                    _defeitoSelecionadoCodigo == defeito.codigo;
+                                    entry.codigoDefeito == defeito.codigo;
                                 return Material(
                                   color: Colors.transparent,
                                   child: InkWell(
@@ -2532,8 +2567,8 @@ class _FormularioGeralState extends State<FormularioGeral> {
 
     if (!mounted || selecionado == null) return;
     setState(() {
-      _defeitoSelecionadoCodigo = selecionado.codigo;
-      _defeitoController.text = _labelDefeito(selecionado);
+      entry.codigoDefeito = selecionado.codigo;
+      entry.defeitoController.text = _labelDefeito(selecionado);
     });
   }
 
@@ -3181,10 +3216,14 @@ class _FormularioGeralState extends State<FormularioGeral> {
       if (response.statusCode == 200) {
         final json = jsonDecode(response.body);
         final List<dynamic> data = json["data"] ?? [];
-        debugPrint('[APONTAMENTO_QR] Itens retornados pela API: ${data.length}');
+        debugPrint(
+          '[APONTAMENTO_QR] Itens retornados pela API: ${data.length}',
+        );
 
         if (data.isEmpty) {
-          debugPrint('[APONTAMENTO_QR] API retornou lista vazia para o artigo.');
+          debugPrint(
+            '[APONTAMENTO_QR] API retornou lista vazia para o artigo.',
+          );
           _showSnack("Produto não encontrado", Colors.orange);
           return;
         }
@@ -3235,7 +3274,9 @@ class _FormularioGeralState extends State<FormularioGeral> {
         await _buscarOrdemProducaoParaObjeto(objetoID);
         _showSnack("✅ Produto e lote encontrados", Colors.green);
       } else if (response.statusCode == 401) {
-        debugPrint('[APONTAMENTO_QR] API artigos retornou 401. Limpando token.');
+        debugPrint(
+          '[APONTAMENTO_QR] API artigos retornou 401. Limpando token.',
+        );
         await AuthService.limparToken();
         _showSnack("Token expirado, tente novamente", Colors.orange);
       } else {
@@ -3595,14 +3636,34 @@ class _FormularioGeralState extends State<FormularioGeral> {
   Future<void> _enviar() async {
     if (_cdObjReal.isEmpty) return _showSnack("Bipe um Artigo", Colors.orange);
 
-    final codigoDefeito =
-        (_defeitoSelecionadoCodigo ??
-                _normalizarCodigo(_defeitoController.text))
-            .trim();
+    final defeitosTipoBPayload = <Map<String, dynamic>>[];
 
     if (widget.tipo == 'B') {
-      if (codigoDefeito.isEmpty) {
-        return _showSnack("Preencha o campo Defeito", Colors.orange);
+      for (var i = 0; i < _defeitosApontamentoTipoB.length; i++) {
+        final entry = _defeitosApontamentoTipoB[i];
+        final codigoDefeito =
+            (entry.codigoDefeito ??
+                    _normalizarCodigo(entry.defeitoController.text))
+                .trim();
+        final quantidade = int.tryParse(entry.quantidadeController.text.trim());
+
+        if (codigoDefeito.isEmpty) {
+          return _showSnack(
+            "Preencha o defeito da linha ${i + 1}",
+            Colors.orange,
+          );
+        }
+        if (quantidade == null || quantidade <= 0) {
+          return _showSnack(
+            "Preencha a quantidade da linha ${i + 1} corretamente",
+            Colors.orange,
+          );
+        }
+
+        defeitosTipoBPayload.add({
+          'codigo': codigoDefeito,
+          'quantidade': quantidade,
+        });
       }
     }
 
@@ -3625,7 +3686,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
       }
     }
 
-    if (widget.tipo == 'A' || widget.tipo == 'B') {
+    if (widget.tipo == 'A') {
       for (var i = 0; i < _operadoresApontamento.length; i++) {
         final quantidade = int.tryParse(
           _operadoresApontamento[i].quantidadeController.text.trim(),
@@ -3637,8 +3698,9 @@ class _FormularioGeralState extends State<FormularioGeral> {
           );
         }
       }
-    } else if (_qtdeController.text.trim().isEmpty ||
-        int.tryParse(_qtdeController.text) == null) {
+    } else if (widget.tipo != 'B' &&
+        (_qtdeController.text.trim().isEmpty ||
+            int.tryParse(_qtdeController.text) == null)) {
       return _showSnack("Preencha a quantidade corretamente", Colors.orange);
     }
 
@@ -3648,7 +3710,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
         ? '/apontamento/tipoA'
         : '/apontamento/tipoB';
 
-    final quantidade = (widget.tipo == 'A' || widget.tipo == 'B')
+    final quantidade = widget.tipo == 'A'
         ? _operadoresApontamento.fold<int>(
             0,
             (total, operador) =>
@@ -3686,18 +3748,20 @@ class _FormularioGeralState extends State<FormularioGeral> {
         "Artigo": _cdObjReal,
         "Detalhe": _detalheReal,
         "CdLot": _detalheReal,
-        "Defeito": codigoDefeito,
         "TpMovimento": 1,
         "turno": widget.turno,
       };
 
-      for (final operador in _operadoresApontamento) {
-        final quantidadeOperador =
-            int.tryParse(operador.quantidadeController.text.trim()) ?? 0;
+      for (var i = 0; i < defeitosTipoBPayload.length; i++) {
+        final defeito = defeitosTipoBPayload[i];
+        final operador = i < _operadoresApontamento.length
+            ? _operadoresApontamento[i]
+            : _operadoresApontamento.first;
         payloads.add({
           ...base,
           "Operador": operador.cdUser,
-          "Qtde": quantidadeOperador,
+          "Defeito": defeito['codigo'],
+          "Qtde": defeito['quantidade'],
         });
       }
     }
@@ -3764,8 +3828,6 @@ class _FormularioGeralState extends State<FormularioGeral> {
     _coletorArtigoController.clear();
     _coletorOperadorController.clear();
     _coletorOperador2Controller.clear();
-    _defeitoController.clear();
-    _defeitoSelecionadoCodigo = null;
     _operadorCdUserSelecionado = null;
     for (final entry in _operadoresApontamento) {
       entry.dispose();
@@ -3773,6 +3835,12 @@ class _FormularioGeralState extends State<FormularioGeral> {
     _operadoresApontamento
       ..clear()
       ..add(_OperadorApontamentoEntry());
+    for (final entry in _defeitosApontamentoTipoB) {
+      entry.dispose();
+    }
+    _defeitosApontamentoTipoB
+      ..clear()
+      ..add(_DefeitoApontamentoTipoBEntry());
     _cdObjReal = "";
     _detalheReal = "";
     _lotesDisponiveis = [];
@@ -3940,8 +4008,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
                 Icons.info_outline,
                 readOnly: true,
               ),
-              _buildDefeitoDropdownTipoB(),
-              ..._buildCamposQuantidadeOperadores(),
+              _buildDefeitosQuantidadeTipoB(),
             ]),
             const SizedBox(height: 20),
             Row(
@@ -4080,7 +4147,9 @@ class _FormularioGeralState extends State<FormularioGeral> {
   // -----------------------------------------------------------------------
 
   Widget _buildIndicadorEtapas() {
-    if (widget.tipo != 'A' && widget.tipo != 'B') return const SizedBox.shrink();
+    if (widget.tipo != 'A' && widget.tipo != 'B') {
+      return const SizedBox.shrink();
+    }
 
     final etapa1Ativa = _etapaA == _EtapaA.identificacao;
 
@@ -4282,37 +4351,37 @@ class _FormularioGeralState extends State<FormularioGeral> {
         children: [
           _loadingUsuariosOperadores
               ? _buildCampoSelecao(
-              controller: _operadorController,
-              label: 'Operador',
-              hint: 'Carregando operadores...',
-              icon: Icons.badge,
-              selecionado: false,
-              habilitado: false,
-              onTap: null,
-              helperText: null,
-            )
+                  controller: _operadorController,
+                  label: 'Operador',
+                  hint: 'Carregando operadores...',
+                  icon: Icons.badge,
+                  selecionado: false,
+                  habilitado: false,
+                  onTap: null,
+                  helperText: null,
+                )
               : _buildCampoSelecao(
-              controller: _operadorController,
-              label: 'Operador',
-              hint: semUsuarios
-                  ? 'Nenhum operador encontrado'
-                  : 'Selecione o operador',
-              icon: Icons.badge,
-              selecionado: temOperador,
-              habilitado: !semUsuarios,
-              onTap: semUsuarios ? null : () => _abrirSeletorOperador(),
-              helperText: semUsuarios
-                  ? null
-                  : '$totalOperadores operadores disponíveis',
-              suffixActions: [_buildBotaoLeituraOperador(segundo: false)],
-              mostrarLimpar: temOperador,
-              onClear: () {
-                setState(() {
-                  _operadorCdUserSelecionado = null;
-                  _operadorController.clear();
-                });
-              },
-            ),
+                  controller: _operadorController,
+                  label: 'Operador',
+                  hint: semUsuarios
+                      ? 'Nenhum operador encontrado'
+                      : 'Selecione o operador',
+                  icon: Icons.badge,
+                  selecionado: temOperador,
+                  habilitado: !semUsuarios,
+                  onTap: semUsuarios ? null : () => _abrirSeletorOperador(),
+                  helperText: semUsuarios
+                      ? null
+                      : '$totalOperadores operadores disponíveis',
+                  suffixActions: [_buildBotaoLeituraOperador(segundo: false)],
+                  mostrarLimpar: temOperador,
+                  onClear: () {
+                    setState(() {
+                      _operadorCdUserSelecionado = null;
+                      _operadorController.clear();
+                    });
+                  },
+                ),
           _buildColetorOperadorOculto(segundo: false),
         ],
       ),
@@ -4430,7 +4499,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
 
     final label = _artigoEsperadoNome.isNotEmpty
         ? _artigoEsperadoNome
-        : 'ID ${_artigoEsperadoId}';
+        : 'ID $_artigoEsperadoId';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -4606,10 +4675,7 @@ class _FormularioGeralState extends State<FormularioGeral> {
   // DROPDOWNS (iguais ao original)
   // -----------------------------------------------------------------------
 
-  Widget _buildDefeitoDropdownTipoB() {
-    final selecionado =
-        (_defeitoSelecionadoCodigo ?? '').isNotEmpty &&
-        _defeitoController.text.isNotEmpty;
+  Widget _buildDefeitosQuantidadeTipoB() {
     final habilitado = !_loadingDefeitosTipoB;
     final hint = _loadingDefeitosTipoB
         ? 'Carregando defeitos...'
@@ -4624,22 +4690,120 @@ class _FormularioGeralState extends State<FormularioGeral> {
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: _buildCampoSelecao(
-        controller: _defeitoController,
-        label: 'Defeito',
-        hint: hint,
-        icon: Icons.warning_amber_outlined,
-        selecionado: selecionado,
-        habilitado: habilitado,
-        onTap: habilitado ? _abrirSeletorDefeitoTipoB : null,
-        helperText: helperText,
-        mostrarLimpar: selecionado,
-        onClear: () {
-          setState(() {
-            _defeitoSelecionadoCodigo = null;
-            _defeitoController.clear();
-          });
-        },
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Defeitos e quantidades',
+                  style: TextStyle(
+                    color: _kTextPrimary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed: _isLoading
+                    ? null
+                    : _adicionarDefeitoApontamentoTipoB,
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('Adicionar'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: _kAccentColor,
+                  side: const BorderSide(color: _kAccentColor),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          for (var i = 0; i < _defeitosApontamentoTipoB.length; i++)
+            _buildLinhaDefeitoQuantidadeTipoB(
+              i,
+              hint: hint,
+              helperText: helperText,
+              habilitado: habilitado,
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLinhaDefeitoQuantidadeTipoB(
+    int index, {
+    required String hint,
+    required String helperText,
+    required bool habilitado,
+  }) {
+    final entry = _defeitosApontamentoTipoB[index];
+    final selecionado = entry.temDefeito;
+    final podeRemover = _defeitosApontamentoTipoB.length > 1;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: _kSurface.withValues(alpha: 0.65),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: _kBorderSoft),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Linha ${index + 1}',
+                  style: const TextStyle(
+                    color: _kTextPrimary,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              if (podeRemover)
+                IconButton(
+                  tooltip: 'Remover linha',
+                  onPressed: _isLoading
+                      ? null
+                      : () => _removerDefeitoApontamentoTipoB(index),
+                  icon: const Icon(
+                    Icons.delete_outline,
+                    color: Colors.redAccent,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          _buildCampoSelecao(
+            controller: entry.defeitoController,
+            label: 'Defeito ${index + 1}',
+            hint: hint,
+            icon: Icons.warning_amber_outlined,
+            selecionado: selecionado,
+            habilitado: habilitado,
+            onTap: habilitado ? () => _abrirSeletorDefeitoTipoB(index) : null,
+            helperText: helperText,
+            mostrarLimpar: selecionado,
+            onClear: () {
+              setState(() {
+                entry.codigoDefeito = null;
+                entry.defeitoController.clear();
+              });
+            },
+          ),
+          const SizedBox(height: 12),
+          _buildTextField(
+            entry.quantidadeController,
+            'Quantidade ${index + 1}',
+            Icons.add_task,
+            isNumeric: true,
+          ),
+        ],
       ),
     );
   }
@@ -6123,9 +6287,7 @@ class _ConsultaApontamentosTabState extends State<_ConsultaApontamentosTab> {
 
       if (!mounted) return;
       setState(() {
-        _usuariosFiltro = _usuariosUnicos(
-          results[0] as List<UsuarioOperador>,
-        );
+        _usuariosFiltro = _usuariosUnicos(results[0] as List<UsuarioOperador>);
         _setoresFiltro = _setoresUnicos(results[1] as List<Setor>);
         _loadingOpcoes = false;
       });
@@ -6472,7 +6634,8 @@ class _ConsultaApontamentosTabState extends State<_ConsultaApontamentosTab> {
       itemSubtitle: (item) => 'Codigo ${item.codigo}',
       itemIcon: Icons.schedule_outlined,
       filtro: (item, termo) =>
-          item.nome.toUpperCase().contains(termo) || item.codigo.contains(termo),
+          item.nome.toUpperCase().contains(termo) ||
+          item.codigo.contains(termo),
     );
 
     if (!mounted || selecionado == null) return;
@@ -6641,7 +6804,8 @@ class _ConsultaApontamentosTabState extends State<_ConsultaApontamentosTab> {
   double get _totalQuantidade =>
       _resultados.fold(0.0, (total, item) => total + item.quantidade);
 
-  int get _totalArtigos => _resultados.map((item) => item.artigo).toSet().length;
+  int get _totalArtigos =>
+      _resultados.map((item) => item.artigo).toSet().length;
 
   int get _totalOperadores =>
       _resultados.map((item) => item.operador).toSet().length;
@@ -6981,7 +7145,10 @@ class _ConsultaDateField extends StatelessWidget {
       readOnly: true,
       onTap: onTap,
       style: const TextStyle(color: _kTextPrimary, fontWeight: FontWeight.w700),
-      decoration: _consultaInputDecoration(label, Icons.calendar_month_outlined),
+      decoration: _consultaInputDecoration(
+        label,
+        Icons.calendar_month_outlined,
+      ),
     );
   }
 }
@@ -7104,9 +7271,10 @@ class _ConsultaApontamentoCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final dateFormat = DateFormat('dd/MM/yyyy');
-    final quantidade = NumberFormat('#,##0.##', 'pt_BR').format(
-      item.quantidade,
-    );
+    final quantidade = NumberFormat(
+      '#,##0.##',
+      'pt_BR',
+    ).format(item.quantidade);
     final data = item.data == null ? '-' : dateFormat.format(item.data!);
 
     return Container(
@@ -7148,7 +7316,9 @@ class _ConsultaApontamentoCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      item.artigo.isEmpty ? 'Artigo nao informado' : item.artigo,
+                      item.artigo.isEmpty
+                          ? 'Artigo nao informado'
+                          : item.artigo,
                       style: const TextStyle(
                         color: _kTextPrimary,
                         fontSize: 15,
@@ -7330,10 +7500,7 @@ class _ConsultaLoadingCard extends StatelessWidget {
           SizedBox(width: 12),
           Text(
             'Consultando apontamentos...',
-            style: TextStyle(
-              color: _kTextPrimary,
-              fontWeight: FontWeight.w800,
-            ),
+            style: TextStyle(color: _kTextPrimary, fontWeight: FontWeight.w800),
           ),
         ],
       ),

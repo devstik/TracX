@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 
 import 'package:http/http.dart' as http;
 
@@ -60,12 +61,16 @@ class MovEstoqueItem {
 
 class MovEstoqueService {
   static const String baseUrl = 'http://168.190.90.2:5000';
+  static final Map<String, _MovEstoqueCacheEntry> _cache = {};
+  static const Duration _cacheTtl = Duration(minutes: 2);
 
   static Future<List<MovEstoqueItem>> consultar({
     int cdUne = 0,
     String? dataInicial,
     String? dataFinal,
     int cdArtigo = 0,
+    bool usarCache = true,
+    Duration timeout = const Duration(seconds: 14),
   }) async {
     final params = <String, String>{};
     if (cdUne > 0) params['cdUne'] = cdUne.toString();
@@ -81,23 +86,42 @@ class MovEstoqueService {
       '$baseUrl/consultar/movimentacao-estoque',
     ).replace(queryParameters: params);
 
-    final response = await http.get(uri).timeout(const Duration(seconds: 25));
+    final cacheKey = uri.toString();
+    final cached = _cache[cacheKey];
+    if (usarCache &&
+        cached != null &&
+        DateTime.now().difference(cached.createdAt) < _cacheTtl) {
+      return cached.items;
+    }
+
+    late final http.Response response;
+    try {
+      response = await http.get(uri).timeout(timeout);
+    } on TimeoutException {
+      throw Exception(
+        'A consulta demorou demais. Tente um período menor ou filtre por artigo.',
+      );
+    }
 
     if (response.statusCode >= 200 && response.statusCode < 300) {
       final decoded = jsonDecode(response.body);
       if (decoded is List) {
-        return decoded
+        final items = decoded
             .whereType<Map>()
             .map(MovEstoqueItem.fromJson)
             .toList();
+        _cache[cacheKey] = _MovEstoqueCacheEntry(items);
+        return items;
       }
       if (decoded is Map<String, dynamic>) {
         final data = decoded['data'] ?? decoded['resultados'];
         if (data is List) {
-          return data
+          final items = data
               .whereType<Map>()
               .map(MovEstoqueItem.fromJson)
               .toList();
+          _cache[cacheKey] = _MovEstoqueCacheEntry(items);
+          return items;
         }
       }
       return const [];
@@ -108,7 +132,10 @@ class MovEstoqueService {
       final decoded = jsonDecode(response.body);
       if (decoded is Map<String, dynamic>) {
         message =
-            (decoded['error'] ?? decoded['erro'] ?? decoded['message'] ?? message)
+            (decoded['error'] ??
+                    decoded['erro'] ??
+                    decoded['message'] ??
+                    message)
                 .toString();
       }
     } catch (_) {
@@ -116,4 +143,63 @@ class MovEstoqueService {
     }
     throw Exception(message);
   }
+
+  static Future<MovEstoqueResumo> consultarResumoHoje({
+    Duration timeout = const Duration(seconds: 8),
+  }) async {
+    final now = DateTime.now();
+    final data = [
+      now.year.toString().padLeft(4, '0'),
+      now.month.toString().padLeft(2, '0'),
+      now.day.toString().padLeft(2, '0'),
+    ].join('-');
+    final uri = Uri.parse('$baseUrl/consultar/movimentacao-estoque').replace(
+      queryParameters: {'dataInicial': data, 'dataFinal': data, 'resumo': '1'},
+    );
+
+    try {
+      final response = await http.get(uri).timeout(timeout);
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map<String, dynamic>) {
+          return MovEstoqueResumo.fromJson(decoded);
+        }
+      }
+    } on TimeoutException {
+      throw Exception('Resumo de estoque demorou demais para responder.');
+    }
+
+    final itens = await consultar(
+      dataInicial: data,
+      dataFinal: data,
+      timeout: timeout,
+    );
+    return MovEstoqueResumo(
+      total: itens
+          .where((item) => item.nivel == 1)
+          .fold<double>(0, (sum, item) => sum + item.qtEntrada),
+      artigos: itens.where((item) => item.nivel == 2).length,
+    );
+  }
+}
+
+class MovEstoqueResumo {
+  const MovEstoqueResumo({required this.total, required this.artigos});
+
+  final double total;
+  final int artigos;
+
+  factory MovEstoqueResumo.fromJson(Map<String, dynamic> json) {
+    return MovEstoqueResumo(
+      total: MovEstoqueItem._double(json['total']),
+      artigos: MovEstoqueItem._int(json['artigos']),
+    );
+  }
+}
+
+class _MovEstoqueCacheEntry {
+  _MovEstoqueCacheEntry(this.items) : createdAt = DateTime.now();
+
+  final List<MovEstoqueItem> items;
+  final DateTime createdAt;
 }
