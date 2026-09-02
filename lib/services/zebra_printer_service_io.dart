@@ -589,7 +589,7 @@ class ZebraPrinterService {
   }) async {
     final nomeLimpo = nome.trim();
     final qrLimpo = qrData.trim();
-    if (nomeLimpo.isEmpty || numero < 1 || numero > 13 || qrLimpo.isEmpty) {
+    if (nomeLimpo.isEmpty || numero < 1 || numero > 15 || qrLimpo.isEmpty) {
       throw Exception('Dados da etiqueta Imatec incompletos.');
     }
 

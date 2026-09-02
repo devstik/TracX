@@ -53,6 +53,7 @@ class Registro extends HiveObject {
   String? caixa;
 
   String? bocaImatec;
+  String? nomeOperadorImatec;
 
   Registro({
     this.id,
@@ -71,6 +72,7 @@ class Registro extends HiveObject {
     this.localizacao,
     this.dataMovimentacao,
     this.bocaImatec,
+    this.nomeOperadorImatec,
     this.caixa, // ✅ O parâmetro nomeado 'caixa' está definido aqui.
   });
 

@@ -190,37 +190,18 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
             controller: _controller,
             onDetect: _onCameraDetect,
           ),
-          ColorFiltered(
-            colorFilter: ColorFilter.mode(
-              Colors.black.withValues(alpha: 0.62),
-              BlendMode.srcOut,
-            ),
-            child: Stack(
-              children: [
-                Container(
-                  decoration: const BoxDecoration(
-                    color: Colors.black,
-                    backgroundBlendMode: BlendMode.dstOut,
-                  ),
-                ),
-                Align(
-                  alignment: Alignment.center,
-                  child: Container(
-                    width: scannerSize,
-                    height: scannerSize,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(18),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
           Center(
-            child: CustomPaint(
-              size: Size(scannerSize, scannerSize),
-              painter: const _QrScannerCornersPainter(),
+            child: Container(
+              width: scannerSize,
+              height: scannerSize,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+              ),
+              child: CustomPaint(
+                size: Size(scannerSize, scannerSize),
+                painter: const _QrScannerCornersPainter(),
+              ),
             ),
           ),
           Align(

@@ -20,6 +20,8 @@ class MovimentacaoService {
     String? qrCode,
     String? observacao,
     String? bocaImatec,
+    String? cdUser,
+    String? nomeOperador,
   }) async {
     try {
       print('📤 Enviando movimentação COMPLETA:');
@@ -46,6 +48,10 @@ class MovimentacaoService {
             'Observacao': observacao.trim(),
           if (bocaImatec != null && bocaImatec.trim().isNotEmpty)
             'BocaImatec': bocaImatec.trim(),
+          if (cdUser != null && cdUser.trim().isNotEmpty)
+            'CdUser': cdUser.trim(),
+          if (nomeOperador != null && nomeOperador.trim().isNotEmpty)
+            'NmUser': nomeOperador.trim(),
           // Sem 'QuantidadeMovida', API deve assumir movimento total
         }),
       );

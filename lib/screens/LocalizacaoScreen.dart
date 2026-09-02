@@ -70,6 +70,8 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
     'Imatec 11': 4,
     'Imatec 12': 4,
     'Imatec 13': 4,
+    'Imatec 14': 4,
+    'Imatec 15': 4,
     'Controle de Qualidade': 5,
     'Apontamento': 6,
     'Túnel': 7,
@@ -132,6 +134,8 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
     'Imatec 11',
     'Imatec 12',
     'Imatec 13',
+    'Imatec 14',
+    'Imatec 15',
     'Controle de Qualidade',
     'Apontamento',
     'Túnel',
@@ -152,6 +156,8 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
     'Imatec 11',
     'Imatec 12',
     'Imatec 13',
+    'Imatec 14',
+    'Imatec 15',
   ];
 
   @override
@@ -452,8 +458,12 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
   }
 
   Future<List<Registro>> _buscarRegistrosImatecs() async {
+    final mapaOperadores = await _buscarMapaOperadoresImatecPorCodigo();
     final futures = _imatecLocations
-        .map((loc) => _buscarRegistrosPorLocalizacaoDireta(loc))
+        .map((loc) => _buscarRegistrosPorLocalizacaoDireta(
+              loc,
+              operadoresPorCodigo: mapaOperadores,
+            ))
         .toList();
     final results = await Future.wait(futures);
     final registros = results.expand((items) => items).toList();
@@ -466,8 +476,9 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
   }
 
   Future<List<Registro>> _buscarRegistrosPorLocalizacaoDireta(
-    String targetLocation,
-  ) async {
+    String targetLocation, {
+    Map<String, String>? operadoresPorCodigo,
+  }) async {
     await _garantirMapaGramaturas();
     final dataFormatada = _filterDate != null
         ? DateFormat('yyyy-MM-dd').format(_filterDate!)
@@ -520,6 +531,10 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
           ),
           caixa: jsonItem['Caixa'] ?? '',
           bocaImatec: _bocaImatecFromJson(item),
+          nomeOperadorImatec: _nomeOperadorImatecFromJson(
+            item,
+            operadoresPorCodigo: operadoresPorCodigo,
+          ),
         );
       }).where(_registroPassaFiltroLocal).toList();
     } catch (_) {
@@ -592,7 +607,7 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
           ? (decoded['numero'] as num).toInt()
           : int.tryParse(decoded['numero']?.toString() ?? '');
       final imatec = decoded['imatec']?.toString().trim();
-      if (numero == null || numero < 1 || numero > 13) return null;
+      if (numero == null || numero < 1 || numero > 15) return null;
       final esperado = 'Imatec ${numero.toString().padLeft(2, '0')}';
       if (imatec != esperado) return null;
       return esperado;
@@ -635,6 +650,139 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
       caseSensitive: false,
     ).firstMatch(observacao);
     return match?.group(1)?.trim();
+  }
+
+  String? _nomeOperadorImatecFromJson(
+    Map<String, dynamic> json, {
+    Map<String, String>? operadoresPorCodigo,
+  }) {
+    final chaves = [
+      'NmUser',
+      'nmUser',
+      'NomeOperador',
+      'nomeOperador',
+      'Operador',
+      'operador',
+      'NomeUsuario',
+      'nomeUsuario',
+    ];
+
+    for (final chave in chaves) {
+      final valor = json[chave]?.toString().trim();
+      if (valor != null && valor.isNotEmpty) {
+        final nome = _normalizarNomeOperador(valor);
+        if (nome.isNotEmpty) {
+          return nome;
+        }
+      }
+    }
+
+    final chavesCodigo = [
+      'CdUser',
+      'cdUser',
+      'CodigoUsuario',
+      'codigoUsuario',
+      'OperadorCodigo',
+      'operadorCodigo',
+      'CodOperador',
+      'codOperador',
+      'IdUsuario',
+      'idUsuario',
+    ];
+
+    for (final chave in chavesCodigo) {
+      final valor = json[chave]?.toString().trim();
+      if (valor == null || valor.isEmpty) continue;
+
+      final codigoNormalizado = _normalizarCodigoOperador(valor);
+      if (codigoNormalizado.isEmpty) continue;
+
+      final nomeDoMapa = operadoresPorCodigo?[codigoNormalizado];
+      if (nomeDoMapa != null && nomeDoMapa.trim().isNotEmpty) {
+        return nomeDoMapa.trim();
+      }
+    }
+
+    final observacao = (json['Observacao'] ?? json['observacao'])
+        ?.toString()
+        .trim();
+    if (observacao != null && observacao.isNotEmpty) {
+      final match = RegExp(
+        r'Operador\s*:\s*([^|]+)',
+        caseSensitive: false,
+      ).firstMatch(observacao);
+      final nome = _normalizarNomeOperador(match?.group(1) ?? '');
+      if (nome.isNotEmpty) {
+        return nome;
+      }
+
+      final matchCodigo = RegExp(
+        r'Operador\s*:\s*(\d+)',
+        caseSensitive: false,
+      ).firstMatch(observacao);
+      final codigo = matchCodigo?.group(1)?.trim();
+      if (codigo != null && codigo.isNotEmpty) {
+        final nomeDoMapa = operadoresPorCodigo?[_normalizarCodigoOperador(codigo)];
+        if (nomeDoMapa != null && nomeDoMapa.trim().isNotEmpty) {
+          return nomeDoMapa.trim();
+        }
+      }
+    }
+
+    return null;
+  }
+
+  String _normalizarNomeOperador(String valor) {
+    final texto = valor.trim();
+    if (texto.isEmpty) return '';
+
+    final semCodigo = texto
+        .replaceAll(RegExp(r'^\s*\d+\s*[-–—]\s*'), '')
+        .trim();
+    if (semCodigo.isNotEmpty && !RegExp(r'^\d+$').hasMatch(semCodigo)) {
+      return semCodigo;
+    }
+
+    final emParenteses = RegExp(r'^(.*)\s*\(([^)]+)\)\s*$')
+        .firstMatch(texto)
+        ?.group(1)
+        ?.trim();
+    if (emParenteses != null && emParenteses.isNotEmpty) {
+      return emParenteses;
+    }
+
+    if (texto.contains(' - ') || texto.contains('–') || texto.contains('—')) {
+      final partes = texto.split(RegExp(r'\s*[-–—]\s*'));
+      final ultimo = partes.isNotEmpty ? partes.last.trim() : '';
+      if (ultimo.isNotEmpty && !RegExp(r'^\d+$').hasMatch(ultimo)) {
+        return ultimo;
+      }
+    }
+
+    return RegExp(r'^\d+$').hasMatch(texto) ? '' : texto;
+  }
+
+  String _normalizarCodigoOperador(String valor) {
+    return valor
+        .trim()
+        .replaceAll(RegExp(r'[^0-9A-Za-z]'), '')
+        .toUpperCase();
+  }
+
+  Future<Map<String, String>> _buscarMapaOperadoresImatecPorCodigo() async {
+    try {
+      final operadores = await _buscarOperadoresImatec();
+      final mapa = <String, String>{};
+      for (final operador in operadores) {
+        final cdUser = (operador['CdUser'] ?? '').toString().trim();
+        final nmUser = (operador['NmUser'] ?? '').toString().trim();
+        if (cdUser.isEmpty || nmUser.isEmpty) continue;
+        mapa[_normalizarCodigoOperador(cdUser)] = nmUser;
+      }
+      return mapa;
+    } catch (_) {
+      return {};
+    }
   }
 
   Future<void> _updateRegistroLocationCompleta(
@@ -1592,20 +1740,58 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
     }
   }
 
+  Future<List<Map<String, dynamic>>> _buscarOperadoresImatec() async {
+    try {
+      final response = await http.get(
+        Uri.parse('http://168.190.90.2:5000/consultar/usuarios'),
+        headers: {'Content-Type': 'application/json'},
+      );
+
+      if (response.statusCode != 200) return [];
+
+      final decoded = jsonDecode(response.body);
+      if (decoded is! List) return [];
+
+      return decoded
+          .map((item) => Map<String, dynamic>.from(item as Map))
+          .where((item) {
+            final cdUser = (item['CdUser'] ?? '').toString().trim();
+            final nmUser = (item['NmUser'] ?? '').toString().trim();
+            return cdUser.isNotEmpty || nmUser.isNotEmpty;
+          })
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
   Future<void> _showImatecCheckinDialog(Registro registro) async {
     String selectedImatec = '';
     String selectedBoca = '';
     String qrCode = '';
+    String? selectedCdUser;
+    String? selectedNomeUser;
+    final qrFocusNode = FocusNode();
+    final qrController = TextEditingController();
+    final operadores = await _buscarOperadoresImatec();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      qrFocusNode.requestFocus();
+    });
 
     await showDialog(
       context: context,
       builder: (context) {
         return StatefulBuilder(
           builder: (context, dialogSetState) {
+            final operadoresFiltrados = operadores;
+
             final canConfirm =
                 selectedImatec.isNotEmpty &&
                 selectedBoca.isNotEmpty &&
-                qrCode.isNotEmpty;
+                qrCode.isNotEmpty &&
+                selectedCdUser != null &&
+                selectedCdUser!.trim().isNotEmpty;
 
             return AlertDialog(
               backgroundColor: _kSurface,
@@ -1715,6 +1901,7 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
                         }
                         dialogSetState(() {
                           qrCode = result.trim();
+                          qrController.text = result.trim();
                           selectedImatec = parsed;
                           selectedBoca = '';
                         });
@@ -1729,7 +1916,93 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
                         padding: const EdgeInsets.symmetric(vertical: 14),
                       ),
                     ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      focusNode: qrFocusNode,
+                      controller: qrController,
+                      autofocus: true,
+                      readOnly: true,
+                      enabled: true,
+                      decoration: InputDecoration(
+                        labelText: 'QR lido',
+                        labelStyle: const TextStyle(color: _kTextSecondary),
+                        filled: true,
+                        fillColor: _kSurface2,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: _kBorderSoft),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: _kBorderSoft),
+                        ),
+                      ),
+                      style: const TextStyle(color: _kTextPrimary),
+                    ),
                     if (selectedImatec.isNotEmpty) ...[
+                      const SizedBox(height: 14),
+                      const Text(
+                        'Operador da Imatec',
+                        style: TextStyle(
+                          color: _kTextPrimary,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      DropdownMenu<String>(
+                        initialSelection: selectedCdUser,
+                        enableFilter: true,
+                        enableSearch: true,
+                        requestFocusOnTap: true,
+                        textStyle: const TextStyle(color: _kTextPrimary),
+                        menuStyle: MenuStyle(
+                          backgroundColor: MaterialStateProperty.all(_kSurface2),
+                        ),
+                        leadingIcon: const Icon(Icons.search_rounded, color: _kTextSecondary),
+                        hintText: 'Selecione o operador',
+                        label: const Text('Operador'),
+                        inputDecorationTheme: InputDecorationTheme(
+                          labelStyle: const TextStyle(color: _kTextSecondary),
+                          filled: true,
+                          fillColor: _kSurface2,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(color: _kBorderSoft),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(color: _kBorderSoft),
+                          ),
+                        ),
+                        dropdownMenuEntries: operadoresFiltrados.map((operador) {
+                          final cdUser = (operador['CdUser'] ?? '').toString().trim();
+                          final nmUser = (operador['NmUser'] ?? '').toString().trim();
+                          final label = nmUser.isNotEmpty ? nmUser : cdUser;
+                          return DropdownMenuEntry<String>(
+                            value: cdUser,
+                            label: label.isNotEmpty ? label : 'Operador sem nome',
+                          );
+                        }).toList(),
+                        onSelected: (value) {
+                          dialogSetState(() {
+                            selectedCdUser = value;
+                            if (value == null || value.trim().isEmpty) {
+                              selectedNomeUser = null;
+                              return;
+                            }
+                            final operador = operadores.firstWhere(
+                              (item) =>
+                                  (item['CdUser'] ?? '').toString().trim() ==
+                                  value.trim(),
+                              orElse: () => <String, dynamic>{},
+                            );
+                            final nome =
+                                (operador['NmUser'] ?? '').toString().trim();
+                            selectedNomeUser = nome.isNotEmpty ? nome : null;
+                          });
+                        },
+                      ),
                       const SizedBox(height: 14),
                       const Text(
                         'Onde o material está rodando?',
@@ -1793,6 +2066,8 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
                             selectedImatec,
                             selectedBoca,
                             qrCode,
+                            cdUser: selectedCdUser ?? '',
+                            nomeOperador: selectedNomeUser,
                           );
                         }
                       : null,
@@ -1815,9 +2090,15 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
     Registro registro,
     String imatec,
     String bocaImatec,
-    String qrCode,
-  ) async {
+    String qrCode, {
+    String cdUser = '',
+    String? nomeOperador,
+  }) async {
     try {
+      final nomeOperadorFinal = (nomeOperador ?? '').trim();
+      registro.nomeOperadorImatec =
+          nomeOperadorFinal.isNotEmpty ? nomeOperadorFinal : null;
+
       final sucesso = await MovimentacaoService.registrarMovimentacaoCompleta(
         idRegistro: registro.id,
         idPedido: registro.ordemProducao,
@@ -1827,9 +2108,12 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
         dataMovimentacao: DateTime.now(),
         tipoMovimentacao: 'CHECKIN_IMATEC',
         qrCode: qrCode,
-        observacao:
-            'Check-in de material na $imatec | Boca Imatec: $bocaImatec',
+        observacao: nomeOperadorFinal.isNotEmpty
+            ? 'Check-in de material na $imatec | Boca Imatec: $bocaImatec | Operador: $nomeOperadorFinal'
+            : 'Check-in de material na $imatec | Boca Imatec: $bocaImatec',
         bocaImatec: bocaImatec,
+        cdUser: cdUser,
+        nomeOperador: nomeOperadorFinal,
       );
 
       if (!sucesso) {
@@ -2776,6 +3060,15 @@ class _LocalizacaoscreenState extends State<Localizacaoscreen>
                       label: 'Boca',
                       value: r.bocaImatec!.trim(),
                       color: const Color(0xFFF59E0B),
+                    ),
+                  ],
+                  if ((r.nomeOperadorImatec ?? '').trim().isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    _buildInfoStrip(
+                      icon: Icons.person_rounded,
+                      label: 'Operador',
+                      value: r.nomeOperadorImatec!.trim(),
+                      color: const Color(0xFF8B5CF6),
                     ),
                   ],
                 ],
